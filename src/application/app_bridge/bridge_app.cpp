@@ -1,13 +1,12 @@
 #include "bridge_app.h"
-
-#define LM_TAG "BridgeApp"
+#include "mesh_security_config.h"
 
 // Static member initialization
 BridgeApp* BridgeApp::instance = nullptr;
 
 BridgeApp::BridgeApp() 
     : radio(LoraMesher::getInstance()), 
-      mqttClient(wifiClient),
+      uartProtocol(nullptr),
       statusCounter(0),
       statusPacket(new bridgeStatus) {
     instance = this;
@@ -15,76 +14,71 @@ BridgeApp::BridgeApp()
 
 BridgeApp::~BridgeApp() {
     delete statusPacket;
+    delete uartProtocol;
 }
 
 void BridgeApp::setup() {
-    ESP_LOGI(LM_TAG, "=== LoRaMesh Bridge/Gateway Application ===");
-    ESP_LOGI(LM_TAG, "Bridge ID: 0x%X", BRIDGE_ID);
+    Serial.println("=== LoRaMesh Bridge/Gateway Application ===");
+    Serial.printf("Bridge ID: 0x%X\n", BRIDGE_ID);
     
     led_init();
     led_pattern_startup();
     
-    setupLoRaMesher();
-    
-    connectWiFi();
-    if (bridgeState.wifiConnected) {
-        connectMQTT();
+    // Initialize mesh security first
+    if (!initializeMeshSecurity()) {
+        Serial.println("Failed to initialize mesh security");
+        led_pattern_error();
+        return;
     }
+    
+    // Log security status
+    logSecurityStatus();
+    
+    setupLoRaMesher();
+    setupUART();
 
-    ESP_LOGI(LM_TAG, "Bridge setup complete");
+    Serial.println("Bridge setup complete");
+    led_pattern_connected();
 }
 
 void BridgeApp::loop() {
-    if (bridgeState.wifiConnected) {
-        if (!mqttClient.connected()) {
-            if (millis() - bridgeState.lastMqttReconnect > MQTT_RECONNECT_INTERVAL) {
-                ESP_LOGI(LM_TAG, "Attempting MQTT reconnection...");
-                connectMQTT();
-                bridgeState.lastMqttReconnect = millis();
-            }
+    uint32_t currentTime = millis();
+    
+    // Handle UART communication
+    if (uartProtocol) {
+        uartProtocol->update();
+        updateUARTConnection();
+    }
+    
+    // Send periodic heartbeat
+    if (currentTime - bridgeState.lastHeartbeat >= BRIDGE_HEARTBEAT_INTERVAL) {
+        if (uartProtocol && bridgeState.uartConnected) {
+            uartProtocol->sendHeartbeat();
+        }
+        bridgeState.lastHeartbeat = currentTime;
+    }
+    
+    // Send periodic status
+    if (currentTime - bridgeState.lastStatusSent >= BRIDGE_STATUS_INTERVAL) {
+        sendBridgeStatus();
+        bridgeState.lastStatusSent = currentTime;
+    }
+    
+    // Simple status LED indication
+    if (statusCounter++ % 100 == 0) {
+        if (bridgeState.uartConnected) {
+            led_pattern_message(); // Quick flash for active
         } else {
-            mqttClient.loop();
-        }
-        
-        if (statusCounter % 60 == 0) {
-            publishBridgeStatus();
-        }
-    } else {
-        if (statusCounter % 30 == 0) {
-            connectWiFi();
-            if (bridgeState.wifiConnected) {
-                connectMQTT();
-            }
+            led_pattern_error();   // Error pattern for disconnected
         }
     }
     
-    if (statusCounter % 120 == 0) {
-        statusPacket->connectedNodes = radio.routingTableSize();
-        statusPacket->totalPackets = bridgeState.totalMeshPackets;
-        statusPacket->wifiConnected = bridgeState.wifiConnected;
-        statusPacket->mqttConnected = bridgeState.mqttConnected;
-
-        ESP_LOGI(LM_TAG, "Broadcasting bridge status - Nodes: %d, Packets: %d",
-                 statusPacket->connectedNodes, statusPacket->totalPackets);
-        radio.createPacketAndSend(BROADCAST_ADDR, statusPacket, 1);
-    }
-    
-    if (statusCounter % 30 == 0) {
-        ESP_LOGI(LM_TAG, "=== Bridge Status ===");
-        ESP_LOGI(LM_TAG, "WiFi: %s, MQTT: %s",
-                  bridgeState.wifiConnected ? "Connected" : "Disconnected",
-                  bridgeState.mqttConnected ? "Connected" : "Disconnected");
-        ESP_LOGI(LM_TAG, "Mesh nodes: %d, Packets forwarded: %d",
-                  radio.routingTableSize(), bridgeState.packetsForwarded);
-        ESP_LOGI(LM_TAG, "Free heap: %d bytes",
-                  ESP.getFreeHeap());   
-    }
-    
-    statusCounter++;
-    delay(1000);
+    delay(100); // Main loop delay
 }
 
 void BridgeApp::setupLoRaMesher() {
+    Serial.println("[BRIDGE] Setting up LoRaMesher...");
+    
     LoraMesher::LoraMesherConfig config;
     config.loraCs = LORA_CS;
     config.loraRst = LORA_RST;
@@ -96,146 +90,146 @@ void BridgeApp::setupLoRaMesher() {
     
     TaskHandle_t receiveHandle = createBridgeReceiveTask();
     if (receiveHandle) {
+        Serial.printf("[BRIDGE] Setting task handle %p for bridge data\n", receiveHandle);
         radio.setReceiveAppDataTaskHandle(receiveHandle);
         radio.start();
-        ESP_LOGI(LM_TAG, "LoRaMesher initialized");
-        led_pattern_connected();
+        Serial.println("LoRaMesher initialized for Bridge");
     } else {
-        ESP_LOGE(LM_TAG, "Failed to initialize LoRaMesher");
+        Serial.println("Failed to create bridge receive task");
         led_pattern_error();
+    }
+}
+
+void BridgeApp::setupUART() {
+    Serial.println("[BRIDGE] Setting up UART communication...");
+    
+    // Create UART protocol instance
+    uartProtocol = new UartProtocol(&Serial1);
+    uartProtocol->begin(UART_BAUD_RATE);
+    
+    bridgeState.uartConnected = true;
+    
+    Serial.printf("[BRIDGE] UART initialized on Serial1, baud: %d\n", UART_BAUD_RATE);
+    Serial.printf("[BRIDGE] RX pin: %d, TX pin: %d\n", UART_RX_PIN, UART_TX_PIN);
+}
+
+void BridgeApp::forwardToUART(AppPacket<dataPacket>* packet) {
+    if (!uartProtocol || !bridgeState.uartConnected) {
+        Serial.println("[BRIDGE] UART not available for forwarding");
         return;
     }
-}
-
-void BridgeApp::connectWiFi() {
-    ESP_LOGI(LM_TAG, "Connecting to WiFi: %s", WIFI_SSID);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     
-    uint32_t startTime = millis();
-    while (WiFi.status() != WL_CONNECTED && 
-           (millis() - startTime) < WIFI_CONNECT_TIMEOUT) {
-        delay(500);
-        Serial.print(".");
-        led_toggle();
-    }
+    bridgeState.totalMeshPackets++;
     
-    if (WiFi.status() == WL_CONNECTED) {
-        bridgeState.wifiConnected = true;
-        ESP_LOGI(LM_TAG, "WiFi connected! IP: %s", WiFi.localIP().toString().c_str());
-        led_pattern_connected();
-    } else {
-        bridgeState.wifiConnected = false;
-        ESP_LOGE(LM_TAG, "WiFi connection failed!");
-        led_pattern_error();
-    }
-}
-
-void BridgeApp::connectMQTT() {
-    if (!bridgeState.wifiConnected) return;
+    // Extract data from packet
+    dataPacket* data = packet->payload;
+    uint16_t sourceNode = packet->src;
     
-    mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
+    Serial.printf("[BRIDGE] Forwarding packet from node 0x%04X to UART\n", sourceNode);
+    Serial.printf("[BRIDGE] Data - Counter: %d, Timestamp: %d\n", 
+                  data->counter, data->timestamp);
     
-    String clientId = "LoRaBridge_" + String(BRIDGE_ID, HEX);
-    
-    if (mqttClient.connect(clientId.c_str(), MQTT_USER, MQTT_PASSWORD)) {
-        bridgeState.mqttConnected = true;
-        ESP_LOGI(LM_TAG, "MQTT connected!");
-        
-        String subTopic = String(MQTT_TOPIC_BASE) + "/downlink/" + String(BRIDGE_ID, HEX);
-        mqttClient.subscribe(subTopic.c_str());
-        ESP_LOGI(LM_TAG, "Subscribed to: %s", subTopic.c_str());
-
-        led_pattern_connected();
-    } else {
-        bridgeState.mqttConnected = false;
-        ESP_LOGE(LM_TAG, "MQTT connection failed, rc=%d", mqttClient.state());
-        led_pattern_error();
-    }
-}
-
-void BridgeApp::forwardToMQTT(AppPacket<dataPacket>* packet) {
-    if (!bridgeState.mqttConnected) return;
-    
-    String topic = String(MQTT_TOPIC_BASE) + "/uplink/" + String(packet->src, HEX);
-    String payload = "{";
-    payload += "\"src\":\"" + String(packet->src, HEX) + "\",";
-    payload += "\"dst\":\"" + String(packet->dst, HEX) + "\",";
-    payload += "\"bridge\":\"" + String(BRIDGE_ID, HEX) + "\",";
-    payload += "\"timestamp\":" + String(millis()) + ",";
-    payload += "\"data\":{";
-    
-    if (packet->payloadSize > 0) {
-        dataPacket* data = packet->payload;
-        payload += "\"counter\":" + String(data->counter) + ",";
-        payload += "\"nodeId\":\"" + String(data->nodeId, HEX) + "\",";
-        payload += "\"nodeTimestamp\":" + String(data->timestamp);
-    }
-    
-    payload += "}}";
-    
-    if (mqttClient.publish(topic.c_str(), payload.c_str())) {
+    // Send via UART
+    if (uartProtocol->sendDataPacket(*data, sourceNode)) {
         bridgeState.packetsForwarded++;
-        ESP_LOGI(LM_TAG, "Forwarded to MQTT: %s", topic.c_str());
-        led_flash(1, 25);
+        led_pattern_message(); // Flash LED on successful forward
     } else {
-        ESP_LOGE(LM_TAG, "MQTT publish failed");
+        bridgeState.uartErrors++;
+        Serial.println("[BRIDGE] Failed to send packet via UART");
     }
 }
 
-void BridgeApp::publishBridgeStatus() {
-    if (!bridgeState.mqttConnected) return;
+void BridgeApp::sendBridgeStatus() {
+    if (!uartProtocol || !bridgeState.uartConnected) {
+        return;
+    }
     
-    String topic = String(MQTT_TOPIC_BASE) + "/status/" + String(BRIDGE_ID, HEX);
-    String payload = "{";
-    payload += "\"bridgeId\":\"" + String(BRIDGE_ID, HEX) + "\",";
-    payload += "\"wifiConnected\":" + String(bridgeState.wifiConnected ? "true" : "false") + ",";
-    payload += "\"mqttConnected\":" + String(bridgeState.mqttConnected ? "true" : "false") + ",";
-    payload += "\"connectedNodes\":" + String(radio.routingTableSize()) + ",";
-    payload += "\"packetsForwarded\":" + String(bridgeState.packetsForwarded) + ",";
-    payload += "\"totalMeshPackets\":" + String(bridgeState.totalMeshPackets) + ",";
-    payload += "\"uptime\":" + String(millis()) + ",";
-    payload += "\"freeHeap\":" + String(ESP.getFreeHeap()) + ",";
-    payload += "\"rssi\":" + String(WiFi.RSSI()) + "";
-    payload += "}";
+    // Prepare status packet
+    UartBridgeStatus status;
+    status.bridgeId = BRIDGE_ID;
+    status.uptime = millis() / 1000; // Convert to seconds
+    status.connectedNodes = radio.routingTableSize();
+    status.totalPacketsReceived = bridgeState.totalMeshPackets;
+    status.totalPacketsSent = bridgeState.packetsForwarded;
+    status.freeHeap = ESP.getFreeHeap() / 1024; // Convert to KB
+    status.lastRSSI = -99; // TODO: Get from last received packet
+    status.lastSNR = 10;   // TODO: Get from last received packet
+    status.meshHealth = (status.connectedNodes > 0) ? 100 : 0; // Simple health metric
     
-    mqttClient.publish(topic.c_str(), payload.c_str());
-    ESP_LOGI(LM_TAG, "Bridge status published to MQTT");
+    Serial.printf("[BRIDGE] Sending status - Nodes: %d, Packets: %d/%d, Heap: %dKB\n",
+                  status.connectedNodes, status.totalPacketsReceived, 
+                  status.totalPacketsSent, status.freeHeap);
+    
+    uartProtocol->sendStatusPacket(status);
 }
 
+void BridgeApp::updateUARTConnection() {
+    static uint32_t lastCheck = 0;
+    uint32_t currentTime = millis();
+    
+    if (currentTime - lastCheck >= 5000) { // Check every 5 seconds
+        bool wasConnected = bridgeState.uartConnected;
+        bridgeState.uartConnected = uartProtocol && uartProtocol->isConnected();
+        
+        if (wasConnected != bridgeState.uartConnected) {
+            if (bridgeState.uartConnected) {
+                Serial.println("[BRIDGE] UART connection established");
+                led_pattern_connected();
+            } else {
+                Serial.println("[BRIDGE] UART connection lost");
+                led_pattern_error();
+            }
+        }
+        
+        lastCheck = currentTime;
+    }
+}
+
+// Static callback for processing bridge packets
 void BridgeApp::processBridgePackets(void* parameter) {
-    BridgeApp* app = static_cast<BridgeApp*>(parameter);
+    Serial.println("[BRIDGE-TASK] Bridge packet processing task started");
     
     for (;;) {
+        Serial.println("[BRIDGE-TASK] Waiting for mesh packet notification...");
         ulTaskNotifyTake(pdPASS, portMAX_DELAY);
-        led_pattern_message();
         
-        while (app->radio.getReceivedQueueSize() > 0) {
-            app->bridgeState.totalMeshPackets++;
-            ESP_LOGI(LM_TAG, "Bridge processing packet #%d", app->bridgeState.totalMeshPackets);
+        Serial.println("[BRIDGE-TASK] GOT NOTIFICATION! Processing bridge packets...");
+        led_pattern_message();
+
+        while (BridgeApp::instance->radio.getReceivedQueueSize() > 0) {
+            Serial.println("[BRIDGE-TASK] Processing received mesh packet for bridge");
+            Serial.printf("[BRIDGE-TASK] Queue size: %d\n", 
+                         BridgeApp::instance->radio.getReceivedQueueSize());
+
+            AppPacket<dataPacket>* packet = BridgeApp::instance->radio.getNextAppPacket<dataPacket>();
             
-            AppPacket<dataPacket>* packet = app->radio.getNextAppPacket<dataPacket>();
-            printDataPacket(packet);
-            app->forwardToMQTT(packet);
-            app->radio.deletePacket(packet);
+            // Forward to UART instead of MQTT
+            BridgeApp::instance->forwardToUART(packet);
+            
+            BridgeApp::instance->radio.deletePacket(packet);
         }
     }
 }
 
 TaskHandle_t BridgeApp::createBridgeReceiveTask() {
     TaskHandle_t taskHandle = NULL;
+    
+    Serial.println("[BRIDGE] Creating bridge receive task...");
+    
     int res = xTaskCreate(
         processBridgePackets,
         "Bridge Receive Task",
-        8192,
-        this,  // Pass this instance as parameter
+        4096,
+        (void*) 1,
         2,
         &taskHandle);
     
     if (res != pdPASS) {
-        ESP_LOGE(LM_TAG, "Error: Bridge receive task creation failed: %d", res);
+        Serial.printf("[BRIDGE] Error: Bridge task creation failed: %d\n", res);
         led_pattern_error();
         return NULL;
     }
     
+    Serial.printf("[BRIDGE] Bridge task created successfully, handle: %p\n", taskHandle);
     return taskHandle;
 }

@@ -1,4 +1,5 @@
 #include "node_app.h"
+#include "mesh_security_config.h"
 
 #define LM_TAG "NodeApp"
 
@@ -16,6 +17,16 @@ void NodeApp::setup() {
     
     led_init();
     led_pattern_startup();
+    
+    // Initialize mesh security first
+    if (!initializeMeshSecurity()) {
+        ESP_LOGE(LM_TAG, "Failed to initialize mesh security");
+        led_pattern_error();
+        return;
+    }
+    
+    // Log security status
+    logSecurityStatus();
     
     setupLoRaMesher();
 

@@ -1,4 +1,7 @@
 #include "PacketService.h"
+#ifdef ENABLE_MESH_SECURITY
+#include "../../include/secure_packet.h"
+#endif
 
 Packet<uint8_t>* PacketService::createEmptyPacket(size_t packetSize) {
     size_t maxPacketSize = PacketFactory::getMaxPacketSize();
@@ -81,6 +84,14 @@ bool PacketService::isXLPacket(uint8_t type) {
 
 bool PacketService::isDataControlPacket(uint8_t type) {
     return (isHelloPacket(type) || isAckPacket(type) || isLostPacket(type) || isLostPacket(type));
+}
+
+bool PacketService::isSecurePacket(uint8_t type) {
+#ifdef ENABLE_MESH_SECURITY
+    return SecurePacketService::isSecurePacket(type);
+#else
+    return false;
+#endif
 }
 
 uint8_t PacketService::getHeaderLength(uint8_t type) {

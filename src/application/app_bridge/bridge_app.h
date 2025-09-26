@@ -2,20 +2,20 @@
 #define BRIDGE_APP_H
 
 #include <Arduino.h>
-#include <WiFi.h>
-#include <PubSubClient.h>
 #include "bridge_config.h"
+#include "uart_protocol.h"
 #include "led_control.h"
 #include "../common/mesh_utils.h"
 #include "components/lora_mesh_manager/include/LoraMesher.h"
 
 // Bridge state structure
 struct BridgeState {
-    bool wifiConnected = false;
-    bool mqttConnected = false;
+    bool uartConnected = false;
     uint32_t packetsForwarded = 0;
-    uint32_t lastMqttReconnect = 0;
+    uint32_t lastHeartbeat = 0;
+    uint32_t lastStatusSent = 0;
     uint32_t totalMeshPackets = 0;
+    uint32_t uartErrors = 0;
 };
 
 class BridgeApp {
@@ -28,18 +28,17 @@ public:
 
 private:
     LoraMesher& radio;
-    WiFiClient wifiClient;
-    PubSubClient mqttClient;
+    UartProtocol* uartProtocol;
     BridgeState bridgeState;
     uint32_t statusCounter;
     bridgeStatus* statusPacket;
     
     // Private methods
     void setupLoRaMesher();
-    void connectWiFi();
-    void connectMQTT();
-    void forwardToMQTT(AppPacket<dataPacket>* packet);
-    void publishBridgeStatus();
+    void setupUART();
+    void forwardToUART(AppPacket<dataPacket>* packet);
+    void sendBridgeStatus();
+    void updateUARTConnection();
     
     // Static callback methods
     static void processBridgePackets(void* parameter);

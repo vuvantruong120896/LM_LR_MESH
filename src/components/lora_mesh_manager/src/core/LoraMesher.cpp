@@ -696,8 +696,47 @@ void LoraMesher::processPackets() {
                     RoutingTableService::processRoute(reinterpret_cast<RoutePacket*>(rx->packet), rx->snr);
                     PacketQueueService::deleteQueuePacketAndPacket(rx);
                 }
-                else if (PacketService::isDataPacket(type))
-                    processDataPacket(reinterpret_cast<QueuePacket<DataPacket>*>(rx));
+                else if (PacketService::isDataPacket(type)) {
+                    // Handle secure packets
+                    QueuePacket<DataPacket>* dataPacketQueue = reinterpret_cast<QueuePacket<DataPacket>*>(rx);
+                    
+#ifdef ENABLE_MESH_SECURITY
+                    // Check if this is a secure packet
+                    if (PacketService::isSecurePacket(type)) {
+                        ESP_LOGI(LM_TAG, "Secure packet received, decrypting...");
+                        
+                        // Convert to secure packet and unwrap
+                        SecureDataPacket* securePacket = reinterpret_cast<SecureDataPacket*>(rx->packet);
+                        size_t originalSize;
+                        
+                        DataPacket* decryptedPacket = SecurePacketService::unwrapPacket(securePacket, &originalSize);
+                        if (decryptedPacket) {
+                            ESP_LOGI(LM_TAG, "Packet decrypted successfully");
+                            
+                            // Create new queue packet with decrypted data
+                            QueuePacket<DataPacket>* decryptedQueue = PacketQueueService::createQueuePacket(
+                                reinterpret_cast<DataPacket*>(decryptedPacket), rx->priority
+                            );
+                            decryptedQueue->snr = rx->snr;
+                            
+                            // Process decrypted packet
+                            processDataPacket(decryptedQueue);
+                            
+                            // Clean up original secure packet
+                            PacketQueueService::deleteQueuePacketAndPacket(rx);
+                        } else {
+                            ESP_LOGW(LM_TAG, "Failed to decrypt packet, dropping");
+                            PacketQueueService::deleteQueuePacketAndPacket(rx);
+                        }
+                    } else {
+                        // Regular unencrypted packet
+                        processDataPacket(dataPacketQueue);
+                    }
+#else
+                    // No security, process normally
+                    processDataPacket(dataPacketQueue);
+#endif
+                }
                 else {
                     ESP_LOGV(LM_TAG, "Packet not identified, deleting it");
                     incReceivedNotForMe();

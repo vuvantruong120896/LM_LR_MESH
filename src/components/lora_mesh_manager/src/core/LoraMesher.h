@@ -19,6 +19,10 @@
 
 #include "../services/WiFiService.h"
 
+// Security includes
+#include "../../include/mesh_security.h"
+#include "../../include/secure_packet.h"
+
 #include "../services/RoleService.h"
 
 #include "../services/SimulatorService.h"
@@ -286,8 +290,23 @@ public:
         //Create a data packet with the payload
         DataPacket* dPacket = PacketService::createDataPacket(dst, getLocalAddress(), DATA_P, reinterpret_cast<uint8_t*>(payload), payloadSizeInBytes);
 
+        // Apply security if enabled
+        Packet<uint8_t>* finalPacket = reinterpret_cast<Packet<uint8_t>*>(dPacket);
+#ifdef ENABLE_MESH_SECURITY
+        if (isSecurityEnabled()) {
+            SecureDataPacket* securePacket = SecurePacketService::wrapPacket(dPacket, dPacket->packetSize, getSecurityLevel());
+            if (securePacket) {
+                ESP_LOGI(LM_TAG, "Packet encrypted and authenticated");
+                finalPacket = reinterpret_cast<Packet<uint8_t>*>(securePacket);
+                delete dPacket; // Free original packet
+            } else {
+                ESP_LOGW(LM_TAG, "Failed to secure packet, sending unencrypted");
+            }
+        }
+#endif
+
         //Create the packet and set it to the send queue
-        setPackedForSend(reinterpret_cast<Packet<uint8_t>*>(dPacket), DEFAULT_PRIORITY);
+        setPackedForSend(finalPacket, DEFAULT_PRIORITY);
     }
 
     /**
@@ -1130,6 +1149,23 @@ public:
      * @return size_t number of packets
      */
     size_t queueWaitingReceivedPacketsLength() { return q_WRP->getLength(); }
+
+    // Security helper methods
+    bool isSecurityEnabled() { 
+#ifdef ENABLE_MESH_SECURITY
+        return true;
+#else
+        return false;
+#endif
+    }
+    
+    uint8_t getSecurityLevel() {
+#ifdef ENABLE_MESH_SECURITY
+        return 2; // Default to encryption + authentication
+#else
+        return 0;
+#endif
+    }
 };
 
 #endif

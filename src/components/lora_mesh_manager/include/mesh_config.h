@@ -5,7 +5,7 @@
 #include "../src/core/BuildOptions.h"
 
 // Default mesh configuration values
-#define MESH_DEFAULT_FREQ       868.0f  // MHz
+#define MESH_DEFAULT_FREQ       923.0f  // MHz
 #define MESH_DEFAULT_BW         125.0f  // kHz  
 #define MESH_DEFAULT_SF         7       // Spreading Factor
 #define MESH_DEFAULT_CR         5       // Coding Rate
