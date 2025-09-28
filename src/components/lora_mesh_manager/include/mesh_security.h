@@ -21,6 +21,8 @@
 #define SECURITY_AUTH_CHALLENGE     0xA3    // Authentication challenge
 #define SECURITY_AUTH_RESPONSE      0xA4    // Authentication response
 #define SECURITY_KEY_UPDATE         0xA5    // Network key update
+#define SECURITY_RESYNC_REQUEST     0xA6    // Sequence resync request (Layer 2)
+#define SECURITY_RESYNC_RESPONSE    0xA7    // Sequence resync response (Layer 2)
 
 // Security error codes
 enum MeshSecurityResult {
@@ -31,6 +33,14 @@ enum MeshSecurityResult {
     MESH_SEC_REPLAY_ATTACK = -4,
     MESH_SEC_INVALID_MAC = -5,
     MESH_SEC_NOT_AUTHENTICATED = -6
+};
+
+// Resync reason codes (Layer 2)
+enum ResyncReasonCode {
+    RESYNC_REASON_BOOT = 1,          // Node just booted
+    RESYNC_REASON_REPLAY_REJECT = 2,  // Packets being rejected as replay
+    RESYNC_REASON_NVS_CORRUPT = 3,    // NVS corruption detected
+    RESYNC_REASON_MANUAL = 4          // Manual resync request
 };
 
 // Security configuration structure
@@ -83,6 +93,24 @@ struct JoinResponsePacket {
     uint32_t sessionKey;                            // Temporary session key
 };
 
+// Resync request packet (Layer 2)
+struct ResyncRequestPacket {
+    SecurityPacketHeader header;
+    uint16_t nodeId;                                // Requesting node ID
+    uint32_t currentSequence;                       // Node's current sequence
+    uint32_t timestamp;                             // Request timestamp
+    uint8_t reason;                                 // Resync reason code
+};
+
+// Resync response packet (Layer 2)  
+struct ResyncResponsePacket {
+    SecurityPacketHeader header;
+    uint16_t nodeId;                                // Target node ID
+    uint32_t allowedSequence;                       // Minimum allowed sequence
+    bool accepted;                                  // Resync accepted/rejected
+    uint32_t timestamp;                             // Response timestamp
+};
+
 // Security service interface
 class MeshSecurityService {
 public:
@@ -119,11 +147,27 @@ public:
     // Update network key
     static bool updateNetworkKey(const uint8_t* newKey);
     
+    // Obtain next global sequence number (for packet sequence counters)
+    static uint32_t getNextSequenceNumber();
+    
     // Generate secure random nonce
     static void generateNonce(uint8_t* nonce);
     
     // Check for replay attacks
     static bool isValidSequenceNumber(uint16_t nodeId, uint32_t sequenceNumber);
+
+    // Reset replay protection tracking (clears last seen sequence numbers and authenticated nodes)
+    static void resetReplayState();
+    
+    // NVS persistence for sequence counter (Layer 1 persistent replay protection)
+    static bool loadSequenceFromNVS();
+    static bool saveSequenceToNVS();
+    
+    // Layer 2: Resync handshake mechanism
+    static bool sendResyncRequest(uint16_t targetAddress, ResyncReasonCode reason);
+    static bool processResyncRequest(const ResyncRequestPacket* request, uint16_t senderAddress);
+    static bool processResyncResponse(const ResyncResponsePacket* response, uint16_t senderAddress);
+    static bool handleReplayRejection(uint16_t targetAddress);
     
     // Get current security configuration
     static const MeshSecurityConfig& getConfig();
@@ -144,10 +188,24 @@ private:
     // Replay protection
     static uint32_t lastSequenceNumbers[32];
     
+    // NVS persistence for sequence counter
+    static uint32_t sequencesSinceLastSave;
+    static uint32_t lastSaveTime;
+    static const uint32_t SEQUENCE_SAVE_INTERVAL = 50;  // Save every 50 sequences
+    static const uint32_t TIME_SAVE_INTERVAL = 300000;  // Save every 5 minutes (ms)
+    
+    // Layer 2 resync tracking
+    static bool resyncInProgress;
+    static uint16_t resyncTargetAddress;
+    static unsigned long resyncRequestTime;
+    static uint8_t resyncRetryCount;
+    static const uint8_t MAX_RESYNC_RETRIES = 3;
+    static const unsigned long RESYNC_TIMEOUT = 5000; // 5 seconds
+    
     // Internal helper methods
     static void deriveEncryptionKey(uint8_t* derivedKey, const uint8_t* masterKey, const uint8_t* nonce);
     static bool authenticateNode(uint16_t nodeId, const uint8_t* challenge, const uint8_t* response);
-    static uint32_t getNextSequenceNumber();
+    // (getNextSequenceNumber is public)
 };
 
 // Security utility macros

@@ -1227,6 +1227,31 @@ public:
      */
     bool ensureRouteToTarget(uint16_t targetAddress);
 
+#ifdef ENABLE_MESH_SECURITY
+    /**
+     * @brief Check if packet type is a security resync packet
+     * @param type Packet type to check  
+     * @return true if packet is security resync type
+     */
+    bool isSecurityResyncPacket(uint8_t type);
+    
+    /**
+     * @brief Check if packet is a security resync packet by examining packet content
+     * @param packet Packet to examine
+     * @return true if packet is security resync type
+     */
+    bool isSecurityResyncPacket(Packet<uint8_t>* packet);
+    
+    /**
+     * @brief Process received security resync packet  
+     * @param packet Raw packet data
+     * @param packetSize Size of packet
+     * @param senderAddress Address of sender
+     * @return true if packet was processed successfully
+     */
+    bool processSecurityResyncPacket(const uint8_t* packet, size_t packetSize, uint16_t senderAddress);
+#endif
+
 private:
     // Provisioning mode variables
     bool provisioningModeActive = false;

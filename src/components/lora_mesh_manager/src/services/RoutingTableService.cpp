@@ -1,4 +1,5 @@
 #include "RoutingTableService.h"
+#include "NetkeyDistributionService.h"
 
 size_t RoutingTableService::routingTableSize() {
     return routingTableList->getLength();
@@ -72,9 +73,20 @@ void RoutingTableService::processRoute(RoutePacket* p, int8_t receivedSNR) {
         ESP_LOGE(LM_TAG, "Invalid route packet size");
         return;
     }
+    
+    // **PHASE 2A: CONSERVATIVE NETWORK ID FILTERING**
+    // If we have a non-zero Local Network ID and packet has different non-zero Network ID -> reject
+    // Treat 0x0000 as "unset" (do not use as a valid local network id for filtering)
+    if (NetkeyDistributionService::getLocalNetworkId() != 0 &&
+        p->networkId != 0 && 
+        p->networkId != NetkeyDistributionService::getLocalNetworkId()) {
+        ESP_LOGW(LM_TAG, "Rejected Hello from different network - Local: 0x%04X, Received: 0x%04X", 
+                 NetkeyDistributionService::getLocalNetworkId(), p->networkId);
+        return;
+    }
 
     size_t numNodes = p->getNetworkNodesSize();
-    ESP_LOGI(LM_TAG, "Route packet from %X with size %d", p->src, numNodes);
+    ESP_LOGI(LM_TAG, "Route packet from %X with size %d, Network ID: 0x%04X", p->src, numNodes, p->networkId);
 
     NetworkNode* receivedNode = new NetworkNode(p->src, 1, p->nodeRole);
     processRoute(p->src, receivedNode);

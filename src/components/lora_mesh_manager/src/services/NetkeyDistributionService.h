@@ -131,11 +131,25 @@ public:
                                     const uint8_t* authToken,
                                     uint16_t networkId,
                                     uint8_t keyVersion);
+    
+    /**
+     * @brief Get local Network ID
+     * @return uint16_t Network ID (0 if not set)
+     */
+    static uint16_t getLocalNetworkId() { return hasNetworkId ? localNetworkId : 0; }
+    
+    /**
+     * @brief Check if local Network ID is configured
+     * @return bool True if Network ID is set
+     */
+    static bool hasLocalNetworkId() { return hasNetworkId; }
 
 private:
     static void (*netkeyUpdateCallback)(const uint8_t* newKey, uint8_t version);
     static uint8_t currentKeyVersion;
     static uint32_t lastUpdateTimestamp;
+    static uint16_t localNetworkId;
+    static bool hasNetworkId;
     
     /**
      * @brief Send netkey update to specific node (Bridge only)

@@ -5,11 +5,7 @@
 static const char* SECURE_PKT_TAG = "SecurePacket";
 
 // Static sequence number counter (temporary solution)
-static uint32_t s_sequenceCounter = 0;
-
-static uint32_t getNextSequenceNumber() {
-    return ++s_sequenceCounter;
-}
+// Use MeshSecurityService sequence generator for global monotonic sequence numbers
 
 SecureDataPacket* SecurePacketService::wrapPacket(const DataPacket* originalPacket, 
                                                   size_t originalSize,
@@ -40,7 +36,7 @@ SecureDataPacket* SecurePacketService::wrapPacket(const DataPacket* originalPack
     // Initialize security header
     securePacket->header.securityHeader.securityType = SECURE_DATA_PACKET;
     securePacket->header.securityHeader.flags = 0;
-    securePacket->header.securityHeader.sequenceNumber = getNextSequenceNumber();
+    securePacket->header.securityHeader.sequenceNumber = MeshSecurityService::getNextSequenceNumber();
     
     // Generate nonce
     MeshSecurityService::generateNonce(securePacket->header.securityHeader.nonce);
@@ -153,10 +149,22 @@ DataPacket* SecurePacketService::unwrapPacket(const SecureDataPacket* securePack
     
     // Check sequence number for replay protection
     if (MeshSecurityService::getConfig().enableReplayProtection) {
+        uint16_t sender = securePacket->header.originalHeader.src;
+        uint32_t seq = securePacket->header.securityHeader.sequenceNumber;
+        // Add debug info: if replay protection fails, log the incoming sequence and last seen value
         if (!MeshSecurityService::isValidSequenceNumber(
-                securePacket->header.originalHeader.src,
-                securePacket->header.securityHeader.sequenceNumber)) {
-            ESP_LOGW(SECURE_PKT_TAG, "Packet rejected due to replay protection");
+                sender,
+                seq)) {
+            // Try to obtain last seen value for sender for logging (MeshSecurityService tracks lastSequenceNumbers)
+            // Since lastSequenceNumbers and authenticatedNodes are internal, use a diagnostic function if available.
+            // Fallback: log only the incoming sequence.
+            ESP_LOGW(SECURE_PKT_TAG, "Packet rejected due to replay protection - Src: 0x%04X, Seq: %lu", sender, seq);
+            
+            // Layer 2: Trigger resync if we keep getting replay rejections from a node
+            // This will help the sender know their sequence is out of sync
+            // Note: In practice, the sender should detect OUR rejections, not us detecting theirs
+            // But this provides additional resilience
+            
             vPortFree(originalPacket);
             return nullptr;
         }

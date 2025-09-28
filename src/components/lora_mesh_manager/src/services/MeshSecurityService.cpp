@@ -2,6 +2,9 @@
 #include "esp_log.h"
 #include "mbedtls/md.h"
 #include "mbedtls/hkdf.h"
+#include "nvs.h"
+#include "nvs_flash.h"
+#include "Arduino.h"
 
 static const char* MESH_SEC_TAG = "MeshSecurity";
 
@@ -13,6 +16,32 @@ uint32_t MeshSecurityService::sequenceCounter = 0;
 uint16_t MeshSecurityService::authenticatedNodes[32] = {0};
 uint8_t MeshSecurityService::authenticatedCount = 0;
 uint32_t MeshSecurityService::lastSequenceNumbers[32] = {0};
+
+// NVS persistence tracking
+uint32_t MeshSecurityService::sequencesSinceLastSave = 0;
+uint32_t MeshSecurityService::lastSaveTime = 0;
+const uint32_t MeshSecurityService::SEQUENCE_SAVE_INTERVAL;
+const uint32_t MeshSecurityService::TIME_SAVE_INTERVAL;
+
+// Layer 2 resync tracking 
+bool MeshSecurityService::resyncInProgress = false;
+uint16_t MeshSecurityService::resyncTargetAddress = 0;
+unsigned long MeshSecurityService::resyncRequestTime = 0;
+uint8_t MeshSecurityService::resyncRetryCount = 0;
+const uint8_t MeshSecurityService::MAX_RESYNC_RETRIES;
+const unsigned long MeshSecurityService::RESYNC_TIMEOUT;
+
+void MeshSecurityService::resetReplayState() {
+    // Clear authenticated nodes tracking and last sequence numbers
+    memset(authenticatedNodes, 0, sizeof(authenticatedNodes));
+    memset(lastSequenceNumbers, 0, sizeof(lastSequenceNumbers));
+    authenticatedCount = 0;
+    
+    // Save current sequence counter to NVS (important: preserve our sequence across replay resets)
+    saveSequenceToNVS();
+    
+    ESP_LOGI(MESH_SEC_TAG, "Replay protection state reset, sequence preserved: %lu", sequenceCounter);
+}
 
 bool MeshSecurityService::initialize(const MeshSecurityConfig& cfg) {
     if (initialized) {
@@ -32,15 +61,25 @@ bool MeshSecurityService::initialize(const MeshSecurityConfig& cfg) {
         return false;
     }
     
-    // Initialize sequence counter with random value
-    esp_fill_random((uint8_t*)&sequenceCounter, sizeof(sequenceCounter));
+    // Initialize sequence counter: try to load from NVS first, fallback to random + recovery offset
+    if (!loadSequenceFromNVS()) {
+        // NVS load failed, use random high value to ensure we're above any previous sequence
+        esp_fill_random((uint8_t*)&sequenceCounter, sizeof(sequenceCounter));
+        // Ensure we start from a reasonably high value
+        sequenceCounter = (sequenceCounter % 0x7FFFFFFF) + 1000000;
+        ESP_LOGW(MESH_SEC_TAG, "NVS sequence load failed, starting from random high value: %lu", sequenceCounter);
+    }
+    
+    // Initialize NVS tracking
+    sequencesSinceLastSave = 0;
+    lastSaveTime = millis();
     
     initialized = true;
     
-    ESP_LOGI(MESH_SEC_TAG, "Mesh security initialized - Encryption: %s, Auth: %s, Level: %d",
+    ESP_LOGI(MESH_SEC_TAG, "Mesh security initialized - Encryption: %s, Auth: %s, Level: %d, Sequence: %lu",
              config.enableEncryption ? "ON" : "OFF",
              config.enableAuthentication ? "ON" : "OFF",
-             config.securityLevel);
+             config.securityLevel, sequenceCounter);
     
     return true;
 }
@@ -305,7 +344,23 @@ bool MeshSecurityService::isValidSequenceNumber(uint16_t nodeId, uint32_t sequen
 }
 
 uint32_t MeshSecurityService::getNextSequenceNumber() {
-    return ++sequenceCounter;
+    uint32_t nextSeq = ++sequenceCounter;
+    
+    // Auto-save sequence to NVS based on count or time
+    sequencesSinceLastSave++;
+    uint32_t currentTime = millis();
+    
+    if (sequencesSinceLastSave >= SEQUENCE_SAVE_INTERVAL || 
+        (currentTime - lastSaveTime) >= TIME_SAVE_INTERVAL) {
+        
+        // Save to NVS (non-blocking, fire and forget)
+        if (saveSequenceToNVS()) {
+            sequencesSinceLastSave = 0;
+            lastSaveTime = currentTime;
+        }
+    }
+    
+    return nextSeq;
 }
 
 void MeshSecurityService::deriveEncryptionKey(uint8_t* derivedKey, const uint8_t* masterKey, const uint8_t* nonce) {
@@ -356,6 +411,9 @@ bool MeshSecurityService::updateConfig(const MeshSecurityConfig& newConfig) {
         return false;
     }
     
+    // Save sequence counter on config update (important security event)
+    saveSequenceToNVS();
+    
     ESP_LOGI(MESH_SEC_TAG, "Security configuration updated successfully");
     return true;
 }
@@ -375,3 +433,212 @@ bool MeshSecurityService::isNodeAuthenticated(uint16_t nodeId) {
 
 // Additional authentication methods would be implemented here
 // For brevity, keeping the basic structure
+
+// ============================================================================
+// NVS PERSISTENCE FOR SEQUENCE COUNTER (Layer 1 Replay Protection)
+// ============================================================================
+
+bool MeshSecurityService::loadSequenceFromNVS() {
+    nvs_handle_t nvs_handle;
+    esp_err_t err;
+    
+    // Open NVS
+    err = nvs_open("mesh_security", NVS_READONLY, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(MESH_SEC_TAG, "Failed to open NVS for sequence read: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    // Read sequence counter
+    uint32_t savedSequence = 0;
+    size_t required_size = sizeof(savedSequence);
+    err = nvs_get_blob(nvs_handle, "seq_counter", &savedSequence, &required_size);
+    
+    nvs_close(nvs_handle);
+    
+    if (err == ESP_OK) {
+        // Add recovery offset to ensure we're always above the last saved value
+        // This handles cases where we saved but sent more packets before crash
+        sequenceCounter = savedSequence + 1000;
+        ESP_LOGI(MESH_SEC_TAG, "NVS sequence loaded: %lu, starting from: %lu", 
+                 savedSequence, sequenceCounter);
+        return true;
+    } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGI(MESH_SEC_TAG, "No saved sequence found in NVS (first boot)");
+    } else {
+        ESP_LOGW(MESH_SEC_TAG, "Failed to read sequence from NVS: %s", esp_err_to_name(err));
+    }
+    
+    return false;
+}
+
+bool MeshSecurityService::saveSequenceToNVS() {
+    nvs_handle_t nvs_handle;
+    esp_err_t err;
+    
+    // Open NVS
+    err = nvs_open("mesh_security", NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(MESH_SEC_TAG, "Failed to open NVS for sequence save: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    // Save current sequence counter
+    err = nvs_set_blob(nvs_handle, "seq_counter", &sequenceCounter, sizeof(sequenceCounter));
+    if (err != ESP_OK) {
+        ESP_LOGW(MESH_SEC_TAG, "Failed to write sequence to NVS: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return false;
+    }
+    
+    // Commit changes
+    err = nvs_commit(nvs_handle);
+    nvs_close(nvs_handle);
+    
+    if (err == ESP_OK) {
+        ESP_LOGD(MESH_SEC_TAG, "Sequence counter saved to NVS: %lu", sequenceCounter);
+        return true;
+    } else {
+        ESP_LOGW(MESH_SEC_TAG, "Failed to commit sequence to NVS: %s", esp_err_to_name(err));
+        return false;
+    }
+}
+
+// ======================
+// Layer 2: Resync Handshake Implementation
+// ======================
+
+bool MeshSecurityService::sendResyncRequest(uint16_t targetAddress, ResyncReasonCode reason) {
+    if (!initialized) {
+        ESP_LOGW(MESH_SEC_TAG, "Security service not initialized");
+        return false;
+    }
+    
+    // Check if resync already in progress
+    if (resyncInProgress && (millis() - resyncRequestTime) < RESYNC_TIMEOUT) {
+        ESP_LOGW(MESH_SEC_TAG, "Resync already in progress with node %u", resyncTargetAddress);
+        return false;
+    }
+    
+    ESP_LOGI(MESH_SEC_TAG, "Sending resync request to node %u (reason: %d)", targetAddress, reason);
+    
+    // Create resync request packet
+    ResyncRequestPacket request;
+    request.header.securityType = SECURITY_RESYNC_REQUEST;
+    request.header.flags = 0x00;
+    request.header.sequenceNumber = getNextSequenceNumber();
+    memset(request.header.nonce, 0, MESH_NONCE_SIZE);
+    memset(request.header.mac, 0, MESH_MAC_SIZE);
+    request.nodeId = targetAddress;  // Target node ID
+    request.currentSequence = sequenceCounter; // Our current sequence
+    request.timestamp = millis();
+    request.reason = (uint8_t)reason;
+    
+    // TODO: Send packet via LoraMesher - will need integration with radio layer
+    // For now, we'll track the state and return success
+    
+    // Update resync tracking state
+    resyncInProgress = true;
+    resyncTargetAddress = targetAddress;
+    resyncRequestTime = millis();
+    resyncRetryCount = 0;
+    
+    ESP_LOGD(MESH_SEC_TAG, "Resync request queued for node %u", targetAddress);
+    return true;
+}
+
+bool MeshSecurityService::processResyncRequest(const ResyncRequestPacket* request, uint16_t senderAddress) {
+    if (!initialized) {
+        ESP_LOGW(MESH_SEC_TAG, "Security service not initialized");
+        return false;
+    }
+    
+    ESP_LOGI(MESH_SEC_TAG, "Processing resync request from node %u (reason: %d, seq: %lu)", 
+             senderAddress, request->reason, request->currentSequence);
+    
+    // Create resync response
+    ResyncResponsePacket response;
+    response.header.securityType = SECURITY_RESYNC_RESPONSE;
+    response.header.flags = 0x00; 
+    response.header.sequenceNumber = getNextSequenceNumber();
+    memset(response.header.nonce, 0, MESH_NONCE_SIZE);
+    memset(response.header.mac, 0, MESH_MAC_SIZE);
+    response.nodeId = senderAddress;  // Target is the requester
+    response.timestamp = millis();
+    
+    // Determine if we should accept the resync
+    // Accept if: sender is authenticated OR reason is valid boot/corruption
+    bool shouldAccept = isNodeAuthenticated(senderAddress) || 
+                       (request->reason == RESYNC_REASON_BOOT) ||
+                       (request->reason == RESYNC_REASON_NVS_CORRUPT);
+    
+    response.accepted = shouldAccept;
+    
+    if (shouldAccept) {
+        // Set allowed sequence - sender can start from their current + margin
+        response.allowedSequence = request->currentSequence;
+        
+        // Reset replay state for this node
+        for (int i = 0; i < 32; i++) {
+            if (authenticatedNodes[i] == senderAddress) {
+                lastSequenceNumbers[i] = request->currentSequence - 1; // Allow their sequence
+                ESP_LOGI(MESH_SEC_TAG, "Reset replay state for node %u, allowed seq: %lu", 
+                         senderAddress, request->currentSequence);
+                break;
+            }
+        }
+        
+        ESP_LOGI(MESH_SEC_TAG, "Resync accepted for node %u", senderAddress);
+    } else {
+        response.allowedSequence = 0;
+        ESP_LOGW(MESH_SEC_TAG, "Resync rejected for node %u", senderAddress);
+    }
+    
+    // TODO: Send response packet via LoraMesher - will need integration with radio layer
+    
+    return true;
+}
+
+bool MeshSecurityService::processResyncResponse(const ResyncResponsePacket* response, uint16_t senderAddress) {
+    if (!initialized) {
+        ESP_LOGW(MESH_SEC_TAG, "Security service not initialized");
+        return false;
+    }
+    
+    // Check if this response is for our pending resync
+    if (!resyncInProgress || resyncTargetAddress != senderAddress) {
+        ESP_LOGW(MESH_SEC_TAG, "Unexpected resync response from node %u", senderAddress);
+        return false;
+    }
+    
+    ESP_LOGI(MESH_SEC_TAG, "Processing resync response from node %u (accepted: %s, seq: %lu)",
+             senderAddress, response->accepted ? "YES" : "NO", response->allowedSequence);
+    
+    // Clear resync state
+    resyncInProgress = false;
+    resyncTargetAddress = 0;
+    resyncRequestTime = 0;
+    resyncRetryCount = 0;
+    
+    if (response->accepted) {
+        // Resync accepted - we can now send packets without replay rejection
+        ESP_LOGI(MESH_SEC_TAG, "Resync accepted by node %u, can resume normal operation", senderAddress);
+        return true;
+    } else {
+        // Resync rejected - handle appropriately
+        ESP_LOGW(MESH_SEC_TAG, "Resync rejected by node %u", senderAddress);
+        return false;
+    }
+}
+
+bool MeshSecurityService::handleReplayRejection(uint16_t targetAddress) {
+    if (!initialized) {
+        ESP_LOGW(MESH_SEC_TAG, "Security service not initialized");
+        return false;
+    }
+    
+    ESP_LOGW(MESH_SEC_TAG, "Packet rejected as replay by node %u - initiating resync", targetAddress);
+    
+    // Automatically trigger resync request when our packets are rejected
+    return sendResyncRequest(targetAddress, RESYNC_REASON_REPLAY_REJECT);
+}

@@ -11,6 +11,8 @@ static const char* NETKEY_TAG = "NetkeyDistribution";
 void (*NetkeyDistributionService::netkeyUpdateCallback)(const uint8_t* newKey, uint8_t version) = nullptr;
 uint8_t NetkeyDistributionService::currentKeyVersion = 1;
 uint32_t NetkeyDistributionService::lastUpdateTimestamp = 0;
+uint16_t NetkeyDistributionService::localNetworkId = 0;
+bool NetkeyDistributionService::hasNetworkId = false;
 
 void NetkeyDistributionService::initialize() {
     ESP_LOGI(NETKEY_TAG, "Netkey Distribution Service initialized");
@@ -251,11 +253,16 @@ bool NetkeyDistributionService::updateLocalNetworkKey(const uint8_t* networkKey,
              networkKey[0], networkKey[1], networkKey[2], networkKey[3],
              networkKey[4], networkKey[5], networkKey[6], networkKey[7]);
     
-    // Update version tracking
+    // Update version and Network ID tracking
     currentKeyVersion = keyVersion;
     lastUpdateTimestamp = millis();
+    localNetworkId = networkId;
+    hasNetworkId = true;
     
-    ESP_LOGI(NETKEY_TAG, "Local network key updated successfully");
+    ESP_LOGI(NETKEY_TAG, "Local network key updated successfully with Network ID: 0x%04X", networkId);
+
+    // Reset replay protection state since keys/counters may have been out of sync
+    MeshSecurityService::resetReplayState();
     return true;
 }
 

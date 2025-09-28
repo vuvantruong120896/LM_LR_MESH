@@ -1,6 +1,7 @@
 #include "node_app.h"
 #include "mesh_security_config.h"
 #include "components/lora_mesh_manager/src/services/ProvisioningService.h"
+#include "components/lora_mesh_manager/src/services/NetkeyDistributionService.h"
 
 #define LM_TAG "NodeApp"
 
@@ -220,9 +221,8 @@ void NodeApp::onNetkeyUpdated(const uint8_t* newKey, uint8_t version) {
     const MeshSecurityConfig& secConfig = MeshSecurityService::getConfig();
     memcpy(cfg.authToken, secConfig.authToken, sizeof(cfg.authToken));
     
-    // Network ID is not available in callback - will be set to 0 for now
-    // This is acceptable as the key is the primary credential
-    cfg.networkId = 0; // TODO: This could be enhanced if callback provides more info
+    // Get Network ID from NetkeyDistributionService 
+    cfg.networkId = NetkeyDistributionService::getLocalNetworkId();
     
     // Save network config to NVS
     if (NVSStorageService::saveNetworkConfig(cfg)) {

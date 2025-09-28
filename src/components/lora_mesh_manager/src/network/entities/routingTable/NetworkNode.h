@@ -26,10 +26,18 @@ public:
      *
      */
     uint8_t role = 0;
+    
+    /**
+     * @brief Network ID of the Node (0 = unknown/any)
+     *
+     */
+    uint16_t networkId = 0;
 
     NetworkNode() {};
 
-    NetworkNode(uint16_t address_, uint8_t metric_, uint8_t role_): address(address_), metric(metric_), role(role_) {};
+    NetworkNode(uint16_t address_, uint8_t metric_, uint8_t role_): address(address_), metric(metric_), role(role_), networkId(0) {};
+    
+    NetworkNode(uint16_t address_, uint8_t metric_, uint8_t role_, uint16_t networkId_): address(address_), metric(metric_), role(role_), networkId(networkId_) {};
 };
 
 #pragma pack()

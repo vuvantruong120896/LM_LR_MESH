@@ -13,6 +13,12 @@ public:
      *
      */
     uint8_t nodeRole = 0;
+    
+    /**
+     * @brief Network ID of the sender (0 = unknown/any)
+     *
+     */
+    uint16_t networkId = 0;
 
     /**
      * @brief Network nodes

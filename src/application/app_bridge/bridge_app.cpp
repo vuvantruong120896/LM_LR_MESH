@@ -155,6 +155,10 @@ void BridgeApp::setupLoRaMesher() {
     config.module = LORA_MODULE;
 
     radio.begin(config);
+    
+    // Set Bridge as Gateway so nodes can discover it via getClosestGateway()
+    radio.addGatewayRole();
+    ESP_LOGI(TAG, "Bridge configured as Gateway role");
 
     TaskHandle_t receiveHandle = createBridgeReceiveTask();
     if (receiveHandle) {

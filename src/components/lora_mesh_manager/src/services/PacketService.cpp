@@ -1,4 +1,5 @@
 #include "PacketService.h"
+#include "NetkeyDistributionService.h"
 #ifdef ENABLE_MESH_SECURITY
 #include "../../include/secure_packet.h"
 #endif
@@ -125,6 +126,9 @@ RoutePacket* PacketService::createRoutingPacket(uint16_t localAddress, NetworkNo
     routePacket->type = HELLO_P;
     routePacket->packetSize = routingSizeInBytes + sizeof(RoutePacket);
     routePacket->nodeRole = nodeRole;
+    
+    // Include Bridge's Network ID in Hello packets if available
+    routePacket->networkId = NetkeyDistributionService::getLocalNetworkId();
 
     return routePacket;
 }

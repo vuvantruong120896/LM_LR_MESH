@@ -742,6 +742,22 @@ void LoraMesher::processPackets() {
                     processDataPacket(dataPacketQueue);
 #endif
                 }
+                // Layer 2: Handle RESYNC security packets
+                // Security packets are detected by examining packet content rather than type
+                else if (isSecurityResyncPacket(rx->packet)) {
+                    ESP_LOGI(LM_TAG, "Security resync packet received from 0x%04X", rx->packet->src);
+                    
+                    // Process security resync packet 
+                    bool handled = processSecurityResyncPacket((uint8_t*)rx->packet, rx->packet->packetSize, rx->packet->src);
+                    
+                    if (handled) {
+                        ESP_LOGI(LM_TAG, "Security resync packet processed successfully");
+                    } else {
+                        ESP_LOGW(LM_TAG, "Failed to process security resync packet");
+                    }
+                    
+                    PacketQueueService::deleteQueuePacketAndPacket(rx);
+                }
                 else if (NetkeyDistributionService::isNetkeyPacket(type)) {
                     ESP_LOGI(LM_TAG, "Netkey packet received from 0x%04X", rx->packet->src);
                     
@@ -1718,6 +1734,71 @@ bool LoraMesher::ensureRouteToTarget(uint16_t targetAddress) {
     ESP_LOGW(LM_TAG, "No route to 0x%04X in routing table - waiting for HELLO packets", targetAddress);
     return false;
 }
+
+#ifdef ENABLE_MESH_SECURITY
+bool LoraMesher::isSecurityResyncPacket(uint8_t type) {
+    // Security resync packets are detected by examining raw packet content
+    // We need to check the packet structure more carefully
+    return false; // TODO: Implement proper detection logic
+}
+
+bool LoraMesher::isSecurityResyncPacket(Packet<uint8_t>* packet) {
+    if (!packet || packet->packetSize < sizeof(SecurityPacketHeader)) {
+        return false;
+    }
+    
+    // Try to cast to security packet header and check type
+    const SecurityPacketHeader* secHeader = (const SecurityPacketHeader*)((uint8_t*)packet + sizeof(PacketHeader));
+    
+    return (secHeader->securityType == SECURITY_RESYNC_REQUEST || 
+            secHeader->securityType == SECURITY_RESYNC_RESPONSE);
+}
+
+bool LoraMesher::processSecurityResyncPacket(const uint8_t* packet, size_t packetSize, uint16_t senderAddress) {
+    if (!packet || packetSize < sizeof(SecurityPacketHeader)) {
+        ESP_LOGW(LM_TAG, "Invalid security packet parameters");
+        return false;
+    }
+    
+    // Cast to security packet header to check type
+    const SecurityPacketHeader* secHeader = (const SecurityPacketHeader*)packet;
+    
+    ESP_LOGI(LM_TAG, "Processing security packet type 0x%02X from 0x%04X", 
+             secHeader->securityType, senderAddress);
+    
+    switch (secHeader->securityType) {
+        case SECURITY_RESYNC_REQUEST: {
+            if (packetSize < sizeof(ResyncRequestPacket)) {
+                ESP_LOGW(LM_TAG, "RESYNC_REQUEST packet too small");
+                return false;
+            }
+            
+            const ResyncRequestPacket* request = (const ResyncRequestPacket*)packet;
+            ESP_LOGI(LM_TAG, "Processing RESYNC_REQUEST from 0x%04X (reason: %d, seq: %lu)", 
+                     senderAddress, request->reason, request->currentSequence);
+            
+            return MeshSecurityService::processResyncRequest(request, senderAddress);
+        }
+        
+        case SECURITY_RESYNC_RESPONSE: {
+            if (packetSize < sizeof(ResyncResponsePacket)) {
+                ESP_LOGW(LM_TAG, "RESYNC_RESPONSE packet too small");
+                return false;
+            }
+            
+            const ResyncResponsePacket* response = (const ResyncResponsePacket*)packet;
+            ESP_LOGI(LM_TAG, "Processing RESYNC_RESPONSE from 0x%04X (accepted: %s, seq: %lu)", 
+                     senderAddress, response->accepted ? "YES" : "NO", response->allowedSequence);
+            
+            return MeshSecurityService::processResyncResponse(response, senderAddress);
+        }
+        
+        default:
+            ESP_LOGW(LM_TAG, "Unknown security packet type: 0x%02X", secHeader->securityType);
+            return false;
+    }
+}
+#endif
 
 /**
  * End Large and Reliable payloads
