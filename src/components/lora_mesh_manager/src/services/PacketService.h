@@ -273,6 +273,33 @@ public:
     static bool isXLPacket(uint8_t type);
 
     /**
+     * @brief Given a type returns if is a Route Request packet
+     *
+     * @param type type of the packet
+     * @return true True if it's an RREQ packet
+     * @return false If not
+     */
+    static bool isRouteRequestPacket(uint8_t type);
+
+    /**
+     * @brief Given a type returns if is a Route Reply packet
+     *
+     * @param type type of the packet
+     * @return true True if it's an RREP packet
+     * @return false If not
+     */
+    static bool isRouteReplyPacket(uint8_t type);
+
+    /**
+     * @brief Given a type returns if is a Route Discovery packet (RREQ or RREP)
+     *
+     * @param type type of the packet
+     * @return true True if it's a route discovery packet
+     * @return false If not
+     */
+    static bool isRouteDiscoveryPacket(uint8_t type);
+
+    /**
      * @brief Given a type returns if is a Data Control Packet, It will include HELLO_P, ACKs, LOST_P and SYN_P
      *
      * @param type type of the packet

@@ -49,9 +49,9 @@ struct MeshSecurityConfig {
         enableReplayProtection(true),
         keyRotationInterval(3600),  // 1 hour
         securityLevel(2) {
-        // Generate default network key and auth token
-        esp_fill_random(networkKey, MESH_NETKEY_SIZE);
-        esp_fill_random(authToken, MESH_AUTH_TOKEN_SIZE);
+        // Initialize with zero - keys will be set explicitly by initializeMeshSecurity()
+        memset(networkKey, 0, MESH_NETKEY_SIZE);
+        memset(authToken, 0, MESH_AUTH_TOKEN_SIZE);
     }
 };
 
@@ -127,6 +127,9 @@ public:
     
     // Get current security configuration
     static const MeshSecurityConfig& getConfig();
+    
+    // Update security configuration (for key rotation)
+    static bool updateConfig(const MeshSecurityConfig& newConfig);
 
 private:
     static MeshSecurityConfig config;

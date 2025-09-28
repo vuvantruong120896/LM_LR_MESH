@@ -340,6 +340,26 @@ const MeshSecurityConfig& MeshSecurityService::getConfig() {
     return config;
 }
 
+bool MeshSecurityService::updateConfig(const MeshSecurityConfig& newConfig) {
+    ESP_LOGI(MESH_SEC_TAG, "Updating security configuration");
+    
+    // Update the configuration
+    config = newConfig;
+    
+    // Re-initialize AES context with new key
+    mbedtls_aes_free(&aes_ctx);
+    mbedtls_aes_init(&aes_ctx);
+    
+    int ret = mbedtls_aes_setkey_enc(&aes_ctx, config.networkKey, MESH_NETKEY_SIZE * 8);
+    if (ret != 0) {
+        ESP_LOGE(MESH_SEC_TAG, "Failed to set new AES encryption key: %d", ret);
+        return false;
+    }
+    
+    ESP_LOGI(MESH_SEC_TAG, "Security configuration updated successfully");
+    return true;
+}
+
 bool MeshSecurityService::isNodeAuthenticated(uint16_t nodeId) {
     if (!config.enableAuthentication) {
         return true; // Authentication disabled

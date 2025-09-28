@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include "../common/mesh_utils.h"
+#include "components/lora_mesh_manager/src/services/ProvisioningProtocol.h"
 
 // UART packet types
 enum UartPacketType : uint8_t {
@@ -19,13 +20,17 @@ enum UartCommand : uint8_t {
     UART_CMD_GET_STATUS = 0x10,     // Request bridge status
     UART_CMD_GET_NODES = 0x11,      // Request connected nodes list
     UART_CMD_RESET = 0x12,          // Reset bridge
-    UART_CMD_SET_CONFIG = 0x13      // Update configuration
+    UART_CMD_SET_CONFIG = 0x13,     // Update configuration
+    UART_CMD_SET_NETKEY = 0x14,     // Set network key for mesh
+    UART_CMD_START_PROVISIONING = 0x15,  // Start provisioning mode
+    UART_CMD_STOP_PROVISIONING = 0x16,   // Stop provisioning mode
+    UART_CMD_GET_PROVISIONING_STATUS = 0x17  // Get provisioning status
 };
 
 // UART packet structure
 #pragma pack(1)
 struct UartPacket {
-    uint8_t startByte;              // 0xAA
+    uint8_t startBytes[2];          // 0x4C, 0x4D
     uint8_t packetType;             // UartPacketType
     uint8_t payloadLength;          // Length of payload (0-200)
     uint8_t sequenceNumber;         // Sequence number for ordering
@@ -35,7 +40,8 @@ struct UartPacket {
 };
 #pragma pack()
 
-// Bridge status structure for UART
+// Bridge status structure for UART (packed for on-wire layout)
+#pragma pack(1)
 struct UartBridgeStatus {
     uint16_t bridgeId;
     uint32_t uptime;                // Seconds since boot
@@ -48,7 +54,7 @@ struct UartBridgeStatus {
     uint8_t meshHealth;            // 0-100% mesh network health
 };
 
-// Node information structure
+// Node information structure (packed for on-wire layout)
 struct UartNodeInfo {
     uint16_t nodeId;
     uint8_t hopCount;              // Hops to reach this node
@@ -56,6 +62,36 @@ struct UartNodeInfo {
     uint32_t lastSeen;             // Timestamp of last packet
     uint8_t nodeType;              // Node role/type
 };
+
+// Network key structure for UART (packed for on-wire layout)
+struct UartNetworkKey {
+    uint8_t networkKey[16];        // 128-bit network key
+    uint8_t authToken[8];          // Authentication token
+    uint16_t networkId;            // Network identifier
+    uint8_t keyVersion;            // Key version for rotation
+    uint32_t timestamp;            // Key generation timestamp
+};
+
+// Provisioning control structure (packed for on-wire layout)
+struct UartProvisioningControl {
+    uint8_t action;                // 0=stop, 1=start, 2=get_status
+    uint32_t durationMs;           // Duration in milliseconds (0=indefinite)
+    uint8_t maxSessions;           // Max concurrent sessions
+    uint8_t authMethod;            // Authentication method
+};
+
+
+// Provisioning status response (packed for on-wire layout)
+struct UartProvisioningStatus {
+    bool active;                   // Provisioning mode active
+    uint32_t remainingTimeMs;      // Remaining time (0=indefinite)
+    uint8_t activeSessions;        // Current active sessions
+    uint8_t maxSessions;           // Maximum sessions allowed
+    uint16_t totalRequests;        // Total provisioning requests
+    uint16_t successfulProvisions; // Successful provisions
+    uint16_t rejectedRequests;     // Rejected requests
+};
+#pragma pack()
 
 // UART communication class
 class UartProtocol {
@@ -68,6 +104,10 @@ private:
     // Helper functions
     uint8_t calculateChecksum(const UartPacket* packet);
     bool validatePacket(const UartPacket* packet);
+    // Calculate checksum from fields without requiring a full UartPacket
+    uint8_t calculateChecksumFields(uint8_t packetType, uint8_t payloadLength, uint8_t sequenceNumber, const uint8_t* payload);
+    // Send a raw packet by streaming header/payload/checksum/end to UART (avoids 200-byte stack allocation)
+    bool sendRawPacket(uint8_t packetType, const uint8_t* payload, uint8_t payloadLength);
     
 public:
     UartProtocol(HardwareSerial* serialPort);
@@ -81,15 +121,27 @@ public:
     bool sendHeartbeat();
     bool sendAck(uint8_t sequenceNum);
     bool sendError(uint8_t errorCode);
+    bool sendNetkeyUpdateConfirm(bool success);
     
     // Receive functions
     bool receivePacket(UartPacket& packet);
     void processReceivedPacket(const UartPacket& packet);
     
+    // Network key handling
+    void setNetkeyCallback(void (*callback)(const UartNetworkKey& netkey));
+    
+    // Provisioning control handling
+    void setProvisioningCallback(void (*callback)(const UartProvisioningControl& control));
+    bool sendProvisioningStatus(const UartProvisioningStatus& status);
+    
     // Utility functions
     void update();  // Call in main loop to handle incoming data
     void flush();   // Clear buffers
     bool isConnected(); // Check if external ESP32 is responding
+    
+private:
+    void (*netkeyCallback)(const UartNetworkKey& netkey) = nullptr;
+    void (*provisioningCallback)(const UartProvisioningControl& control) = nullptr;
 };
 
 #endif // _UART_PROTOCOL_H

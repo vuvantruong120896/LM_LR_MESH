@@ -12,8 +12,16 @@ bool initializeMeshSecurity() {
     uint8_t networkKey[] = MESH_NETWORK_KEY;
     uint8_t authToken[] = MESH_AUTH_TOKEN;
     
+    // Explicitly set the keys (overwrites any constructor defaults)
     memcpy(config.networkKey, networkKey, MESH_NETKEY_SIZE);
     memcpy(config.authToken, authToken, MESH_AUTH_TOKEN_SIZE);
+    
+    // Log keys being set for verification
+    ESP_LOGI(MESH_INIT_TAG, "Setting Network Key: %02X%02X%02X%02X%02X%02X%02X%02X...",
+             networkKey[0], networkKey[1], networkKey[2], networkKey[3],
+             networkKey[4], networkKey[5], networkKey[6], networkKey[7]);
+    ESP_LOGI(MESH_INIT_TAG, "Setting Auth Token: %02X%02X%02X%02X...",
+             authToken[0], authToken[1], authToken[2], authToken[3]);
     
     // Configure security based on build settings
     #if ENABLE_MESH_SECURITY
@@ -102,6 +110,9 @@ void logSecurityStatus() {
         ESP_LOGI(MESH_INIT_TAG, "Network Key: %02X%02X%02X%02X...", 
                  config.networkKey[0], config.networkKey[1], 
                  config.networkKey[2], config.networkKey[3]);
+        ESP_LOGI(MESH_INIT_TAG, "Auth Token: %02X%02X%02X%02X...", 
+                 config.authToken[0], config.authToken[1], 
+                 config.authToken[2], config.authToken[3]);
     } else {
         ESP_LOGW(MESH_INIT_TAG, "=== Mesh Security DISABLED ===");
         ESP_LOGW(MESH_INIT_TAG, "WARNING: Network traffic is NOT encrypted!");

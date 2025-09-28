@@ -53,8 +53,10 @@ SecureDataPacket* SecurePacketService::wrapPacket(const DataPacket* originalPack
         securePacket->header.securityHeader.flags |= SEC_FLAG_AUTHENTICATED;
     }
     
-    // Update packet type to secure version
+    // Update packet type to secure version and set all header fields before MAC calculation
     securePacket->header.originalHeader.type = makeSecureType(originalPacket->type);
+    securePacket->header.originalHeader.packetSize = secureSize;  // Set size early
+    // Keep original packet ID unchanged for secure packets
     
     // Copy and process payload
     const uint8_t* originalPayload = originalPacket->payload;
@@ -80,9 +82,6 @@ SecureDataPacket* SecurePacketService::wrapPacket(const DataPacket* originalPack
             return nullptr;
         }
     }
-    
-    // Update packet size
-    securePacket->header.originalHeader.packetSize = secureSize;
     
     ESP_LOGD(SECURE_PKT_TAG, "Packet wrapped - Original: %zu bytes, Secure: %zu bytes, Level: %d",
              originalSize, secureSize, securityLevel);
@@ -110,12 +109,19 @@ DataPacket* SecurePacketService::unwrapPacket(const SecureDataPacket* securePack
     size_t headerSize = sizeof(PacketHeader) + sizeof(uint16_t); // PacketHeader + via field from RouteDataPacket
     *originalSize = headerSize + payloadSize;
     
-    // Allocate original packet
-    DataPacket* originalPacket = (DataPacket*)pvPortMalloc(*originalSize);
+    ESP_LOGV(SECURE_PKT_TAG, "Allocating original packet: header=%zu, payload=%zu, total=%zu", 
+             headerSize, payloadSize, *originalSize);
+    
+    // Allocate original packet with extra safety margin
+    size_t allocSize = *originalSize + 16; // Extra 16 bytes for safety
+    DataPacket* originalPacket = (DataPacket*)pvPortMalloc(allocSize);
     if (!originalPacket) {
-        ESP_LOGE(SECURE_PKT_TAG, "Failed to allocate original packet");
+        ESP_LOGE(SECURE_PKT_TAG, "Failed to allocate original packet (%zu bytes)", allocSize);
         return nullptr;
     }
+    
+    // Clear the entire allocated memory
+    memset(originalPacket, 0, allocSize);
     
     // Restore original header  
     copyPacketHeader(&securePacket->header.originalHeader, originalPacket);
@@ -124,8 +130,22 @@ DataPacket* SecurePacketService::unwrapPacket(const SecureDataPacket* securePack
     
     // Verify authentication if enabled
     if (IS_PACKET_AUTHENTICATED(securityLevel)) {
-        if (verifyPacketAuthentication(securePacket, securePacket->header.originalHeader.packetSize) != MESH_SEC_OK) {
-            ESP_LOGW(SECURE_PKT_TAG, "Packet authentication failed");
+        MeshSecurityResult authResult = verifyPacketAuthentication(securePacket, securePacket->header.originalHeader.packetSize);
+        if (authResult != MESH_SEC_OK) {
+            ESP_LOGW(SECURE_PKT_TAG, "Packet authentication failed - Error code: %d", authResult);
+            ESP_LOGW(SECURE_PKT_TAG, "Packet details - Src: 0x%04X, Dst: 0x%04X, Seq: %lu, Size: %d",
+                     securePacket->header.originalHeader.src,
+                     securePacket->header.originalHeader.dst,
+                     securePacket->header.securityHeader.sequenceNumber,
+                     securePacket->header.originalHeader.packetSize);
+            
+            // Log MAC for debugging
+            ESP_LOGW(SECURE_PKT_TAG, "Received MAC: %02X%02X%02X%02X",
+                     securePacket->header.securityHeader.mac[0],
+                     securePacket->header.securityHeader.mac[1],
+                     securePacket->header.securityHeader.mac[2],
+                     securePacket->header.securityHeader.mac[3]);
+            
             vPortFree(originalPacket);
             return nullptr;
         }
@@ -144,19 +164,32 @@ DataPacket* SecurePacketService::unwrapPacket(const SecureDataPacket* securePack
     
     // Decrypt payload if needed
     if (IS_PACKET_ENCRYPTED(securityLevel)) {
-        size_t decryptedSize = payloadSize;
+        // Calculate encrypted payload size (with AES padding)
+        size_t encryptedSize = getEncryptedSize(payloadSize);
+        size_t decryptedSize = encryptedSize; // Start with encrypted size for buffer
+        
+        ESP_LOGV(SECURE_PKT_TAG, "Decryption: payload=%zu, encrypted=%zu, buffer=%zu", 
+                 payloadSize, encryptedSize, decryptedSize);
+        
         if (decryptPacketPayload(securePacket, originalPacket->payload, &decryptedSize) != MESH_SEC_OK) {
             ESP_LOGW(SECURE_PKT_TAG, "Packet decryption failed");
             vPortFree(originalPacket);
             return nullptr;
         }
         
-        if (decryptedSize != payloadSize) {
-            ESP_LOGW(SECURE_PKT_TAG, "Decrypted size mismatch: expected %zu, got %zu", 
-                     payloadSize, decryptedSize);
+        // Validate decrypted size - should be <= original payload size
+        if (decryptedSize > payloadSize) {
+            ESP_LOGE(SECURE_PKT_TAG, "Decrypted size too large: %zu > %zu", decryptedSize, payloadSize);
             vPortFree(originalPacket);
             return nullptr;
         }
+        
+        // Update actual payload size to match decrypted size
+        *originalSize = sizeof(PacketHeader) + sizeof(uint16_t) + decryptedSize;
+        originalPacket->packetSize = *originalSize;
+        
+        ESP_LOGV(SECURE_PKT_TAG, "Decrypted size: %zu bytes, adjusted original size: %zu", 
+                 decryptedSize, *originalSize);
     } else {
         // Copy plaintext payload
         memcpy(originalPacket->payload, securePacket->payload, payloadSize);
@@ -206,30 +239,169 @@ MeshSecurityResult SecurePacketService::authenticatePacket(SecureDataPacket* pac
         return MESH_SEC_INVALID_KEY;
     }
     
-    // Generate MAC for entire packet except MAC field itself
-    const uint8_t* packetData = (const uint8_t*)packet;
-    size_t dataSize = totalSize - MESH_MAC_SIZE;
+    // CRITICAL: MAC must be calculated on data excluding MAC field itself
     
-    return MeshSecurityService::generateMAC(
-        packetData, dataSize,
+    // Find where MAC field is located in the packet structure
+    size_t macOffset = offsetof(SecureDataPacket, header) + 
+                       offsetof(SecurePacketHeader, securityHeader) + 
+                       offsetof(SecurityPacketHeader, mac);
+    
+    ESP_LOGV(SECURE_PKT_TAG, "Generating MAC - offset: %zu, total size: %zu", macOffset, totalSize);
+    
+    // Split data into two parts: before MAC and after MAC
+    const uint8_t* packetData = (const uint8_t*)packet;
+    size_t beforeMacSize = macOffset;
+    size_t afterMacSize = totalSize - macOffset - MESH_MAC_SIZE;
+    
+    // Log current network key being used (first 8 bytes for debugging)
+    const MeshSecurityConfig& config = MeshSecurityService::getConfig();
+    ESP_LOGD(SECURE_PKT_TAG, "Generating MAC with Network Key: %02X%02X%02X%02X%02X%02X%02X%02X...",
+             config.networkKey[0], config.networkKey[1], config.networkKey[2], config.networkKey[3],
+             config.networkKey[4], config.networkKey[5], config.networkKey[6], config.networkKey[7]);
+    
+    // Use a temporary buffer to concatenate data without MAC field
+    uint8_t* tempBuffer = (uint8_t*)malloc(totalSize - MESH_MAC_SIZE);
+    if (!tempBuffer) {
+        ESP_LOGE(SECURE_PKT_TAG, "Failed to allocate temporary buffer for MAC generation");
+        return MESH_SEC_INVALID_KEY;
+    }
+    
+    // Copy data before MAC field
+    memcpy(tempBuffer, packetData, beforeMacSize);
+    
+    // Copy data after MAC field (if any)
+    if (afterMacSize > 0) {
+        memcpy(tempBuffer + beforeMacSize, packetData + macOffset + MESH_MAC_SIZE, afterMacSize);
+    }
+    
+    size_t dataForMacSize = beforeMacSize + afterMacSize;
+    
+    ESP_LOGD(SECURE_PKT_TAG, "MAC generation data: %zu bytes", dataForMacSize);
+    ESP_LOGD(SECURE_PKT_TAG, "MAC gen data (first 16 bytes): %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X",
+             tempBuffer[0], tempBuffer[1], tempBuffer[2], tempBuffer[3],
+             tempBuffer[4], tempBuffer[5], tempBuffer[6], tempBuffer[7],
+             tempBuffer[8], tempBuffer[9], tempBuffer[10], tempBuffer[11],
+             tempBuffer[12], tempBuffer[13], tempBuffer[14], tempBuffer[15]);
+    
+    MeshSecurityResult result = MeshSecurityService::generateMAC(
+        tempBuffer, dataForMacSize,
         packet->header.securityHeader.mac,
-        MeshSecurityService::getConfig().networkKey);
+        config.networkKey);
+    
+    free(tempBuffer); // Always free the buffer
+    
+    if (result == MESH_SEC_OK) {
+        ESP_LOGD(SECURE_PKT_TAG, "Generated MAC: %02X%02X%02X%02X",
+                 packet->header.securityHeader.mac[0],
+                 packet->header.securityHeader.mac[1],
+                 packet->header.securityHeader.mac[2],
+                 packet->header.securityHeader.mac[3]);
+    } else {
+        ESP_LOGE(SECURE_PKT_TAG, "Failed to generate MAC: %d", result);
+    }
+    
+    return result;
 }
 
 MeshSecurityResult SecurePacketService::verifyPacketAuthentication(const SecureDataPacket* packet,
                                                                  size_t totalSize) {
     if (!packet || totalSize == 0) {
+        ESP_LOGE(SECURE_PKT_TAG, "verifyPacketAuthentication: Invalid parameters");
         return MESH_SEC_INVALID_KEY;
     }
     
-    // Verify MAC for entire packet except MAC field itself
-    const uint8_t* packetData = (const uint8_t*)packet;
-    size_t dataSize = totalSize - MESH_MAC_SIZE;
+    // CRITICAL: MAC must be calculated on the EXACT same data as when generated
+    // The MAC field itself should be excluded from calculation
     
-    return MeshSecurityService::verifyMAC(
-        packetData, dataSize,
+    // Find where MAC field is located in the packet structure
+    size_t macOffset = offsetof(SecureDataPacket, header) + 
+                       offsetof(SecurePacketHeader, securityHeader) + 
+                       offsetof(SecurityPacketHeader, mac);
+    
+    ESP_LOGV(SECURE_PKT_TAG, "MAC offset: %zu, Total size: %zu", macOffset, totalSize);
+    
+    // Split data into two parts: before MAC and after MAC
+    const uint8_t* packetData = (const uint8_t*)packet;
+    size_t beforeMacSize = macOffset;
+    size_t afterMacSize = totalSize - macOffset - MESH_MAC_SIZE;
+    
+    ESP_LOGV(SECURE_PKT_TAG, "Before MAC: %zu bytes, After MAC: %zu bytes", beforeMacSize, afterMacSize);
+    
+    // Log current network key being used (first 8 bytes for debugging)
+    const MeshSecurityConfig& config = MeshSecurityService::getConfig();
+    ESP_LOGD(SECURE_PKT_TAG, "Using Network Key: %02X%02X%02X%02X%02X%02X%02X%02X...",
+             config.networkKey[0], config.networkKey[1], config.networkKey[2], config.networkKey[3],
+             config.networkKey[4], config.networkKey[5], config.networkKey[6], config.networkKey[7]);
+    
+    // Log packet structure for debugging
+    ESP_LOGD(SECURE_PKT_TAG, "Packet header (first 16 bytes): %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X",
+             packetData[0], packetData[1], packetData[2], packetData[3],
+             packetData[4], packetData[5], packetData[6], packetData[7],
+             packetData[8], packetData[9], packetData[10], packetData[11],
+             packetData[12], packetData[13], packetData[14], packetData[15]);
+    
+    // Generate MAC using HMAC over data excluding MAC field
+    uint8_t expectedMac[MESH_MAC_SIZE];
+    
+    // Use a temporary buffer to concatenate data without MAC field
+    uint8_t* tempBuffer = (uint8_t*)malloc(totalSize - MESH_MAC_SIZE);
+    if (!tempBuffer) {
+        ESP_LOGE(SECURE_PKT_TAG, "Failed to allocate temporary buffer");
+        return MESH_SEC_INVALID_KEY;
+    }
+    
+    // Copy data before MAC field
+    memcpy(tempBuffer, packetData, beforeMacSize);
+    
+    // Copy data after MAC field (if any)
+    if (afterMacSize > 0) {
+        memcpy(tempBuffer + beforeMacSize, packetData + macOffset + MESH_MAC_SIZE, afterMacSize);
+    }
+    
+    size_t dataForMacSize = beforeMacSize + afterMacSize;
+    
+    ESP_LOGD(SECURE_PKT_TAG, "Data for MAC calculation: %zu bytes", dataForMacSize);
+    ESP_LOGD(SECURE_PKT_TAG, "MAC calc data (first 16 bytes): %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X",
+             tempBuffer[0], tempBuffer[1], tempBuffer[2], tempBuffer[3],
+             tempBuffer[4], tempBuffer[5], tempBuffer[6], tempBuffer[7],
+             tempBuffer[8], tempBuffer[9], tempBuffer[10], tempBuffer[11],
+             tempBuffer[12], tempBuffer[13], tempBuffer[14], tempBuffer[15]);
+    
+    MeshSecurityResult result = MeshSecurityService::generateMAC(
+        tempBuffer, dataForMacSize,
+        expectedMac,
+        config.networkKey);
+    
+    if (result != MESH_SEC_OK) {
+        ESP_LOGE(SECURE_PKT_TAG, "Failed to generate MAC for verification: %d", result);
+        free(tempBuffer);
+        return result;
+    }
+    
+    // Log MAC comparison for debugging
+    ESP_LOGD(SECURE_PKT_TAG, "Expected MAC: %02X%02X%02X%02X",
+             expectedMac[0], expectedMac[1], expectedMac[2], expectedMac[3]);
+    ESP_LOGD(SECURE_PKT_TAG, "Received MAC: %02X%02X%02X%02X",
+             packet->header.securityHeader.mac[0],
+             packet->header.securityHeader.mac[1],
+             packet->header.securityHeader.mac[2],
+             packet->header.securityHeader.mac[3]);
+    
+    // Verify MAC using constant-time comparison
+    result = MeshSecurityService::verifyMAC(
+        tempBuffer, dataForMacSize,
         packet->header.securityHeader.mac,
-        MeshSecurityService::getConfig().networkKey);
+        config.networkKey);
+    
+    free(tempBuffer);
+    
+    if (result != MESH_SEC_OK) {
+        ESP_LOGW(SECURE_PKT_TAG, "MAC verification failed: %d", result);
+    } else {
+        ESP_LOGV(SECURE_PKT_TAG, "MAC verification successful");
+    }
+    
+    return result;
 }
 
 bool SecurePacketService::validateSecurePacket(const SecureDataPacket* packet, size_t packetSize) {

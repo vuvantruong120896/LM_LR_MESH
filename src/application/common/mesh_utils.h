@@ -11,10 +11,12 @@ struct dataPacket {
 };
 
 struct sensorData {
+    uint32_t counter = 0;        // sequence counter for sensor samples
     float temperature = 0.0;
     float humidity = 0.0; 
     float battery = 0.0;
     uint32_t timestamp = 0;
+    uint16_t nodeId = 0;         // origin node id
 };
 
 struct bridgeStatus {

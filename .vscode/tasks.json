@@ -4,9 +4,19 @@
 		{
 			"label": "Build Legacy Env",
 			"type": "shell",
-			"command": "C:\\Users\\vuvan\\.platformio\\penv\\Scripts\\platformio.exe run -e esp32-c3-devkitm-1",
+			"command": "platformio",
+			"args": ["run", "-e", "esp32-c3-devkitm-1"],
 			"isBackground": false,
-			"group": "build"
+			"group": "build",
+			"problemMatcher": ["$platformio"],
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			}
 		}
 	]
 }

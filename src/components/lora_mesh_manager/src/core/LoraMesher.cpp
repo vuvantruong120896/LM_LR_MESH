@@ -1,4 +1,5 @@
 #include "LoraMesher.h"
+#include "../services/NetkeyDistributionService.h"
 
 #ifndef ARDUINO
 #include "EspHal.h"
@@ -542,7 +543,9 @@ void LoraMesher::sendPackets() {
             if (tx) {
                 ESP_LOGV(LM_TAG, "Send n. %d", sendCounter);
 
-                if (tx->packet->src == getLocalAddress())
+                // Set packet ID only for non-secure packets
+                // Secure packets should not have their headers modified after MAC calculation
+                if (tx->packet->src == getLocalAddress() && !SecurePacketService::isSecurePacket(tx->packet->type))
                     tx->packet->id = sendId++;
 
                 //If the packet has a data packet and its destination is not broadcast add the via to the packet and forward the packet
@@ -649,7 +652,7 @@ void LoraMesher::sendHelloPacket() {
             delete[] nodes;
 
         // Wait for HELLO_PACKETS_DELAY seconds to send the next hello packet
-        vTaskDelay(HELLO_PACKETS_DELAY * 1000 / portTICK_PERIOD_MS);
+        vTaskDelay(getCurrentHelloDelay() * 1000 / portTICK_PERIOD_MS);
     }
 }
 
@@ -730,6 +733,8 @@ void LoraMesher::processPackets() {
                         }
                     } else {
                         // Regular unencrypted packet
+                        // SIMPLIFIED: No complex provisioning payload detection
+                        // All provisioning is handled via netkey distribution
                         processDataPacket(dataPacketQueue);
                     }
 #else
@@ -737,6 +742,39 @@ void LoraMesher::processPackets() {
                     processDataPacket(dataPacketQueue);
 #endif
                 }
+                else if (NetkeyDistributionService::isNetkeyPacket(type)) {
+                    ESP_LOGI(LM_TAG, "Netkey packet received from 0x%04X", rx->packet->src);
+                    
+                    // Process netkey packet
+                    bool handled = NetkeyDistributionService::processNetkeyPacket(
+                        (uint8_t*)rx->packet,
+                        rx->packet->packetSize,
+                        rx->packet->src
+                    );
+                    
+                    if (handled) {
+                        ESP_LOGD(LM_TAG, "Netkey packet processed successfully");
+                    } else {
+                        ESP_LOGW(LM_TAG, "Failed to process netkey packet");
+                    }
+                    
+                    // Clean up packet
+                    PacketQueueService::deleteQueuePacketAndPacket(rx);
+                }
+                else if (PacketService::isRouteRequestPacket(type)) {
+                    // SIMPLIFIED: No longer using route discovery service
+                    // Bridge uses routing table directly from HELLO packets
+                    ESP_LOGD(LM_TAG, "Route request packet ignored - using HELLO-based routing only");
+                    PacketQueueService::deleteQueuePacketAndPacket(rx);
+                }
+                else if (PacketService::isRouteReplyPacket(type)) {
+                    // SIMPLIFIED: No longer using route discovery service  
+                    // Bridge uses routing table directly from HELLO packets
+                    ESP_LOGD(LM_TAG, "Route reply packet ignored - using HELLO-based routing only");
+                    PacketQueueService::deleteQueuePacketAndPacket(rx);
+                }
+                // SIMPLIFIED: No provisioning packet handling
+                // All provisioning replaced by direct netkey distribution
                 else {
                     ESP_LOGV(LM_TAG, "Packet not identified, deleting it");
                     incReceivedNotForMe();
@@ -758,7 +796,9 @@ void LoraMesher::routingTableManager() {
 
         // TODO: If the routing table removes a node, remove the nodes from the Q_WSP and Q_WRP
         RoutingTableService::manageTimeoutRoutingTable();
-
+        
+        // SIMPLIFIED: No longer using route discovery service, routing is purely HELLO-based
+        
         // Record the state for the simulation
         recordState(LM_StateType::STATE_TYPE_MANAGER);
 
@@ -1627,6 +1667,56 @@ uint8_t LoraMesher::getSequenceId() {
     sequence_id++;
 
     return seqId;
+}
+
+// Provisioning mode methods
+void LoraMesher::enableProvisioningMode(uint32_t durationMs) {
+    provisioningModeActive = true;
+    if (durationMs > 0) {
+        provisioningModeEndTime = millis() + durationMs;
+    } else {
+        provisioningModeEndTime = 0; // Indefinite
+    }
+    
+    ESP_LOGI(LM_TAG, "Provisioning mode enabled with %s duration", 
+             durationMs > 0 ? "finite" : "indefinite");
+}
+
+void LoraMesher::disableProvisioningMode() {
+    provisioningModeActive = false;
+    provisioningModeEndTime = 0;
+    ESP_LOGI(LM_TAG, "Provisioning mode disabled");
+}
+
+bool LoraMesher::isProvisioningModeActive() {
+    if (!provisioningModeActive) {
+        return false;
+    }
+    
+    // Check if timed provisioning mode has expired
+    if (provisioningModeEndTime > 0 && millis() > provisioningModeEndTime) {
+        disableProvisioningMode();
+        return false;
+    }
+    
+    return true;
+}
+
+uint16_t LoraMesher::getCurrentHelloDelay() {
+    // SIMPLIFIED: Always use normal HELLO delay
+    return normalHelloDelay;
+}
+
+bool LoraMesher::ensureRouteToTarget(uint16_t targetAddress) {
+    // SIMPLIFIED: Only check if route exists in routing table from HELLO packets
+    // No active route discovery - rely purely on HELLO-based routing
+    if (RoutingTableService::hasAddressRoutingTable(targetAddress)) {
+        ESP_LOGD(LM_TAG, "Route to 0x%04X exists in routing table", targetAddress);
+        return true;
+    }
+    
+    ESP_LOGW(LM_TAG, "No route to 0x%04X in routing table - waiting for HELLO packets", targetAddress);
+    return false;
 }
 
 /**

@@ -20,7 +20,10 @@ enum mesh_packet_type_t {
     HELLO_P = 0x01,
     DATA_P = 0x02,
     ROUTE_P = 0x03,
-    CONTROL_P = 0x04
+    CONTROL_P = 0x04,
+    RREQ_P = 0x05,    // Route Request (on-demand discovery)
+    RREP_P = 0x06,    // Route Reply
+    RERR_P = 0x07     // Route Error
 };
 
 // Priority levels

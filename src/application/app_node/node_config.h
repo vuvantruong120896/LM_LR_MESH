@@ -26,10 +26,16 @@
 #define AUTO_JOIN_NETWORK       true    // Automatically attempt to join secure network
 #define MAX_JOIN_ATTEMPTS       3       // Maximum join attempts before fallback
 
-// Network security keys (these should be configured per deployment)
-// WARNING: These are example keys - CHANGE THEM for production!
-#define MESH_NETWORK_KEY        {0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, \
-                                 0xab, 0xf7, 0x97, 0x75, 0x46, 0xcf, 0x26, 0xa8}
-#define MESH_AUTH_TOKEN         {0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0}
+// Network security keys - now centralized in mesh_security_keys.h
+// All nodes MUST use the same keys for authentication to work!
+// Keys are now defined in: src/components/lora_mesh_manager/include/mesh_security_keys.h
+// #define MESH_NETWORK_KEY and MESH_AUTH_TOKEN are handled by mesh_security_config.h
+
+// Provisioning configuration
+#define PROVISION_RETRY_INTERVAL_MS           30000   // 30 seconds between provision attempts
+#define PROVISION_TIMEOUT_MS                  10000   // 10 seconds timeout for provision response
+#define PROVISION_FAILURE_RETRY_INTERVAL_MS   120000  // 2 minutes wait after failure
+#define MAX_PROVISION_RETRIES                 5       // Maximum retry attempts before failure
+#define BROADCAST_ADDR                        0xFFFF  // Broadcast address
 
 #endif // _NODE_CONFIG_H

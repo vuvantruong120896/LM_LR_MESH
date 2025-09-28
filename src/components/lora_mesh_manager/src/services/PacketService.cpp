@@ -12,7 +12,7 @@ Packet<uint8_t>* PacketService::createEmptyPacket(size_t packetSize) {
 
     Packet<uint8_t>* p = static_cast<Packet<uint8_t>*>(pvPortMalloc(packetSize));
 
-    ESP_LOGI(LM_TAG, "Packet created with %d bytes", packetSize);
+    // ESP_LOGI(LM_TAG, "Packet created with %d bytes", packetSize);
 
     return p;
 
@@ -80,6 +80,18 @@ bool PacketService::isSyncPacket(uint8_t type) {
 
 bool PacketService::isXLPacket(uint8_t type) {
     return (type & XL_DATA_P) == XL_DATA_P;
+}
+
+bool PacketService::isRouteRequestPacket(uint8_t type) {
+    return type == RREQ_P;
+}
+
+bool PacketService::isRouteReplyPacket(uint8_t type) {
+    return type == RREP_P;
+}
+
+bool PacketService::isRouteDiscoveryPacket(uint8_t type) {
+    return isRouteRequestPacket(type) || isRouteReplyPacket(type);
 }
 
 bool PacketService::isDataControlPacket(uint8_t type) {

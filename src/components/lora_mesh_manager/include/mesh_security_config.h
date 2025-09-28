@@ -2,6 +2,7 @@
 #define _MESH_SECURITY_CONFIG_H
 
 #include "mesh_security.h"
+#include "mesh_security_keys.h"  // Include centralized keys
 
 // Include device-specific configurations
 #ifdef DEVICE_MODE
@@ -24,13 +25,13 @@ void logSecurityStatus();
 #define ENABLE_MESH_SECURITY false
 #endif
 
+// Use centralized keys instead of local definitions
 #ifndef MESH_NETWORK_KEY
-#define MESH_NETWORK_KEY {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, \
-                          0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}
+#define MESH_NETWORK_KEY MESH_MASTER_NETWORK_KEY
 #endif
 
 #ifndef MESH_AUTH_TOKEN
-#define MESH_AUTH_TOKEN {0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7}
+#define MESH_AUTH_TOKEN MESH_MASTER_AUTH_TOKEN
 #endif
 
 // Default security levels

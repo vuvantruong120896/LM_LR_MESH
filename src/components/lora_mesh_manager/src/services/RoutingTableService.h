@@ -125,8 +125,6 @@ public:
 	 */
 	static void manageTimeoutRoutingTable();
 
-private:
-
 	/**
 	 * @brief process the network node, adds the node in the routing table if can
 	 *
@@ -134,6 +132,8 @@ private:
 	 * @param node NetworkNode
 	 */
 	static void processRoute(uint16_t via, NetworkNode* node);
+
+private:
 
 	/**
 	 * @brief process the network node, adds the node in the routing table if can

@@ -259,6 +259,12 @@ public:
         if (payloadSize == 0)
             return;
 
+        // Skip route discovery for broadcast packets
+        if (dst != BROADCAST_ADDR) {
+            // Try to ensure route exists or initiate discovery
+            ensureRouteToTarget(dst);
+        }
+
         ESP_LOGV(LM_TAG, "Creating a packet for send with %d bytes", payloadSize);
 
         //Create a data packet with the payload
@@ -330,6 +336,36 @@ public:
     template <typename T>
     void sendReliable(uint16_t dst, T* payload, uint32_t payloadSize) {
         sendReliablePacket(dst, reinterpret_cast<uint8_t*>(payload), sizeof(T) * payloadSize);
+    }
+
+    /**
+     * @brief Send a raw packet (for special packet types like netkey updates)
+     * 
+     * @param packetData Raw packet data
+     * @param packetSize Size of packet data
+     * @return int 0 if successful, error code otherwise
+     */
+    int sendPacket(const uint8_t* packetData, size_t packetSize) {
+        if (!packetData || packetSize == 0 || packetSize > PacketFactory::getMaxPacketSize()) {
+            ESP_LOGE(LM_TAG, "Invalid packet parameters");
+            return -1;
+        }
+        
+        // Create a raw packet container
+        Packet<uint8_t>* packet = PacketService::createEmptyPacket(packetSize);
+        if (!packet) {
+            ESP_LOGE(LM_TAG, "Failed to create packet container");
+            return -2;
+        }
+        
+        // Copy packet data
+        memcpy(packet, packetData, packetSize);
+        
+        // Send the packet via the send queue
+        setPackedForSend(packet, DEFAULT_PRIORITY);
+        
+        ESP_LOGD(LM_TAG, "Raw packet queued for transmission, size: %zu bytes", packetSize);
+        return 0;
     }
 
     /**
@@ -1166,6 +1202,43 @@ public:
         return 0;
 #endif
     }
+
+    /**
+     * @brief Enable provisioning mode with faster HELLO packets
+     * @param durationMs Duration in milliseconds (0 = indefinite)
+     */
+    void enableProvisioningMode(uint32_t durationMs = 300000); // 5 minutes default
+
+    /**
+     * @brief Disable provisioning mode, return to normal HELLO frequency
+     */
+    void disableProvisioningMode();
+
+    /**
+     * @brief Check if provisioning mode is active
+     * @return true if provisioning mode is active
+     */
+    bool isProvisioningModeActive();
+
+    /**
+     * @brief Initiate route discovery for target if no route exists
+     * @param targetAddress Target address to find route to
+     * @return true if route discovery was initiated or route already exists
+     */
+    bool ensureRouteToTarget(uint16_t targetAddress);
+
+private:
+    // Provisioning mode variables
+    bool provisioningModeActive = false;
+    uint32_t provisioningModeEndTime = 0;
+    uint16_t normalHelloDelay = HELLO_PACKETS_DELAY;
+    uint16_t provisioningHelloDelay = 15; // Fast HELLO every 15 seconds during provisioning
+
+    /**
+     * @brief Get current HELLO delay based on mode
+     * @return Current delay in seconds
+     */
+    uint16_t getCurrentHelloDelay();
 };
 
 #endif

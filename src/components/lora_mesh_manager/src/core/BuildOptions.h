@@ -52,8 +52,8 @@ extern const char* LM_VERSION;
 // 433E6 for Asia
 // 866E6 for Europe
 // 915E6 for North America
-#define LM_BAND 869.900F
-#define LM_BANDWIDTH 125.0
+#define LM_BAND 923.000F
+#define LM_BANDWIDTH 250.0
 #define LM_LORASF 7U
 #define LM_CODING_RATE 7U
 #define LM_PREAMBLE_LENGTH 8U
@@ -85,11 +85,15 @@ extern const char* LM_VERSION;
 #define XL_DATA_P  0b00010010
 #define LOST_P     0b00100010
 #define SYNC_P     0b01000010
+#define RREQ_P     0x05    // Route Request (on-demand discovery)
+#define RREP_P     0x06    // Route Reply
+#define RERR_P     0x07    // Route Error
 
 // Packet configuration
 #define BROADCAST_ADDR 0xFFFF
 #define DEFAULT_PRIORITY 20
 #define MAX_PRIORITY 40
+#define URGENT_PRIORITY 50
 
 //Definition Times in seconds
 #define HELLO_PACKETS_DELAY 120
