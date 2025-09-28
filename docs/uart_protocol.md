@@ -168,7 +168,7 @@ Example: Start provisioning (pseudocode)
 // Build payload: command + UartProvisioningControl
 uint8_t payload[] = { 0x15,             // UART_CMD_START_PROVISIONING
                       0x01,             // action (start)
-                      0x10, 0x27, 0x00, 0x00, // durationMs = 10000 (little-endian)
+                      0xE0, 0x93, 0x04, 0x00, // durationMs = 300000 (little-endian)
                       0x02,             // maxSessions
                       0x01 };           // authMethod
 
@@ -195,19 +195,19 @@ serial.write(0x55);
 
 // Example full hex frame (example seq = 0x01):
 // 4C 4D 04 08 01 15 01 10 27 00 00 02 01 <checksum> 55
-// Compute checksum step-by-step for clarity:
+// Compute checksum step-by-step for clarity (duration = 300000 = 0x000493E0):
 // 0x04 ^ 0x08 = 0x0C
 // 0x0C ^ 0x01 = 0x0D
 // 0x0D ^ 0x15 = 0x18
 // 0x18 ^ 0x01 = 0x19
-// 0x19 ^ 0x10 = 0x09
-// 0x09 ^ 0x27 = 0x2E
-// 0x2E ^ 0x00 = 0x2E
-// 0x2E ^ 0x00 = 0x2E
-// 0x2E ^ 0x02 = 0x2C
-// 0x2C ^ 0x01 = 0x2D  --> checksum = 0x2D
+// 0x19 ^ 0xE0 = 0xF9
+// 0xF9 ^ 0x93 = 0x6A
+// 0x6A ^ 0x04 = 0x6E
+// 0x6E ^ 0x00 = 0x6E
+// 0x6E ^ 0x02 = 0x6C
+// 0x6C ^ 0x01 = 0x6D  --> checksum = 0x6D
 // Final framed bytes:
-// 4C 4D 04 08 01 15 01 10 27 00 00 02 01 2D 55
+// 4C 4D 04 08 01 15 01 E0 93 04 00 02 01 6D 55
 
 Additional concrete hex examples
 

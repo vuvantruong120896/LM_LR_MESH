@@ -96,9 +96,32 @@ extern const char* LM_VERSION;
 #define URGENT_PRIORITY 50
 
 //Definition Times in seconds
-#define HELLO_PACKETS_DELAY 120
+#define HELLO_PACKETS_DELAY 600
 #define DEFAULT_TIMEOUT HELLO_PACKETS_DELAY*5
 #define MIN_TIMEOUT 20
+
+// Dynamic Hello Mode Configuration (Phase 1)
+#define HELLO_NORMAL_INTERVAL 600        // Normal mode: 10 minutes
+#define HELLO_FAST_INTERVAL 30           // Fast discovery: 30 seconds  
+#define HELLO_DISCOVERY_DURATION 300     // Stay in fast mode for 5 minutes
+#define HELLO_GRACE_PERIOD 120           // Grace period after switching back
+
+// Phase 2: Stabilization and Route Quality Configuration
+#define HELLO_STABILIZING_INTERVAL 90    // Stabilizing mode: 1.5 minutes
+#define HELLO_STABILIZATION_DURATION 180 // Stay in stabilizing for 3 minutes
+#define MIN_ROUTE_COUNT 2                // Minimum routes before allowing normal mode
+#define MIN_ROUTE_QUALITY_RSSI -110      // Minimum RSSI for quality routes (dBm)
+#define ROUTE_QUALITY_CHECK_INTERVAL 60  // Check route quality every 60 seconds
+#define STABLE_ROUTE_DURATION 120        // Route must be stable for 2 minutes
+
+// Hello Mode States
+#define HELLO_MODE_NORMAL 0
+#define HELLO_MODE_FAST_DISCOVERY 1
+#define HELLO_MODE_STABILIZING 2         // Phase 2: Stabilizing mode
+#define HELLO_MODE_TRANSITION 3          // Renamed from 2 to 3
+
+// Hello Mode Control Packet Type
+#define HELLO_MODE_CONTROL_P 0x08        // Hello mode broadcast control
 
 //Maximum times that a sequence of packets reach the timeout
 #define MAX_TIMEOUTS 10

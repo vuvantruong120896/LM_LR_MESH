@@ -1227,6 +1227,55 @@ public:
      */
     bool ensureRouteToTarget(uint16_t targetAddress);
 
+    // Phase 1: Dynamic Hello Mode public interface
+    /**
+     * @brief Start fast discovery mode for provisioning
+     * @param durationMs Duration in milliseconds (default: HELLO_DISCOVERY_DURATION)
+     */
+    void startFastDiscoveryMode(uint32_t durationMs = HELLO_DISCOVERY_DURATION * 1000);
+    
+    /**
+     * @brief Stop fast discovery and return to normal mode
+     */
+    void stopFastDiscoveryMode();
+    
+    /**
+     * @brief Get current hello mode
+     * @return Current hello mode (HELLO_MODE_NORMAL, HELLO_MODE_FAST_DISCOVERY, etc.)
+     */
+    uint8_t getCurrentHelloMode() const { return currentHelloMode; }
+    
+    /**
+     * @brief Check if currently in fast discovery mode
+     * @return true if in fast discovery mode
+     */
+    bool isFastDiscoveryActive() const { return currentHelloMode == HELLO_MODE_FAST_DISCOVERY; }
+    
+    /**
+     * @brief Check if currently in stabilizing mode
+     * @return true if in stabilizing mode  
+     */
+    bool isStabilizingModeActive() const { return currentHelloMode == HELLO_MODE_STABILIZING; }
+
+    // Phase 2: Route Quality Check methods
+    /**
+     * @brief Check if network has sufficient route quality to transition to normal mode
+     * @return true if route quality is sufficient
+     */
+    bool hasQualityRoutes();
+    
+    /**
+     * @brief Get count of routes meeting quality threshold
+     * @return Number of quality routes
+     */
+    uint8_t getQualityRouteCount();
+    
+    /**
+     * @brief Check if routes have been stable for required duration
+     * @return true if routes are stable
+     */
+    bool areRoutesStable();
+
 #ifdef ENABLE_MESH_SECURITY
     /**
      * @brief Check if packet type is a security resync packet
@@ -1253,11 +1302,40 @@ public:
 #endif
 
 private:
-    // Provisioning mode variables
+    // Provisioning mode variables (legacy - keep for compatibility)
     bool provisioningModeActive = false;
     uint32_t provisioningModeEndTime = 0;
     uint16_t normalHelloDelay = HELLO_PACKETS_DELAY;
     uint16_t provisioningHelloDelay = 15; // Fast HELLO every 15 seconds during provisioning
+
+    // Phase 1: Dynamic Hello Mode variables
+    uint8_t currentHelloMode = HELLO_MODE_NORMAL;
+    uint32_t helloModeStartTime = 0;
+    uint32_t helloModeDuration = 0;
+    
+    // Phase 2: Stabilization tracking variables
+    uint32_t lastRouteQualityCheckTime = 0;
+    uint32_t stabilizationStartTime = 0;
+    bool routesWereStableLastCheck = false;
+    
+    /**
+     * @brief Set hello mode (normal/fast discovery)
+     * @param mode Hello mode (HELLO_MODE_NORMAL, HELLO_MODE_FAST_DISCOVERY)
+     * @param durationMs Duration in milliseconds (0 = indefinite)
+     */
+    void setHelloMode(uint8_t mode, uint32_t durationMs = 0);
+    
+    /**
+     * @brief Check and update hello mode based on timeout
+     */
+    void updateHelloMode();
+    
+    /**
+     * @brief Broadcast hello mode change to all nodes
+     * @param mode Target hello mode
+     * @param durationMs Duration in milliseconds
+     */
+    void broadcastHelloModeChange(uint8_t mode, uint32_t durationMs);
 
     /**
      * @brief Get current HELLO delay based on mode

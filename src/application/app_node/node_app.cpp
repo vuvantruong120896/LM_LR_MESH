@@ -131,24 +131,24 @@ void NodeApp::loop() {
         static uint32_t lastDataSend = 0;
         uint32_t currentTime = millis();
         
-        if (currentTime - lastDataSend >= SEND_INTERVAL_MS) {
-            // Create and send sensor data
-            sensorData s = simulateSensorData();
+        // if (currentTime - lastDataSend >= SEND_INTERVAL_MS) {
+        //     // Create and send sensor data
+        //     sensorData s = simulateSensorData();
 
-            // Populate sensor metadata
-            s.counter = ++dataCounter;
-            s.timestamp = currentTime;
-            s.nodeId = assignedAddress ? assignedAddress : NODE_ID;
+        //     // Populate sensor metadata
+        //     s.counter = ++dataCounter;
+        //     s.timestamp = currentTime;
+        //     s.nodeId = assignedAddress ? assignedAddress : NODE_ID;
 
-            ESP_LOGI(LM_TAG, "Sending sensor data #%d - Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV", 
-                     s.counter, s.temperature, s.humidity, s.battery);
+        //     ESP_LOGI(LM_TAG, "Sending sensor data #%d - Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV", 
+        //              s.counter, s.temperature, s.humidity, s.battery);
 
-            // Send sensorData struct to Bridge (use createPacketAndSend so secure wrapping is applied when enabled)
-            radio.createPacketAndSend<sensorData>(BROADCAST_ADDR, &s, 1);
-            led_pattern_message(); // Flash LED to indicate data sent
+        //     // Send sensorData struct to Bridge (use createPacketAndSend so secure wrapping is applied when enabled)
+        //     radio.createPacketAndSend<sensorData>(BROADCAST_ADDR, &s, 1);
+        //     led_pattern_message(); // Flash LED to indicate data sent
 
-            lastDataSend = currentTime;
-        }
+        //     lastDataSend = currentTime;
+        // }
     } else {
         // Node is not provisioned - wait for netkey from Bridge
         static uint32_t lastStatusLog = 0;

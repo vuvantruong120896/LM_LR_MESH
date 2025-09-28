@@ -420,8 +420,17 @@ void BridgeApp::onProvisioningControl(const UartProvisioningControl& control) {
         }
 
         case 1: { // Start provisioning  
-            ESP_LOGI(TAG, "Provisioning control - Start acknowledged (no action needed in simplified mode)");
-            ESP_LOGI(TAG, "*** NOTE: In simplified mode, netkey is automatically distributed to all routing table nodes when Set Netkey received ***");
+            ESP_LOGI(TAG, "Provisioning control - Start: Triggering fast discovery mode");
+            ESP_LOGI(TAG, "Duration: %dms, MaxSessions: %d", control.durationMs, control.maxSessions);
+            
+            // Phase 1: Start fast discovery mode for specified duration
+            if (BridgeApp::instance) {
+                uint32_t duration = (control.durationMs > 0) ? control.durationMs : (HELLO_DISCOVERY_DURATION * 1000);
+                BridgeApp::instance->radio.startFastDiscoveryMode(duration);
+                ESP_LOGI(TAG, "Fast discovery mode activated for %dms", duration);
+            }
+            
+            ESP_LOGI(TAG, "*** NOTE: Fast hello mode enables quick routing table building for new nodes ***");
             break;
         }
 
