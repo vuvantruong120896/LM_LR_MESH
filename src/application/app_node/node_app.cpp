@@ -2,8 +2,15 @@
 #include "mesh_security_config.h"
 #include "components/lora_mesh_manager/src/services/ProvisioningService.h"
 #include "components/lora_mesh_manager/src/services/NetkeyDistributionService.h"
+#include "components/lora_mesh_manager/src/services/RoutingTableService.h"
+#include "components/lora_mesh_manager/src/services/NVSStorageService.h"
 
 #define LM_TAG "NodeApp"
+
+// Forward declarations for static helper functions
+static uint16_t findGatewayAddress();
+static void saveRoutingTableToNVS();
+static void loadRoutingTableFromNVS();
 
 // Static instance pointer for callbacks
 static NodeApp* nodeAppInstance = nullptr;
@@ -30,12 +37,72 @@ NodeApp::~NodeApp() {
     delete nodePacket;
 }
 
+// Helper function to find gateway node - check NVS cache first, then routing table
+static uint16_t findGatewayAddress() {
+    // First, try to load cached gateway info from NVS and validate it against the routing table
+    GatewayInfo cachedGateway;
+    if (cachedGateway.isValid && NVSStorageService::loadGatewayInfo(cachedGateway)) {
+        if (cachedGateway.address != 0) {
+            // Validate that the cached gateway still exists in the routing table and has a next-hop
+            if (RoutingTableService::hasAddressRoutingTable(cachedGateway.address) &&
+                RoutingTableService::getNextHop(cachedGateway.address) != 0) {
+                ESP_LOGI(LM_TAG, "Using cached gateway: 0x%04X (hops: %u)", cachedGateway.address, cachedGateway.hopCount);
+                return cachedGateway.address;
+            }
+
+            ESP_LOGW(LM_TAG, "Cached gateway 0x%04X is stale or unreachable, ignoring and searching routing table",
+                     cachedGateway.address);
+        }
+    } else {
+        ESP_LOGD(LM_TAG, "No cached gateway info found, searching routing table");
+    }
+    
+    // Fallback: ask RoutingTableService for the best gateway by role (it already picks the nearest)
+    RouteNode* bestGateway = RoutingTableService::getBestNodeByRole(ROLE_GATEWAY);
+
+    if (bestGateway) {
+        // Ensure we can actually reach the gateway; RoutingTableService::getNextHop returns via (0 means unknown)
+        uint16_t nextHop = RoutingTableService::getNextHop(bestGateway->networkNode.address);
+        if (nextHop != 0) {
+            uint16_t selected = bestGateway->networkNode.address;
+            ESP_LOGI(LM_TAG, "Selected gateway from routing table: 0x%04X (hops: %d) via next-hop 0x%04X",
+                     selected, bestGateway->networkNode.metric, nextHop);
+
+            // Cache the found gateway for future use (store the gateway address and hop count)
+            GatewayInfo newGatewayInfo = {
+                .address = selected,
+                .hopCount = (uint8_t)bestGateway->networkNode.metric,
+                .lastSeen = (uint32_t)(esp_timer_get_time() / 1000000),
+                .isValid = true
+            };
+
+            if (NVSStorageService::saveGatewayInfo(newGatewayInfo)) {
+                ESP_LOGD(LM_TAG, "Gateway info cached to NVS");
+            } else {
+                ESP_LOGW(LM_TAG, "Failed to cache gateway info to NVS");
+            }
+
+            return selected;
+        } else {
+            ESP_LOGW(LM_TAG, "Best gateway 0x%04X has no known next-hop (stale entry)", bestGateway->networkNode.address);
+        }
+    } else {
+        ESP_LOGW(LM_TAG, "No gateway nodes found in routing table");
+    }
+
+    // If no valid gateway was found return broadcast so provisioning packets can reach any bridge
+    return BROADCAST_ADDR;
+}
+
 void NodeApp::setup() {
     ESP_LOGI(LM_TAG, "=== LoRaMesh Node Application ===");
     ESP_LOGI(LM_TAG, "Node ID: 0x%X", NODE_ID);
     
     led_init();
     led_pattern_startup();
+    
+    // NOTE: Do not clear gateway cache here. We'll restore routing table from NVS after
+    // NVS is initialized so cached gateway validation can check restored routes.
     
     // Initialize mesh security first
     if (!initializeMeshSecurity()) {
@@ -117,38 +184,63 @@ void NodeApp::setup() {
     generateDeviceUUID();
     
     setupLoRaMesher();
+    
+    // Load persistent routing table and gateway info if available now that NVS is ready
+    ESP_LOGI(LM_TAG, "Loading routing table from NVS...");
+    loadRoutingTableFromNVS();
 
     ESP_LOGI(LM_TAG, "Node setup complete. Send interval: %d ms", SEND_INTERVAL_MS);
     ESP_LOGI(LM_TAG, "Node provisioning state: %s", 
              (provisioningState == NODE_STATE_UNPROVISIONED) ? "UNPROVISIONED" :
              (provisioningState == NODE_STATE_PROVISIONING) ? "PROVISIONING" :
              (provisioningState == NODE_STATE_PROVISIONED) ? "PROVISIONED" : "FAILED");
+    ESP_LOGI(LM_TAG, "Node status: HasValidNetworkKey=%s, AssignedAddress=0x%04X, LocalAddress=0x%04X", 
+             hasValidNetworkKey ? "YES" : "NO", assignedAddress, NODE_ID);
+    ESP_LOGI(LM_TAG, "=== NODE SETUP COMPLETED - STARTING MAIN LOOP ===");
 }
 
 void NodeApp::loop() {
     // Send sensor data periodically if provisioned
+    uint32_t currentTime = millis();
+
+    
     if (provisioningState == NODE_STATE_PROVISIONED && hasValidNetworkKey) {
         static uint32_t lastDataSend = 0;
-        uint32_t currentTime = millis();
+        static uint32_t lastRoutingSave = 0;
         
-        // if (currentTime - lastDataSend >= SEND_INTERVAL_MS) {
-        //     // Create and send sensor data
-        //     sensorData s = simulateSensorData();
+        if (currentTime - lastDataSend >= SEND_INTERVAL_MS) {
+            // Create and send sensor data
+            sensorData s = simulateSensorData();
 
-        //     // Populate sensor metadata
-        //     s.counter = ++dataCounter;
-        //     s.timestamp = currentTime;
-        //     s.nodeId = assignedAddress ? assignedAddress : NODE_ID;
+            // Populate sensor metadata - use local LoRa address from LoraMesher
+            uint16_t localAddr = LoraMesher::getInstance().getLocalAddress();
+            s.counter = ++dataCounter;
+            s.timestamp = currentTime;
+            s.nodeId = assignedAddress ? assignedAddress : localAddr;
 
-        //     ESP_LOGI(LM_TAG, "Sending sensor data #%d - Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV", 
-        //              s.counter, s.temperature, s.humidity, s.battery);
+            ESP_LOGI(LM_TAG, "Sending sensor data #%d - Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV", 
+                     s.counter, s.temperature, s.humidity, s.battery);
 
-        //     // Send sensorData struct to Bridge (use createPacketAndSend so secure wrapping is applied when enabled)
-        //     radio.createPacketAndSend<sensorData>(BROADCAST_ADDR, &s, 1);
-        //     led_pattern_message(); // Flash LED to indicate data sent
+            // Send sensorData struct to Bridge (use createPacketAndSend so secure wrapping is applied when enabled)
+            // Find gateway node by role in routing table; fallback to broadcast if unknown
+            {
+                uint16_t dst = findGatewayAddress();
+                ESP_LOGI(LM_TAG, "Sending sensor data to gateway at address 0x%04X", dst);
+                // Send sensorData struct to gateway (use createPacketAndSend so secure wrapping is applied when enabled)
+                radio.createPacketAndSend<sensorData>(dst, &s, 1);
+            }
+            
+            led_pattern_message(); // Flash LED to indicate data sent
 
-        //     lastDataSend = currentTime;
-        // }
+            lastDataSend = currentTime;
+        }
+        
+        // Periodically save routing table to NVS (every 2 minutes)
+        if (currentTime - lastRoutingSave >= 120000) {
+            ESP_LOGD(LM_TAG, "Periodic routing table save to NVS");
+            saveRoutingTableToNVS();
+            lastRoutingSave = currentTime;
+        }
     } else {
         // Node is not provisioned - wait for netkey from Bridge
         static uint32_t lastStatusLog = 0;
@@ -368,8 +460,12 @@ bool NodeApp::sendProvisionRequest() {
         return false;
     }
     
-    ESP_LOGI(LM_TAG, "Sending provision request to network");
-    radio.sendReliablePacket(BROADCAST_ADDR, (uint8_t*)&request, sizeof(request));
+    // Find gateway by role in routing table; if none known send broadcast to reach any bridge
+    {
+        uint16_t dst = findGatewayAddress();
+        ESP_LOGI(LM_TAG, "Sending provision request to 0x%04X", dst);
+        radio.sendReliablePacket(dst, (uint8_t*)&request, sizeof(request));
+    }
     return true; // sendReliablePacket is void, assume success
 }
 
@@ -392,6 +488,10 @@ void NodeApp::handleProvisionResponse(const ProvisionResponsePacket* response) {
         provisioningState = NODE_STATE_PROVISIONED;
         ESP_LOGI(LM_TAG, "*** PROVISIONING COMPLETED SUCCESSFULLY ***");
         led_pattern_connected();
+        
+        // Save initial routing table after successful provisioning
+        ESP_LOGI(LM_TAG, "Saving initial routing table after provisioning");
+        saveRoutingTableToNVS();
     } else {
         ESP_LOGE(LM_TAG, "Failed to send provision complete");
         provisioningState = NODE_STATE_PROVISION_FAILED;
@@ -417,8 +517,12 @@ bool NodeApp::sendProvisionComplete() {
         return false;
     }
     
-    ESP_LOGI(LM_TAG, "Sending provision complete confirmation");
-    radio.sendReliablePacket(BROADCAST_ADDR, (uint8_t*)&complete, sizeof(complete));
+    // Send provision complete to gateway if known, otherwise broadcast
+    {
+        uint16_t dst = findGatewayAddress();
+        ESP_LOGI(LM_TAG, "Sending provision complete to 0x%04X", dst);
+        radio.sendReliablePacket(dst, (uint8_t*)&complete, sizeof(complete));
+    }
     return true; // sendReliablePacket is void, assume success
 }
 
@@ -438,4 +542,88 @@ void NodeApp::applyNetworkCredentials(const ProvisionResponsePacket* response) {
     ESP_LOGI(LM_TAG, "  Address: 0x%04X", assignedAddress);
     ESP_LOGI(LM_TAG, "  Network ID: %d", networkId);
     ESP_LOGI(LM_TAG, "  Key version: %d", keyVersion);
+}
+
+// Helper function to save current routing table to NVS for persistence
+static void saveRoutingTableToNVS() {
+    LM_LinkedList<RouteNode>* routingTable = LoraMesher::getInstance().routingTableListCopy();
+    if (!routingTable || routingTable->getLength() == 0) {
+        ESP_LOGD(LM_TAG, "No routing table to save to NVS");
+        if (routingTable) delete routingTable;
+        return;
+    }
+    
+    // Convert routing table to RouteEntry array
+    uint16_t entryCount = routingTable->getLength();
+    RouteEntry* entries = new RouteEntry[entryCount];
+    uint16_t validEntries = 0;
+    
+    for (int i = 0; i < entryCount; i++) {
+        RouteNode* route = (*routingTable)[i];
+        if (route && route->networkNode.address != 0) {
+            entries[validEntries] = {
+                .address = route->networkNode.address,
+                .via = route->via,
+                .metric = (uint8_t)route->networkNode.metric,
+                .role = route->networkNode.role,
+                .networkId = route->networkNode.networkId,
+                .lastSeen = (uint32_t)(esp_timer_get_time() / 1000000),
+                .isValid = true
+            };
+            validEntries++;
+        }
+    }
+    
+    if (validEntries > 0) {
+        if (NVSStorageService::saveRoutingTable(entries, validEntries)) {
+            ESP_LOGD(LM_TAG, "Routing table saved to NVS: %u entries", validEntries);
+        } else {
+            ESP_LOGW(LM_TAG, "Failed to save routing table to NVS");
+        }
+    }
+    
+    delete[] entries;
+    delete routingTable;
+}
+
+// Helper function to load routing table from NVS on startup
+static void loadRoutingTableFromNVS() {
+    ESP_LOGI(LM_TAG, "loadRoutingTableFromNVS: Starting...");
+    
+    const uint16_t maxEntries = 50; // Reasonable limit
+    RouteEntry* entries = new RouteEntry[maxEntries];
+    
+    ESP_LOGI(LM_TAG, "loadRoutingTableFromNVS: Calling NVSStorageService::loadRoutingTable");
+    uint16_t loadedCount = NVSStorageService::loadRoutingTable(entries, maxEntries);
+    ESP_LOGI(LM_TAG, "loadRoutingTableFromNVS: Loaded %u entries", loadedCount);
+    
+    if (loadedCount > 0) {
+        ESP_LOGI(LM_TAG, "Loaded %u routing entries from NVS", loadedCount);
+        
+        // Log loaded entries for debugging
+        for (uint16_t i = 0; i < loadedCount; i++) {
+            if (entries[i].isValid) {
+                ESP_LOGD(LM_TAG, "  Entry %u: 0x%04X via 0x%04X (hops: %u, role: 0x%02X, netId: 0x%04X)", 
+                        i, entries[i].address, entries[i].via, entries[i].metric, entries[i].role, entries[i].networkId);
+            }
+        }
+        
+        // TODO: Consider populating LoraMesher routing table with loaded entries
+        // This would require access to RoutingTableService or LoraMesher internal methods
+        for (uint16_t i = 0; i < loadedCount; i++) {
+            if (entries[i].isValid) {
+                // Populate the runtime routing table by processing each saved entry.
+                // Construct a NetworkNode and let RoutingTableService handle insertion/update.
+                NetworkNode node(entries[i].address, entries[i].metric, entries[i].role, entries[i].networkId);
+                ESP_LOGD(LM_TAG, "Restoring route from NVS: addr=0x%04X via=0x%04X hops=%u role=0x%02X",
+                         entries[i].address, entries[i].via, entries[i].metric, entries[i].role);
+                RoutingTableService::processRoute(entries[i].via, &node);
+            }
+        }
+    } else {
+        ESP_LOGD(LM_TAG, "No routing table entries found in NVS");
+    }
+    
+    delete[] entries;
+    ESP_LOGI(LM_TAG, "loadRoutingTableFromNVS: Completed");
 }

@@ -771,3 +771,431 @@ bool NVSStorageService::validateDeviceData(const ProvisionedDevice& device) {
     
     return true;
 }
+
+// Gateway and Routing Table Management
+
+bool NVSStorageService::saveGatewayInfo(const GatewayInfo& gateway) {
+    if (!nvs_initialized) {
+        ESP_LOGE(TAG, "NVS not initialized");
+        return false;
+    }
+    
+    if (gateway.address == 0 || gateway.address == 0xFFFF) {
+        ESP_LOGE(TAG, "Invalid gateway address: 0x%04X", gateway.address);
+        return false;
+    }
+    
+    nvs_handle_t handle;
+    esp_err_t err = openNVSHandle(NVS_NAMESPACE_MESH, &handle, NVS_READWRITE);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS handle: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    bool success = true;
+    
+    // Save individual fields for easy access
+    err = nvs_set_u16(handle, NVS_KEY_GATEWAY_ADDR, gateway.address);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save gateway address: %s", esp_err_to_name(err));
+        success = false;
+    }
+    
+    if (success) {
+        err = nvs_set_u8(handle, NVS_KEY_GATEWAY_HOPS, gateway.hopCount);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to save gateway hop count: %s", esp_err_to_name(err));
+            success = false;
+        }
+    }
+    
+    if (success) {
+        err = nvs_set_u32(handle, NVS_KEY_GATEWAY_TIME, gateway.lastSeen);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to save gateway timestamp: %s", esp_err_to_name(err));
+            success = false;
+        }
+    }
+    
+    // Save complete structure as blob
+    if (success) {
+        err = nvs_set_blob(handle, "gw_info", &gateway, sizeof(GatewayInfo));
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to save gateway info blob: %s", esp_err_to_name(err));
+            success = false;
+        }
+    }
+    
+    if (success) {
+        err = nvs_commit(handle);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to commit gateway info: %s", esp_err_to_name(err));
+            success = false;
+        }
+    }
+    
+    closeNVSHandle(handle);
+    
+    if (success) {
+        ESP_LOGI(TAG, "Gateway info saved: addr=0x%04X, hops=%u, time=%lu", 
+                gateway.address, gateway.hopCount, gateway.lastSeen);
+    }
+    
+    return success;
+}
+
+bool NVSStorageService::loadGatewayInfo(GatewayInfo& gateway) {
+    if (!nvs_initialized) {
+        ESP_LOGE(TAG, "NVS not initialized");
+        return false;
+    }
+    
+    nvs_handle_t handle;
+    esp_err_t err = openNVSHandle(NVS_NAMESPACE_MESH, &handle, NVS_READONLY);
+    if (err != ESP_OK) {
+        return false;
+    }
+    
+    // Try to load complete structure first
+    size_t required_size = sizeof(GatewayInfo);
+    err = nvs_get_blob(handle, "gw_info", &gateway, &required_size);
+    
+    if (err == ESP_OK && required_size == sizeof(GatewayInfo)) {
+        closeNVSHandle(handle);
+        ESP_LOGI(TAG, "Gateway info loaded: addr=0x%04X, hops=%u, valid=%d", 
+                gateway.address, gateway.hopCount, gateway.isValid);
+        return gateway.isValid;
+    }
+    
+    // Fallback to loading individual fields
+    memset(&gateway, 0, sizeof(GatewayInfo));
+    bool success = true;
+    
+    err = nvs_get_u16(handle, NVS_KEY_GATEWAY_ADDR, &gateway.address);
+    if (err != ESP_OK) {
+        success = false;
+    }
+    
+    if (success) {
+        err = nvs_get_u8(handle, NVS_KEY_GATEWAY_HOPS, &gateway.hopCount);
+        if (err != ESP_OK) {
+            gateway.hopCount = 0;
+        }
+    }
+    
+    if (success) {
+        err = nvs_get_u32(handle, NVS_KEY_GATEWAY_TIME, &gateway.lastSeen);
+        if (err != ESP_OK) {
+            gateway.lastSeen = 0;
+        }
+    }
+    
+    closeNVSHandle(handle);
+    
+    if (success && gateway.address != 0 && gateway.address != 0xFFFF) {
+        gateway.isValid = true;
+        ESP_LOGI(TAG, "Gateway info loaded (fallback): addr=0x%04X, hops=%u", 
+                gateway.address, gateway.hopCount);
+    } else {
+        gateway.isValid = false;
+    }
+    
+    return gateway.isValid;
+}
+
+bool NVSStorageService::hasGatewayInfo() {
+    if (!nvs_initialized) {
+        return false;
+    }
+    
+    nvs_handle_t handle;
+    esp_err_t err = openNVSHandle(NVS_NAMESPACE_MESH, &handle, NVS_READONLY);
+    if (err != ESP_OK) {
+        return false;
+    }
+    
+    uint16_t gwAddr = 0;
+    err = nvs_get_u16(handle, NVS_KEY_GATEWAY_ADDR, &gwAddr);
+    closeNVSHandle(handle);
+    
+    return (err == ESP_OK && gwAddr != 0 && gwAddr != 0xFFFF);
+}
+
+bool NVSStorageService::clearGatewayInfo() {
+    if (!nvs_initialized) {
+        ESP_LOGE(TAG, "NVS not initialized");
+        return false;
+    }
+    
+    nvs_handle_t handle;
+    esp_err_t err = openNVSHandle(NVS_NAMESPACE_MESH, &handle, NVS_READWRITE);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS handle: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    // Erase all gateway-related keys
+    nvs_erase_key(handle, NVS_KEY_GATEWAY_ADDR);
+    nvs_erase_key(handle, NVS_KEY_GATEWAY_HOPS);
+    nvs_erase_key(handle, NVS_KEY_GATEWAY_TIME);
+    nvs_erase_key(handle, "gw_info");
+    
+    err = nvs_commit(handle);
+    closeNVSHandle(handle);
+    
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Gateway info cleared successfully");
+        return true;
+    } else {
+        ESP_LOGE(TAG, "Failed to commit gateway clear: %s", esp_err_to_name(err));
+        return false;
+    }
+}
+
+bool NVSStorageService::saveRouteEntry(const RouteEntry& entry) {
+    if (!nvs_initialized) {
+        ESP_LOGE(TAG, "NVS not initialized");
+        return false;
+    }
+    
+    if (entry.address == 0 || entry.address == 0xFFFF) {
+        ESP_LOGE(TAG, "Invalid route entry address: 0x%04X", entry.address);
+        return false;
+    }
+    
+    nvs_handle_t handle;
+    esp_err_t err = openNVSHandle(NVS_NAMESPACE_MESH, &handle, NVS_READWRITE);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS handle: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    char routeKey[16];
+    snprintf(routeKey, sizeof(routeKey), "%s%04X", NVS_KEY_ROUTING_PREFIX, entry.address);
+    
+    // Save complete route entry
+    err = nvs_set_blob(handle, routeKey, &entry, sizeof(RouteEntry));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save route entry: %s", esp_err_to_name(err));
+        closeNVSHandle(handle);
+        return false;
+    }
+    
+    err = nvs_commit(handle);
+    closeNVSHandle(handle);
+    
+    if (err == ESP_OK) {
+        ESP_LOGD(TAG, "Route entry saved: addr=0x%04X, via=0x%04X, hops=%u, role=0x%02X, netId=0x%04X", 
+                entry.address, entry.via, entry.metric, entry.role, entry.networkId);
+        return true;
+    } else {
+        ESP_LOGE(TAG, "Failed to commit route entry: %s", esp_err_to_name(err));
+        return false;
+    }
+}
+
+bool NVSStorageService::loadRouteEntry(uint16_t address, RouteEntry& entry) {
+    if (!nvs_initialized) {
+        return false;
+    }
+    
+    nvs_handle_t handle;
+    esp_err_t err = openNVSHandle(NVS_NAMESPACE_MESH, &handle, NVS_READONLY);
+    if (err != ESP_OK) {
+        return false;
+    }
+    
+    char routeKey[16];
+    snprintf(routeKey, sizeof(routeKey), "%s%04X", NVS_KEY_ROUTING_PREFIX, address);
+    
+    size_t required_size = sizeof(RouteEntry);
+    err = nvs_get_blob(handle, routeKey, &entry, &required_size);
+    closeNVSHandle(handle);
+    
+    if (err == ESP_OK && required_size == sizeof(RouteEntry)) {
+        ESP_LOGD(TAG, "Route entry loaded: addr=0x%04X, via=0x%04X, hops=%u, netId=0x%04X", 
+                entry.address, entry.via, entry.metric, entry.networkId);
+        return entry.isValid;
+    }
+    
+    return false;
+}
+
+bool NVSStorageService::saveRoutingTable(const RouteEntry* entries, uint16_t count) {
+    if (!nvs_initialized || !entries || count == 0) {
+        ESP_LOGE(TAG, "Invalid parameters for saving routing table");
+        return false;
+    }
+    
+    nvs_handle_t handle;
+    esp_err_t err = openNVSHandle(NVS_NAMESPACE_MESH, &handle, NVS_READWRITE);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS handle: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    bool success = true;
+    uint16_t savedCount = 0;
+    
+    // Save individual entries
+    for (uint16_t i = 0; i < count; i++) {
+        if (entries[i].isValid && entries[i].address != 0 && entries[i].address != 0xFFFF) {
+            char routeKey[16];
+            snprintf(routeKey, sizeof(routeKey), "%s%04X", NVS_KEY_ROUTING_PREFIX, entries[i].address);
+            
+            err = nvs_set_blob(handle, routeKey, &entries[i], sizeof(RouteEntry));
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to save route entry %d: %s", i, esp_err_to_name(err));
+                success = false;
+                break;
+            }
+            savedCount++;
+        }
+    }
+    
+    // Save routing table count
+    if (success) {
+        err = nvs_set_u16(handle, NVS_KEY_ROUTING_COUNT, savedCount);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to save routing count: %s", esp_err_to_name(err));
+        }
+    }
+    
+    if (success) {
+        err = nvs_commit(handle);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to commit routing table: %s", esp_err_to_name(err));
+            success = false;
+        }
+    }
+    
+    closeNVSHandle(handle);
+    
+    if (success) {
+        ESP_LOGI(TAG, "Routing table saved: %u entries", savedCount);
+    }
+    
+    return success;
+}
+
+uint16_t NVSStorageService::loadRoutingTable(RouteEntry* entries, uint16_t maxEntries) {
+    if (!nvs_initialized || !entries || maxEntries == 0) {
+        ESP_LOGE(TAG, "loadRoutingTable: Invalid parameters");
+        return 0;
+    }
+    
+    ESP_LOGD(TAG, "loadRoutingTable: Opening NVS handle...");
+    nvs_handle_t handle;
+    esp_err_t err = openNVSHandle(NVS_NAMESPACE_MESH, &handle, NVS_READONLY);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "loadRoutingTable: Failed to open NVS handle: %s", esp_err_to_name(err));
+        return 0;
+    }
+    
+    uint16_t loadedCount = 0;
+    
+    // Try to get saved count first - this tells us how many entries to expect
+    uint16_t savedCount = 0;
+    err = nvs_get_u16(handle, NVS_KEY_ROUTING_COUNT, &savedCount);
+    
+    ESP_LOGI(TAG, "loadRoutingTable: Expected %u routing entries", savedCount);
+    
+    if (savedCount == 0) {
+        ESP_LOGD(TAG, "loadRoutingTable: No routing entries saved");
+        closeNVSHandle(handle);
+        return 0;
+    }
+    
+    // Limit search to reasonable address ranges instead of full scan
+    // Most mesh networks have nodes in limited address ranges
+    uint16_t searchRanges[][2] = {
+        {0x3000, 0x4000},  // Common range for dynamic addresses
+        {0x6000, 0x7000},  // Gateway range
+        {0x1000, 0x2000},  // Lower range
+    };
+    
+    char routeKey[16];
+    
+    for (int range = 0; range < 3 && loadedCount < maxEntries; range++) {
+        uint16_t startAddr = searchRanges[range][0];
+        uint16_t endAddr = searchRanges[range][1];
+        
+        ESP_LOGD(TAG, "Searching address range 0x%04X-0x%04X", startAddr, endAddr);
+        
+        for (uint16_t addr = startAddr; addr <= endAddr && loadedCount < maxEntries; addr++) {
+            snprintf(routeKey, sizeof(routeKey), "%s%04X", NVS_KEY_ROUTING_PREFIX, addr);
+            
+            size_t required_size = sizeof(RouteEntry);
+            err = nvs_get_blob(handle, routeKey, &entries[loadedCount], &required_size);
+            
+            if (err == ESP_OK && required_size == sizeof(RouteEntry)) {
+                if (entries[loadedCount].isValid) {
+                    ESP_LOGD(TAG, "Loaded route: addr=0x%04X, via=0x%04X, hops=%u, role=0x%02X, netId=0x%04X",
+                            entries[loadedCount].address, entries[loadedCount].via, 
+                            entries[loadedCount].metric, entries[loadedCount].role, entries[loadedCount].networkId);
+                    loadedCount++;
+                } else {
+                    ESP_LOGD(TAG, "Skipping invalid route entry for addr 0x%04X", addr);
+                }
+            }
+            
+            // Do not early-exit based on savedCount; continue scanning all ranges to pick up any valid entries
+        }
+    }
+    
+    closeNVSHandle(handle);
+
+    ESP_LOGI(TAG, "Loaded %u routing table entries (expected: %u)", loadedCount, savedCount);
+
+    // If the actual loaded entries differ from the saved count, update the saved count to keep consistency
+    if (loadedCount != savedCount) {
+        ESP_LOGW(TAG, "Routing count mismatch: saved=%u, actual=%u. Updating NVS count.", savedCount, loadedCount);
+        nvs_handle_t whandle;
+        esp_err_t werr = openNVSHandle(NVS_NAMESPACE_MESH, &whandle, NVS_READWRITE);
+        if (werr == ESP_OK) {
+            nvs_set_u16(whandle, NVS_KEY_ROUTING_COUNT, loadedCount);
+            nvs_commit(whandle);
+            closeNVSHandle(whandle);
+        } else {
+            ESP_LOGW(TAG, "Failed to open NVS for updating routing count: %s", esp_err_to_name(werr));
+        }
+    }
+    return loadedCount;
+}
+
+bool NVSStorageService::clearRoutingTable() {
+    if (!nvs_initialized) {
+        ESP_LOGE(TAG, "NVS not initialized");
+        return false;
+    }
+    
+    nvs_handle_t handle;
+    esp_err_t err = openNVSHandle(NVS_NAMESPACE_MESH, &handle, NVS_READWRITE);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS handle: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    char routeKey[16];
+    bool success = true;
+    
+    // Clear all routing entries
+    for (uint16_t addr = MIN_NODE_ADDRESS; addr <= MAX_NODE_ADDRESS; addr++) {
+        snprintf(routeKey, sizeof(routeKey), "%s%04X", NVS_KEY_ROUTING_PREFIX, addr);
+        nvs_erase_key(handle, routeKey); // Ignore errors for non-existent keys
+    }
+    
+    // Clear routing count
+    nvs_erase_key(handle, NVS_KEY_ROUTING_COUNT);
+    
+    err = nvs_commit(handle);
+    closeNVSHandle(handle);
+    
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Routing table cleared successfully");
+        return true;
+    } else {
+        ESP_LOGE(TAG, "Failed to commit routing table clear: %s", esp_err_to_name(err));
+        return false;
+    }
+}

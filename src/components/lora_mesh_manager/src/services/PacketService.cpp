@@ -1,5 +1,6 @@
 #include "PacketService.h"
 #include "NetkeyDistributionService.h"
+#include "../core/LoraMesher.h"
 #ifdef ENABLE_MESH_SECURITY
 #include "../../include/secure_packet.h"
 #endif
@@ -128,7 +129,13 @@ RoutePacket* PacketService::createRoutingPacket(uint16_t localAddress, NetworkNo
     routePacket->nodeRole = nodeRole;
     
     // Include Bridge's Network ID in Hello packets if available
-    routePacket->networkId = NetkeyDistributionService::getLocalNetworkId();
+    // During fast-discovery mode, use networkId=0 so receivers don't reject hellos
+    if (LoraMesher::getInstance().isFastDiscoveryActive()) {
+        routePacket->networkId = 0;
+        ESP_LOGD(LM_TAG, "Using networkId=0 for Hello packet during fast discovery");
+    } else {
+        routePacket->networkId = NetkeyDistributionService::getLocalNetworkId();
+    }
 
     return routePacket;
 }

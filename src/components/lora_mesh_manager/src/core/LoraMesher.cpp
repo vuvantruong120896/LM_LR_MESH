@@ -406,6 +406,12 @@ void LoraMesher::receivingRoutine() {
                 rssi = (int8_t) round(radio->getRSSI());
                 snr = (int8_t) round(radio->getSNR());
 
+                if (rssi >= 10) {   
+                    deletePacket(rx);
+                    startReceiving();
+                    return;
+                }
+
                 ESP_LOGI(LM_TAG, "Receiving LoRa packet: Size: %d bytes RSSI: %d SNR: %d", packetSize, rssi, snr);
 
                 size_t max_packet_size = PacketFactory::getMaxPacketSize();

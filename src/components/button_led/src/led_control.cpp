@@ -27,7 +27,7 @@ void led_flash(uint16_t flashes, uint16_t delayMs) {
 }
 
 void led_pattern_startup() {
-    led_flash(3, 150);  // 3 quick flashes on startup
+    led_flash(3, 250);  // 3 quick flashes on startup
 }
 
 void led_pattern_error() {
@@ -35,9 +35,9 @@ void led_pattern_error() {
 }
 
 void led_pattern_connected() {
-    led_flash(2, 100);  // 2 quick flashes when connected
+    led_flash(3, 100);  // 3 quick flashes when connected
 }
 
 void led_pattern_message() {
-    led_flash(1, 50);   // 1 very quick flash for message received
+    led_flash(1, 100);   // 1 very quick flash for message received
 }

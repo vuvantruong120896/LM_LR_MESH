@@ -9,11 +9,11 @@
 #endif
 
 #ifndef LED_ON
-#define LED_ON      LOW
+#define LED_ON      HIGH
 #endif
 
 #ifndef LED_OFF  
-#define LED_OFF     HIGH
+#define LED_OFF     LOW
 #endif
 
 // LED control functions

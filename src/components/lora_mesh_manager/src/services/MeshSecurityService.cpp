@@ -5,6 +5,7 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "Arduino.h"
+#include "esp_wifi.h"
 
 static const char* MESH_SEC_TAG = "MeshSecurity";
 
@@ -16,12 +17,19 @@ uint32_t MeshSecurityService::sequenceCounter = 0;
 uint16_t MeshSecurityService::authenticatedNodes[32] = {0};
 uint8_t MeshSecurityService::authenticatedCount = 0;
 uint32_t MeshSecurityService::lastSequenceNumbers[32] = {0};
+uint32_t MeshSecurityService::recentReceiveBitmap[32] = {0};
+
+// Per-peer persistence tracking
+uint32_t peerUpdatesSinceLastSave = 0;
+uint32_t lastPeerSaveTime = 0;
 
 // NVS persistence tracking
 uint32_t MeshSecurityService::sequencesSinceLastSave = 0;
 uint32_t MeshSecurityService::lastSaveTime = 0;
 const uint32_t MeshSecurityService::SEQUENCE_SAVE_INTERVAL;
 const uint32_t MeshSecurityService::TIME_SAVE_INTERVAL;
+const uint32_t MeshSecurityService::PEER_SAVE_INTERVAL;
+const uint32_t MeshSecurityService::PEER_SAVE_COUNT;
 
 // Layer 2 resync tracking 
 bool MeshSecurityService::resyncInProgress = false;
@@ -51,6 +59,9 @@ bool MeshSecurityService::initialize(const MeshSecurityConfig& cfg) {
     
     config = cfg;
     
+    // Set initialized early so helper functions work
+    initialized = true;
+    
     // Initialize AES context
     mbedtls_aes_init(&aes_ctx);
     
@@ -61,20 +72,23 @@ bool MeshSecurityService::initialize(const MeshSecurityConfig& cfg) {
         return false;
     }
     
-    // Initialize sequence counter: try to load from NVS first, fallback to random + recovery offset
+    // Initialize sequence counter: try to load from NVS first, fallback to deterministic base
     if (!loadSequenceFromNVS()) {
-        // NVS load failed, use random high value to ensure we're above any previous sequence
-        esp_fill_random((uint8_t*)&sequenceCounter, sizeof(sequenceCounter));
-        // Ensure we start from a reasonably high value
-        sequenceCounter = (sequenceCounter % 0x7FFFFFFF) + 1000000;
-        ESP_LOGW(MESH_SEC_TAG, "NVS sequence load failed, starting from random high value: %lu", sequenceCounter);
+        // NVS load failed, generate deterministic sequence base from nodeId + networkKey
+        sequenceCounter = generateDeterministicSequenceBase();
+        ESP_LOGI(MESH_SEC_TAG, "NVS sequence load failed, starting from deterministic base: %lu", sequenceCounter);
+        // Save initial deterministic base to NVS
+        saveSequenceToNVS();
     }
     
-    // Initialize NVS tracking
+    // Initialize NVS tracking for sequence and peer table
     sequencesSinceLastSave = 0;
     lastSaveTime = millis();
-    
-    initialized = true;
+    peerUpdatesSinceLastSave = 0;
+    lastPeerSaveTime = millis();
+
+    // Load persisted per-peer table (if any)
+    loadPeerTableFromNVS();
     
     ESP_LOGI(MESH_SEC_TAG, "Mesh security initialized - Encryption: %s, Auth: %s, Level: %d, Sequence: %lu",
              config.enableEncryption ? "ON" : "OFF",
@@ -317,30 +331,196 @@ bool MeshSecurityService::isValidSequenceNumber(uint16_t nodeId, uint32_t sequen
     if (!config.enableReplayProtection) {
         return true;
     }
-    
+    // Sliding window size (allow small out-of-order packets)
+    const uint32_t WINDOW = 32; // Accept sequences up to last + WINDOW
+
     // Find node in tracking array
     for (int i = 0; i < 32 && i < authenticatedCount; i++) {
         if (authenticatedNodes[i] == nodeId) {
-            if (sequenceNumber > lastSequenceNumbers[i]) {
-                lastSequenceNumbers[i] = sequenceNumber;
+            uint32_t last = lastSequenceNumbers[i];
+            if (sequenceNumber > last) {
+                uint32_t diff = sequenceNumber - last;
+                if (diff < 32) {
+                    // Shift bitmap and mark new bit
+                    if (diff < 32) {
+                        recentReceiveBitmap[i] <<= diff;
+                        recentReceiveBitmap[i] |= 1u; // mark newest
+                    } else {
+                        recentReceiveBitmap[i] = 1u;
+                    }
+                    lastSequenceNumbers[i] = sequenceNumber;
+                } else {
+                    // Too far ahead => accept but reset bitmap
+                    recentReceiveBitmap[i] = 1u;
+                    lastSequenceNumbers[i] = sequenceNumber;
+                }
+
+                // Mark peer as updated for persistence
+                peerUpdatesSinceLastSave++;
+                uint32_t now = millis();
+                if (peerUpdatesSinceLastSave >= PEER_SAVE_COUNT || (now - lastPeerSaveTime) >= PEER_SAVE_INTERVAL) {
+                    savePeerTableToNVS();
+                    peerUpdatesSinceLastSave = 0;
+                    lastPeerSaveTime = now;
+                }
+
                 return true;
             }
-            ESP_LOGW(MESH_SEC_TAG, "Replay attack detected from node 0x%04X: seq %lu <= last %lu",
-                     nodeId, sequenceNumber, lastSequenceNumbers[i]);
+
+            // sequenceNumber <= last => check bitmap for recent reception (out-of-order)
+            uint32_t offset = last - sequenceNumber;
+            if (offset < WINDOW) {
+                // Check bit
+                if ((recentReceiveBitmap[i] >> offset) & 0x1u) {
+                    ESP_LOGW(MESH_SEC_TAG, "Replay attack detected (duplicate) from node 0x%04X: seq %lu <= last %lu",
+                             nodeId, sequenceNumber, last);
+                    return false; // duplicate
+                } else {
+                    // within window and not seen, mark bit
+                    recentReceiveBitmap[i] |= (1u << offset);
+                    // Persist with throttle
+                    peerUpdatesSinceLastSave++;
+                    uint32_t now = millis();
+                    if (peerUpdatesSinceLastSave >= PEER_SAVE_COUNT || (now - lastPeerSaveTime) >= PEER_SAVE_INTERVAL) {
+                        savePeerTableToNVS();
+                        peerUpdatesSinceLastSave = 0;
+                        lastPeerSaveTime = now;
+                    }
+                    return true;
+                }
+            }
+
+            ESP_LOGW(MESH_SEC_TAG, "Replay attack detected from node 0x%04X: seq %lu <= last %lu (out of window)",
+                     nodeId, sequenceNumber, last);
             return false;
         }
     }
-    
+
     // New node, add to tracking
     if (authenticatedCount < 32) {
         authenticatedNodes[authenticatedCount] = nodeId;
         lastSequenceNumbers[authenticatedCount] = sequenceNumber;
+        recentReceiveBitmap[authenticatedCount] = 1u; // mark present
         authenticatedCount++;
+
+        // Persist peer table with throttle
+        peerUpdatesSinceLastSave++;
+        uint32_t now = millis();
+        if (peerUpdatesSinceLastSave >= PEER_SAVE_COUNT || (now - lastPeerSaveTime) >= PEER_SAVE_INTERVAL) {
+            savePeerTableToNVS();
+            peerUpdatesSinceLastSave = 0;
+            lastPeerSaveTime = now;
+        }
+
         return true;
     }
-    
+
     ESP_LOGW(MESH_SEC_TAG, "Too many authenticated nodes, cannot track sequence for 0x%04X", nodeId);
     return true; // Allow if tracking full
+}
+
+// Persist the per-peer table (authenticatedNodes, lastSequenceNumbers, recentReceiveBitmap)
+bool MeshSecurityService::savePeerTableToNVS() {
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open("mesh_security", NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(MESH_SEC_TAG, "Failed to open NVS for peer table save: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    // Prepare a compact blob: [count][entries...] where entry = nodeId(2) + seq(4) + bitmap(4)
+    size_t entrySize = sizeof(uint16_t) + sizeof(uint32_t) + sizeof(uint32_t);
+    size_t blobSize = sizeof(uint8_t) + (authenticatedCount * entrySize);
+    uint8_t* blob = (uint8_t*)malloc(blobSize);
+    if (!blob) {
+        nvs_close(nvs_handle);
+        ESP_LOGW(MESH_SEC_TAG, "Out of memory saving peer table");
+        return false;
+    }
+
+    uint8_t* p = blob;
+    *p++ = (uint8_t)authenticatedCount;
+    for (int i = 0; i < authenticatedCount; i++) {
+        uint16_t nid = authenticatedNodes[i];
+        uint32_t seq = lastSequenceNumbers[i];
+        uint32_t bm = recentReceiveBitmap[i];
+        memcpy(p, &nid, sizeof(nid)); p += sizeof(nid);
+        memcpy(p, &seq, sizeof(seq)); p += sizeof(seq);
+        memcpy(p, &bm, sizeof(bm)); p += sizeof(bm);
+    }
+
+    err = nvs_set_blob(nvs_handle, "peer_table", blob, blobSize);
+    if (err != ESP_OK) {
+        ESP_LOGW(MESH_SEC_TAG, "Failed to write peer table to NVS: %s", esp_err_to_name(err));
+        free(blob);
+        nvs_close(nvs_handle);
+        return false;
+    }
+
+    err = nvs_commit(nvs_handle);
+    nvs_close(nvs_handle);
+    free(blob);
+
+    if (err == ESP_OK) {
+        ESP_LOGD(MESH_SEC_TAG, "Peer table saved to NVS (%d entries)", authenticatedCount);
+        return true;
+    }
+    ESP_LOGW(MESH_SEC_TAG, "Failed to commit peer table to NVS: %s", esp_err_to_name(err));
+    return false;
+}
+
+bool MeshSecurityService::loadPeerTableFromNVS() {
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open("mesh_security", NVS_READONLY, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(MESH_SEC_TAG, "Failed to open NVS for peer table load: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    // Read size first
+    size_t required_size = 0;
+    err = nvs_get_blob(nvs_handle, "peer_table", NULL, &required_size);
+    if (err != ESP_OK || required_size == 0) {
+        nvs_close(nvs_handle);
+        if (err == ESP_ERR_NVS_NOT_FOUND) {
+            ESP_LOGI(MESH_SEC_TAG, "No peer table in NVS (first run)");
+            return true; // Not an error
+        }
+        ESP_LOGW(MESH_SEC_TAG, "Failed to query peer table size: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    uint8_t* blob = (uint8_t*)malloc(required_size);
+    if (!blob) {
+        nvs_close(nvs_handle);
+        ESP_LOGW(MESH_SEC_TAG, "Out of memory loading peer table");
+        return false;
+    }
+
+    err = nvs_get_blob(nvs_handle, "peer_table", blob, &required_size);
+    nvs_close(nvs_handle);
+    if (err != ESP_OK) {
+        free(blob);
+        ESP_LOGW(MESH_SEC_TAG, "Failed to read peer table from NVS: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    uint8_t* p = blob;
+    uint8_t count = *p++;
+    if (count > 32) count = 32;
+    authenticatedCount = count;
+    for (int i = 0; i < authenticatedCount; i++) {
+        uint16_t nid; memcpy(&nid, p, sizeof(nid)); p += sizeof(nid);
+        uint32_t seq; memcpy(&seq, p, sizeof(seq)); p += sizeof(seq);
+        uint32_t bm; memcpy(&bm, p, sizeof(bm)); p += sizeof(bm);
+        authenticatedNodes[i] = nid;
+        lastSequenceNumbers[i] = seq;
+        recentReceiveBitmap[i] = bm;
+    }
+
+    free(blob);
+    ESP_LOGI(MESH_SEC_TAG, "Loaded peer table from NVS (%d entries)", authenticatedCount);
+    return true;
 }
 
 uint32_t MeshSecurityService::getNextSequenceNumber() {
@@ -504,6 +684,38 @@ bool MeshSecurityService::saveSequenceToNVS() {
     }
 }
 
+bool MeshSecurityService::clearSequenceFromNVS() {
+    nvs_handle_t nvs_handle;
+    esp_err_t err;
+    
+    // Open NVS
+    err = nvs_open("mesh_security", NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(MESH_SEC_TAG, "Failed to open NVS for sequence clear: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    // Erase sequence counter key
+    err = nvs_erase_key(nvs_handle, "seq_counter");
+    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGW(MESH_SEC_TAG, "Failed to clear sequence from NVS: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return false;
+    }
+    
+    // Commit changes
+    err = nvs_commit(nvs_handle);
+    nvs_close(nvs_handle);
+    
+    if (err == ESP_OK || err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGI(MESH_SEC_TAG, "Sequence counter cleared from NVS");
+        return true;
+    } else {
+        ESP_LOGW(MESH_SEC_TAG, "Failed to commit sequence clear to NVS: %s", esp_err_to_name(err));
+        return false;
+    }
+}
+
 // ======================
 // Layer 2: Resync Handshake Implementation
 // ======================
@@ -641,4 +853,95 @@ bool MeshSecurityService::handleReplayRejection(uint16_t targetAddress) {
     
     // Automatically trigger resync request when our packets are rejected
     return sendResyncRequest(targetAddress, RESYNC_REASON_REPLAY_REJECT);
+}
+
+// Generate deterministic sequence base from nodeId and network key
+uint32_t MeshSecurityService::generateDeterministicSequenceBase() {
+    // Get node ID from WiFi MAC or stored config (this should be actual node ID)
+    // For now, derive a pseudo node ID from MAC or use a fixed approach
+    uint16_t nodeId = getLocalNodeId();
+    
+    // Read boot count from NVS (increment each boot)
+    uint32_t bootCount = getBootCountFromNVS();
+    
+    // Use network-wide epoch concept:
+    // All nodes in same network share same epoch base, but different sequence ranges per node
+    uint32_t networkEpoch = calculateNetworkEpoch(config.networkKey);
+    
+    // Each node gets a sequence range: epoch + (nodeId * RANGE_SIZE) + bootCount * BOOT_INCREMENT
+    const uint32_t RANGE_SIZE = 1000000;  // 1M sequences per node
+    const uint32_t BOOT_INCREMENT = 10000; // 10K sequences per boot
+    
+    uint32_t base = networkEpoch + (nodeId % 1000) * RANGE_SIZE + (bootCount % 100) * BOOT_INCREMENT;
+    
+    ESP_LOGI(MESH_SEC_TAG, "Generated deterministic sequence base: nodeId=0x%04X, epoch=%lu, boot=%lu, base=%lu", 
+             nodeId, networkEpoch, bootCount, base);
+    
+    return base;
+}
+
+uint32_t MeshSecurityService::calculateNetworkEpoch(const uint8_t* networkKey) {
+    // Generate network-wide epoch from network key hash
+    uint8_t hash[32];
+    mbedtls_md_context_t md_ctx;
+    mbedtls_md_init(&md_ctx);
+    
+    const mbedtls_md_info_t* md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (md_info && mbedtls_md_setup(&md_ctx, md_info, 0) == 0) {
+        mbedtls_md_starts(&md_ctx);
+        mbedtls_md_update(&md_ctx, networkKey, MESH_NETKEY_SIZE);
+        mbedtls_md_update(&md_ctx, (const uint8_t*)"MESH_EPOCH", 10);
+        mbedtls_md_finish(&md_ctx, hash);
+        mbedtls_md_free(&md_ctx);
+    } else {
+        // Fallback: use network key directly
+        memcpy(hash, networkKey, MESH_NETKEY_SIZE);
+        memset(hash + MESH_NETKEY_SIZE, 0xAA, 32 - MESH_NETKEY_SIZE);
+    }
+    
+    // Convert to epoch in safe range (100M - 500M)
+    uint32_t epoch = (hash[0] << 24) | (hash[1] << 16) | (hash[2] << 8) | hash[3];
+    epoch = (epoch % 400000000) + 100000000;
+    
+    return epoch;
+}
+
+uint16_t MeshSecurityService::getLocalNodeId() {
+    // This should get the actual node ID from WiFi MAC or configuration
+    // For now, use a simple approach based on MAC
+    uint8_t mac[6];
+    esp_wifi_get_mac(WIFI_IF_STA, mac);
+    return (mac[4] << 8) | mac[5]; // Use last 2 bytes of MAC as node ID
+}
+
+uint32_t MeshSecurityService::getBootCountFromNVS() {
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open("mesh_security", NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(MESH_SEC_TAG, "Failed to open NVS for boot count: %s", esp_err_to_name(err));
+        return 1; // Default boot count
+    }
+    
+    uint32_t bootCount = 1;
+    size_t required_size = sizeof(bootCount);
+    err = nvs_get_blob(nvs_handle, "boot_count", &bootCount, &required_size);
+    
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        bootCount = 1; // First boot
+    } else if (err != ESP_OK) {
+        ESP_LOGW(MESH_SEC_TAG, "Failed to read boot count: %s", esp_err_to_name(err));
+        bootCount = 1;
+    }
+    
+    // Increment and save boot count for next boot
+    bootCount++;
+    err = nvs_set_blob(nvs_handle, "boot_count", &bootCount, sizeof(bootCount));
+    if (err == ESP_OK) {
+        nvs_commit(nvs_handle);
+    }
+    
+    nvs_close(nvs_handle);
+    
+    ESP_LOGI(MESH_SEC_TAG, "Boot count: %lu", bootCount);
+    return bootCount;
 }

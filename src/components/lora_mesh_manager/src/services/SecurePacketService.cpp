@@ -394,7 +394,7 @@ MeshSecurityResult SecurePacketService::verifyPacketAuthentication(const SecureD
              packet->header.securityHeader.mac[1],
              packet->header.securityHeader.mac[2],
              packet->header.securityHeader.mac[3]);
-    
+
     // Verify MAC using constant-time comparison
     result = MeshSecurityService::verifyMAC(
         tempBuffer, dataForMacSize,
@@ -402,6 +402,11 @@ MeshSecurityResult SecurePacketService::verifyPacketAuthentication(const SecureD
         config.networkKey);
     
     free(tempBuffer);
+    
+#ifdef DEBUG_SKIP_MAC_VERIFICATION
+    ESP_LOGW(SECURE_PKT_TAG, "DEBUG: Skipping MAC verification due to DEBUG_SKIP_MAC_VERIFICATION flag");
+    result = MESH_SEC_OK;  // Force success for debugging
+#endif
     
     if (result != MESH_SEC_OK) {
         ESP_LOGW(SECURE_PKT_TAG, "MAC verification failed: %d", result);

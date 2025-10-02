@@ -162,12 +162,23 @@ public:
     // NVS persistence for sequence counter (Layer 1 persistent replay protection)
     static bool loadSequenceFromNVS();
     static bool saveSequenceToNVS();
+    static bool clearSequenceFromNVS();
     
     // Layer 2: Resync handshake mechanism
     static bool sendResyncRequest(uint16_t targetAddress, ResyncReasonCode reason);
     static bool processResyncRequest(const ResyncRequestPacket* request, uint16_t senderAddress);
     static bool processResyncResponse(const ResyncResponsePacket* response, uint16_t senderAddress);
     static bool handleReplayRejection(uint16_t targetAddress);
+    
+    // Per-peer persistence helpers
+    static bool savePeerTableToNVS();
+    static bool loadPeerTableFromNVS();
+    
+    // Deterministic sequence generation
+    static uint32_t generateDeterministicSequenceBase();
+    static uint32_t getBootCountFromNVS();
+    static uint32_t calculateNetworkEpoch(const uint8_t* networkKey);
+    static uint16_t getLocalNodeId();
     
     // Get current security configuration
     static const MeshSecurityConfig& getConfig();
@@ -187,12 +198,17 @@ private:
     
     // Replay protection
     static uint32_t lastSequenceNumbers[32];
+    // Recent receive bitmaps per-peer to allow small out-of-order packets
+    static uint32_t recentReceiveBitmap[32];
     
     // NVS persistence for sequence counter
     static uint32_t sequencesSinceLastSave;
     static uint32_t lastSaveTime;
     static const uint32_t SEQUENCE_SAVE_INTERVAL = 50;  // Save every 50 sequences
     static const uint32_t TIME_SAVE_INTERVAL = 300000;  // Save every 5 minutes (ms)
+    // Per-peer persistence throttling
+    static const uint32_t PEER_SAVE_INTERVAL = 60000;   // Save per-peer table every 60s
+    static const uint32_t PEER_SAVE_COUNT = 10;         // Or after 10 updates
     
     // Layer 2 resync tracking
     static bool resyncInProgress;

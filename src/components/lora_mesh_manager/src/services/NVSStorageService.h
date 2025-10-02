@@ -20,6 +20,11 @@
 #define NVS_KEY_DEVICE_COUNT "dev_count"
 #define NVS_KEY_NEXT_ADDRESS "next_addr"
 #define NVS_KEY_DEVICE_PREFIX "dev_"
+#define NVS_KEY_GATEWAY_ADDR "gw_addr"
+#define NVS_KEY_GATEWAY_HOPS "gw_hops"
+#define NVS_KEY_GATEWAY_TIME "gw_time"
+#define NVS_KEY_ROUTING_COUNT "rt_count"
+#define NVS_KEY_ROUTING_PREFIX "rt_"
 
 // Maximum values
 #define MAX_PROVISIONED_DEVICES 64
@@ -70,6 +75,29 @@ struct AddressPool {
     uint16_t totalAssigned;        // Total addresses assigned
     uint16_t maxDevices;           // Maximum devices supported
     uint32_t lastUpdate;           // Last pool update timestamp
+};
+
+/**
+ * @brief Gateway information for NVS storage
+ */
+struct GatewayInfo {
+    uint16_t address;              // Gateway mesh address
+    uint8_t hopCount;              // Number of hops to gateway
+    uint32_t lastSeen;             // Last time gateway was seen
+    bool isValid;                  // Gateway info validity flag
+};
+
+/**
+ * @brief Routing table entry for NVS storage
+ */
+struct RouteEntry {
+    uint16_t address;              // Node address
+    uint16_t via;                  // Next hop address
+    uint8_t metric;                // Hop count
+    uint8_t role;                  // Node role flags
+    uint16_t networkId;            // Network ID of the node (0 = unknown/any)
+    uint32_t lastSeen;             // Last time entry was updated
+    bool isValid;                  // Entry validity flag
 };
 
 /**
@@ -207,6 +235,71 @@ public:
      * @return true if statistics retrieved successfully
      */
     static bool getAddressPoolInfo(AddressPool& pool);
+    
+    // Gateway and Routing Table Management
+    
+    /**
+     * @brief Save gateway information to NVS
+     * @param gateway Gateway information to save
+     * @return true if save successful
+     */
+    static bool saveGatewayInfo(const GatewayInfo& gateway);
+    
+    /**
+     * @brief Load gateway information from NVS
+     * @param gateway Output buffer for gateway information
+     * @return true if load successful
+     */
+    static bool loadGatewayInfo(GatewayInfo& gateway);
+    
+    /**
+     * @brief Check if gateway information exists in NVS
+     * @return true if gateway info exists
+     */
+    static bool hasGatewayInfo();
+    
+    /**
+     * @brief Clear gateway information from NVS
+     * @return true if clear successful
+     */
+    static bool clearGatewayInfo();
+    
+    /**
+     * @brief Save routing table entry to NVS
+     * @param entry Routing entry to save
+     * @return true if save successful
+     */
+    static bool saveRouteEntry(const RouteEntry& entry);
+    
+    /**
+     * @brief Load routing table entry by address
+     * @param address Node address
+     * @param entry Output buffer for routing entry
+     * @return true if entry found and loaded
+     */
+    static bool loadRouteEntry(uint16_t address, RouteEntry& entry);
+    
+    /**
+     * @brief Save multiple routing table entries
+     * @param entries Array of routing entries
+     * @param count Number of entries
+     * @return true if save successful
+     */
+    static bool saveRoutingTable(const RouteEntry* entries, uint16_t count);
+    
+    /**
+     * @brief Load all routing table entries
+     * @param entries Output array for routing entries
+     * @param maxEntries Maximum entries to load
+     * @return Number of entries loaded
+     */
+    static uint16_t loadRoutingTable(RouteEntry* entries, uint16_t maxEntries);
+    
+    /**
+     * @brief Clear all routing table entries from NVS
+     * @return true if clear successful
+     */
+    static bool clearRoutingTable();
     
     // Utility Functions
     
