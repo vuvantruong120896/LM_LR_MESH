@@ -761,7 +761,7 @@ void LoraMesher::processPackets() {
                             ESP_LOGI(LM_TAG, "Packet decrypted successfully");
                             
                             // CRITICAL FIX: Log heap status before queue packet creation
-                            ESP_LOGI(LM_TAG, "Free heap before createQueuePacket: %d bytes", esp_get_free_heap_size());
+                            ESP_LOGD(LM_TAG, "Free heap before createQueuePacket: %d bytes", esp_get_free_heap_size());
                             
                             // CRITICAL FIX: Pass RSSI and SNR when creating queue packet
                             // This avoids NULL pointer issues later when accessing these fields
@@ -783,7 +783,7 @@ void LoraMesher::processPackets() {
                                 PacketQueueService::deleteQueuePacketAndPacket(rx);
                             } else {
                                 // Log to debug
-                                ESP_LOGI(LM_TAG, "Decrypted packet queued successfully (free heap: %d)",
+                                ESP_LOGD(LM_TAG, "Decrypted packet queued successfully (free heap: %d)",
                                          esp_get_free_heap_size());
                                 // No need to set SNR again - already set in createQueuePacket
                                 
@@ -912,7 +912,7 @@ void LoraMesher::routingTableManager() {
             uint32_t freeHeap = esp_get_free_heap_size();
             
             ESP_LOGI(LM_TAG, "=== Periodic Routing Table Display (every 30s) ===");
-            ESP_LOGI(LM_TAG, "Stack free: %u bytes, Heap free: %u bytes", stackHighWater, freeHeap);
+            ESP_LOGD(LM_TAG, "Stack free: %u bytes, Heap free: %u bytes", stackHighWater, freeHeap);
             
             // CRITICAL: Check for stack overflow danger
             if (stackHighWater < 512) {
@@ -926,7 +926,7 @@ void LoraMesher::routingTableManager() {
             lastPrintTime = currentTime;
             
             // CRITICAL DEBUG: Log after print to detect if crash happens during print
-            ESP_LOGI(LM_TAG, "Routing table print completed successfully");
+            ESP_LOGD(LM_TAG, "Routing table print completed successfully");
         }
 
         // Check for timeout and remove inactive nodes every DEFAULT_TIMEOUT

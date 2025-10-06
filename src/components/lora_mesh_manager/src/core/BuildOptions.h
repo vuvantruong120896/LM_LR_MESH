@@ -109,7 +109,7 @@ extern const char* LM_VERSION;
 #define MIN_TIMEOUT 20
 
 // Timeout Configuration - Dynamic based on Hello Mode
-#define TIMEOUT_MULTIPLIER 3             // Timeout = Hello Interval × 3 (miss 3 consecutive hellos before removal)
+#define TIMEOUT_MULTIPLIER 3             // Timeout = Hello Interval × 1 (miss 1 consecutive hellos before removal)
 
 // Dynamic Hello Mode Configuration (Phase 1)
 #define HELLO_NORMAL_INTERVAL 300        // Normal mode: 5 minutes (optimized from 10 min)

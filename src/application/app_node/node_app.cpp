@@ -582,6 +582,7 @@ void NodeApp::applyNetworkCredentials(const ProvisionResponsePacket* response) {
 }
 
 // Helper function to save current routing table to NVS for persistence
+// FIX #3: Save only DIRECT routes (metric==1) or GATEWAY nodes to reduce NVS bloat
 static void saveRoutingTableToNVS() {
     LM_LinkedList<RouteNode>* routingTable = LoraMesher::getInstance().routingTableListCopy();
     if (!routingTable || routingTable->getLength() == 0) {
@@ -590,33 +591,48 @@ static void saveRoutingTableToNVS() {
         return;
     }
     
-    // Convert routing table to RouteEntry array
+    // Convert routing table to RouteEntry array - FILTER for NVS save
     uint16_t entryCount = routingTable->getLength();
     RouteEntry* entries = new RouteEntry[entryCount];
     uint16_t validEntries = 0;
+    uint16_t filteredCount = 0;
     
     for (int i = 0; i < entryCount; i++) {
         RouteNode* route = (*routingTable)[i];
         if (route && route->networkNode.address != 0) {
-            entries[validEntries] = {
-                .address = route->networkNode.address,
-                .via = route->via,
-                .metric = (uint8_t)route->networkNode.metric,
-                .role = route->networkNode.role,
-                .networkId = route->networkNode.networkId,
-                .lastSeen = (uint32_t)(esp_timer_get_time() / 1000000),
-                .isValid = true
-            };
-            validEntries++;
+            // FIX #3: Only save direct neighbors (metric==1) or gateway nodes
+            // Rationale: Indirect routes will be rediscovered after reboot
+            bool isDirect = (route->networkNode.metric == 1);
+            bool isGateway = (route->networkNode.role & ROLE_GATEWAY);
+            
+            if (isDirect || isGateway) {
+                entries[validEntries] = {
+                    .address = route->networkNode.address,
+                    .via = route->via,
+                    .metric = (uint8_t)route->networkNode.metric,
+                    .role = route->networkNode.role,
+                    .networkId = route->networkNode.networkId,
+                    .lastSeen = (uint32_t)(esp_timer_get_time() / 1000000),
+                    .isValid = true
+                };
+                validEntries++;
+            } else {
+                filteredCount++;
+                ESP_LOGD(LM_TAG, "FIX #3: Filtered indirect route from NVS save: 0x%04X via 0x%04X (hops: %d)",
+                         route->networkNode.address, route->via, route->networkNode.metric);
+            }
         }
     }
     
     if (validEntries > 0) {
         if (NVSStorageService::saveRoutingTable(entries, validEntries)) {
-            ESP_LOGD(LM_TAG, "Routing table saved to NVS: %u entries", validEntries);
+            ESP_LOGI(LM_TAG, "Routing table saved to NVS: %u direct/gateway routes (filtered %u indirect)", 
+                     validEntries, filteredCount);
         } else {
             ESP_LOGW(LM_TAG, "Failed to save routing table to NVS");
         }
+    } else {
+        ESP_LOGI(LM_TAG, "No direct/gateway routes to save to NVS (filtered %u indirect)", filteredCount);
     }
     
     delete[] entries;

@@ -519,27 +519,40 @@ void BridgeApp::saveRoutingTableToNVS() {
         return;
     }
     
-    // Copy routing table to entries array
+    // FIX #3: Copy routing table to entries array - FILTER for NVS save
+    // Only save direct neighbors (metric==1) or gateway nodes
     size_t index = 0;
+    size_t filteredCount = 0;
     if (routingTable->moveToStart()) {
         do {
             RouteNode* node = routingTable->getCurrent();
             if (node && index < totalNodes) {
-                // CRITICAL FIX: Set ALL fields including networkId, lastSeen, and isValid
-                entries[index] = {
-                    .address = node->networkNode.address,
-                    .via = node->via,
-                    .metric = node->networkNode.metric,
-                    .role = node->networkNode.role,
-                    .networkId = node->networkNode.networkId,
-                    .lastSeen = (uint32_t)(esp_timer_get_time() / 1000000),
-                    .isValid = true
-                };
+                // FIX #3: Only save direct neighbors (metric==1) or gateway nodes
+                // Rationale: Indirect routes will be rediscovered after reboot
+                bool isDirect = (node->networkNode.metric == 1);
+                bool isGateway = (node->networkNode.role & ROLE_GATEWAY);
                 
-                ESP_LOGD(TAG, "Entry[%d]: 0x%04X via 0x%04X hops:%d role:0x%02X netId:0x%04X", 
-                         index, entries[index].address, entries[index].via, 
-                         entries[index].metric, entries[index].role, entries[index].networkId);
-                index++;
+                if (isDirect || isGateway) {
+                    // CRITICAL FIX: Set ALL fields including networkId, lastSeen, and isValid
+                    entries[index] = {
+                        .address = node->networkNode.address,
+                        .via = node->via,
+                        .metric = node->networkNode.metric,
+                        .role = node->networkNode.role,
+                        .networkId = node->networkNode.networkId,
+                        .lastSeen = (uint32_t)(esp_timer_get_time() / 1000000),
+                        .isValid = true
+                    };
+                    
+                    ESP_LOGD(TAG, "Entry[%d]: 0x%04X via 0x%04X hops:%d role:0x%02X netId:0x%04X", 
+                             index, entries[index].address, entries[index].via, 
+                             entries[index].metric, entries[index].role, entries[index].networkId);
+                    index++;
+                } else {
+                    filteredCount++;
+                    ESP_LOGD(TAG, "FIX #3: Filtered indirect route from NVS save: 0x%04X via 0x%04X (hops: %d)",
+                             node->networkNode.address, node->via, node->networkNode.metric);
+                }
             }
         } while (routingTable->next() && index < totalNodes);
     }
@@ -550,12 +563,13 @@ void BridgeApp::saveRoutingTableToNVS() {
     uint16_t validEntries = index;
     if (validEntries > 0) {
         if (NVSStorageService::saveRoutingTable(entries, validEntries)) {
-            ESP_LOGI(TAG, "Routing table saved to NVS: %d entries", validEntries);
+            ESP_LOGI(TAG, "Routing table saved to NVS: %d direct/gateway routes (filtered %d indirect)", 
+                     validEntries, filteredCount);
         } else {
             ESP_LOGW(TAG, "Failed to save routing table to NVS");
         }
     } else {
-        ESP_LOGW(TAG, "No valid routing entries to save");
+        ESP_LOGI(TAG, "No direct/gateway routes to save to NVS (filtered %d indirect)", filteredCount);
     }
     
     delete[] entries;

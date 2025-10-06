@@ -1034,10 +1034,21 @@ bool NVSStorageService::saveRoutingTable(const RouteEntry* entries, uint16_t cou
         return false;
     }
     
+    // PHƯƠNG ÁN 3: Write-Through Cache - CHỈ dùng saveRoutingTable() cho BULK SAVE (backup/restore)
+    // Normal operations sử dụng saveRouteEntryIncremental() và deleteRouteEntry()
+    // Điều này đảm bảo NVS luôn sync với RAM, không cần full scan erase
+    
+    // NOTE: Function này chỉ được gọi khi:
+    // 1. Load routing table từ NVS lần đầu (restore after reboot)
+    // 2. Manual backup/restore operations
+    // 3. KHÔNG được gọi cho thêm/xóa route thông thường
+    
+    ESP_LOGI(TAG, "Bulk saving routing table (backup mode): %u entries", count);
+    
     bool success = true;
     uint16_t savedCount = 0;
     
-    // Save individual entries
+    // Save individual entries (overwrite existing)
     for (uint16_t i = 0; i < count; i++) {
         if (entries[i].isValid && entries[i].address != 0 && entries[i].address != 0xFFFF) {
             char routeKey[16];
@@ -1158,6 +1169,130 @@ uint16_t NVSStorageService::loadRoutingTable(RouteEntry* entries, uint16_t maxEn
         }
     }
     return loadedCount;
+}
+
+// PHƯƠNG ÁN 3: Write-Through Cache - Incremental Save/Delete
+// These functions provide real-time NVS sync without full table scans
+
+bool NVSStorageService::saveRouteEntryIncremental(const RouteEntry& entry) {
+    if (!nvs_initialized) {
+        ESP_LOGE(TAG, "NVS not initialized");
+        return false;
+    }
+    
+    if (entry.address == 0 || entry.address == 0xFFFF) {
+        ESP_LOGE(TAG, "Invalid route entry address: 0x%04X", entry.address);
+        return false;
+    }
+    
+    nvs_handle_t handle;
+    esp_err_t err = openNVSHandle(NVS_NAMESPACE_MESH, &handle, NVS_READWRITE);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS handle: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    char routeKey[16];
+    snprintf(routeKey, sizeof(routeKey), "%s%04X", NVS_KEY_ROUTING_PREFIX, entry.address);
+    
+    // Check if entry already exists
+    bool isNewEntry = false;
+    RouteEntry existingEntry;
+    size_t required_size = sizeof(RouteEntry);
+    err = nvs_get_blob(handle, routeKey, &existingEntry, &required_size);
+    if (err != ESP_OK) {
+        isNewEntry = true;
+    }
+    
+    // Save/Update route entry
+    err = nvs_set_blob(handle, routeKey, &entry, sizeof(RouteEntry));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save route entry: %s", esp_err_to_name(err));
+        closeNVSHandle(handle);
+        return false;
+    }
+    
+    // Update count if new entry
+    if (isNewEntry) {
+        uint16_t count = 0;
+        nvs_get_u16(handle, NVS_KEY_ROUTING_COUNT, &count);
+        count++;
+        nvs_set_u16(handle, NVS_KEY_ROUTING_COUNT, count);
+        ESP_LOGD(TAG, "Incremental save: NEW route 0x%04X (total: %u)", entry.address, count);
+    } else {
+        ESP_LOGD(TAG, "Incremental save: UPDATED route 0x%04X", entry.address);
+    }
+    
+    err = nvs_commit(handle);
+    closeNVSHandle(handle);
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to commit route entry: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    return true;
+}
+
+bool NVSStorageService::deleteRouteEntry(uint16_t address) {
+    if (!nvs_initialized) {
+        ESP_LOGE(TAG, "NVS not initialized");
+        return false;
+    }
+    
+    if (address == 0 || address == 0xFFFF) {
+        ESP_LOGW(TAG, "Invalid route address for deletion: 0x%04X", address);
+        return false;
+    }
+    
+    nvs_handle_t handle;
+    esp_err_t err = openNVSHandle(NVS_NAMESPACE_MESH, &handle, NVS_READWRITE);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS handle: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    char routeKey[16];
+    snprintf(routeKey, sizeof(routeKey), "%s%04X", NVS_KEY_ROUTING_PREFIX, address);
+    
+    // Check if entry exists before deleting
+    RouteEntry existingEntry;
+    size_t required_size = sizeof(RouteEntry);
+    err = nvs_get_blob(handle, routeKey, &existingEntry, &required_size);
+    
+    if (err != ESP_OK) {
+        ESP_LOGD(TAG, "Route 0x%04X not found in NVS, skipping delete", address);
+        closeNVSHandle(handle);
+        return true; // Not an error - already deleted or never existed
+    }
+    
+    // Delete route entry
+    err = nvs_erase_key(handle, routeKey);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to delete route entry: %s", esp_err_to_name(err));
+        closeNVSHandle(handle);
+        return false;
+    }
+    
+    // Update count
+    uint16_t count = 0;
+    nvs_get_u16(handle, NVS_KEY_ROUTING_COUNT, &count);
+    if (count > 0) {
+        count--;
+        nvs_set_u16(handle, NVS_KEY_ROUTING_COUNT, count);
+    }
+    
+    ESP_LOGD(TAG, "Incremental delete: REMOVED route 0x%04X (remaining: %u)", address, count);
+    
+    err = nvs_commit(handle);
+    closeNVSHandle(handle);
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to commit route deletion: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    return true;
 }
 
 bool NVSStorageService::clearRoutingTable() {

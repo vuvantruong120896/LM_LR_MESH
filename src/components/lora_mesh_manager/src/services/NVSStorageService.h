@@ -288,6 +288,22 @@ public:
     static bool saveRoutingTable(const RouteEntry* entries, uint16_t count);
     
     /**
+     * @brief Save single route entry incrementally (Write-Through Cache)
+     * @param entry Route entry to save
+     * @return true if save successful
+     * @note Updates entry count if this is a new address
+     */
+    static bool saveRouteEntryIncremental(const RouteEntry& entry);
+    
+    /**
+     * @brief Delete single route entry incrementally (Write-Through Cache)
+     * @param address Address of route to delete
+     * @return true if delete successful
+     * @note Updates entry count
+     */
+    static bool deleteRouteEntry(uint16_t address);
+    
+    /**
      * @brief Load all routing table entries
      * @param entries Output array for routing entries
      * @param maxEntries Maximum entries to load

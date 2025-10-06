@@ -418,7 +418,7 @@ MeshSecurityResult SecurePacketService::verifyPacketAuthentication(const SecureD
     free(tempBuffer);
     
 #ifdef DEBUG_SKIP_MAC_VERIFICATION
-    ESP_LOGW(SECURE_PKT_TAG, "DEBUG: Skipping MAC verification due to DEBUG_SKIP_MAC_VERIFICATION flag");
+    ESP_LOGD(SECURE_PKT_TAG, "DEBUG: Skipping MAC verification due to DEBUG_SKIP_MAC_VERIFICATION flag");
     result = MESH_SEC_OK;  // Force success for debugging
 #endif
     
