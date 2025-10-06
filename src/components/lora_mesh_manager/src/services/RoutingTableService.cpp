@@ -1,5 +1,6 @@
 #include "RoutingTableService.h"
 #include "NetkeyDistributionService.h"
+#include "../core/LoraMesher.h"
 
 size_t RoutingTableService::routingTableSize() {
     return routingTableList->getLength();
@@ -166,6 +167,14 @@ void RoutingTableService::addNodeToRoutingTable(NetworkNode* node, uint16_t via)
     routingTableList->releaseInUse();
 
     ESP_LOGI(LM_TAG, "New route added: %X via %X metric %d, role %d", node->address, via, node->metric, node->role);
+    
+    // Trigger callback when new node is added to routing table (if not suspended)
+    if (onRoutingTableChanged != nullptr && !callbackSuspended) {
+        ESP_LOGI(LM_TAG, "New node added - triggering routing table save callback");
+        onRoutingTableChanged();
+    } else if (callbackSuspended) {
+        ESP_LOGD(LM_TAG, "Callback suspended - skipping save");
+    }
 }
 
 NetworkNode* RoutingTableService::getAllNetworkNodes() {
@@ -197,7 +206,16 @@ NetworkNode* RoutingTableService::getAllNetworkNodes() {
 }
 
 void RoutingTableService::resetTimeoutRoutingNode(RouteNode* node) {
-    node->timeout = millis() + DEFAULT_TIMEOUT * 1000;
+    // Dynamic timeout based on current Hello Mode
+    // Timeout = Current Hello Interval × TIMEOUT_MULTIPLIER
+    // This allows nodes to miss TIMEOUT_MULTIPLIER consecutive hellos before being removed
+    uint16_t currentHelloInterval = LoraMesher::getInstance().getCurrentHelloDelay();
+    uint32_t dynamicTimeout = currentHelloInterval * TIMEOUT_MULTIPLIER;
+    
+    node->timeout = millis() + dynamicTimeout * 1000;
+    
+    ESP_LOGD(LM_TAG, "Reset timeout for node 0x%04X: %u seconds (Hello interval: %us × %d)",
+             node->networkNode.address, dynamicTimeout, currentHelloInterval, TIMEOUT_MULTIPLIER);
 }
 
 void RoutingTableService::printRoutingTable() {
@@ -207,25 +225,56 @@ void RoutingTableService::printRoutingTable() {
 
     if (routingTableList->moveToStart()) {
         size_t position = 0;
+        unsigned long currentTime = millis();
 
         do {
             RouteNode* node = routingTableList->getCurrent();
+            
+            // Calculate time to live (time remaining before timeout)
+            unsigned long timeLeft = (node->timeout > currentTime) ? 
+                                      (node->timeout - currentTime) / 1000 : 0;
 
-            ESP_LOGI(LM_TAG, "%d - %X via %X metric %d Role %d", position,
+            ESP_LOGI(LM_TAG, "%d - Addr:0x%04X via:0x%04X hops:%d role:%d TTL:%lus SNR:%ddB", 
+                position,
                 node->networkNode.address,
                 node->via,
                 node->networkNode.metric,
-                node->networkNode.role);
+                node->networkNode.role,
+                timeLeft,
+                node->receivedSNR);
 
             position++;
         } while (routingTableList->next());
     }
+    
+    size_t totalNodes = routingTableList->getLength();
+    ESP_LOGI(LM_TAG, "Total nodes in routing table: %d", totalNodes);
 
     routingTableList->releaseInUse();
 }
 
-void RoutingTableService::manageTimeoutRoutingTable() {
-    ESP_LOGI(LM_TAG, "Checking routes timeout");
+bool RoutingTableService::manageTimeoutRoutingTable() {
+    // Check current Hello Mode - DO NOT remove nodes during Fast Discovery or Stabilizing modes
+    // - Fast Discovery: Provisioning phase with high collision rate
+    // - Stabilizing: Network is forming stable routes after provisioning
+    // - Normal: Fully stable network - safe to remove inactive nodes
+    uint8_t currentMode = LoraMesher::getInstance().getCurrentHelloMode();
+    
+    if (currentMode == HELLO_MODE_FAST_DISCOVERY) {
+        ESP_LOGI(LM_TAG, "Skipping timeout check - in Fast Discovery Mode (provisioning)");
+        ESP_LOGI(LM_TAG, "Node removal is disabled during network discovery to avoid premature cleanup");
+        return false; // No nodes removed
+    }
+    
+    if (currentMode == HELLO_MODE_STABILIZING) {
+        ESP_LOGI(LM_TAG, "Skipping timeout check - in Stabilizing Mode (post-provisioning)");
+        ESP_LOGI(LM_TAG, "Node removal is disabled during network stabilization to allow routes to form");
+        return false; // No nodes removed
+    }
+    
+    ESP_LOGI(LM_TAG, "Checking routes timeout (Hello Mode: %d - Normal operation)", currentMode);
+
+    bool nodeRemoved = false;
 
     routingTableList->setInUse();
 
@@ -238,6 +287,7 @@ void RoutingTableService::manageTimeoutRoutingTable() {
 
                 delete node;
                 routingTableList->DeleteCurrent();
+                nodeRemoved = true;
             }
 
         } while (routingTableList->next());
@@ -246,6 +296,25 @@ void RoutingTableService::manageTimeoutRoutingTable() {
     routingTableList->releaseInUse();
 
     printRoutingTable();
+
+    // Alert if routing table is empty (lost connection to all nodes)
+    if (nodeRemoved) {
+        size_t remainingNodes = routingTableSize();
+        if (remainingNodes == 0) {
+            ESP_LOGE(LM_TAG, "⚠️  CRITICAL: Routing table is now EMPTY - No nodes reachable!");
+            ESP_LOGE(LM_TAG, "⚠️  Network is isolated. Waiting for Hello packets to rebuild routing table...");
+        } else {
+            ESP_LOGW(LM_TAG, "Routing table updated: %d node(s) remaining after timeout cleanup", remainingNodes);
+        }
+    }
+
+    // Call callback if any node was removed and callback is registered (if not suspended)
+    if (nodeRemoved && onRoutingTableChanged != nullptr && !callbackSuspended) {
+        ESP_LOGI(LM_TAG, "Node(s) removed - triggering routing table save callback");
+        onRoutingTableChanged();
+    }
+
+    return nodeRemoved;
 }
 
 uint8_t RoutingTableService::calculateMaximumMetricOfRoutingTable() {
@@ -268,4 +337,22 @@ uint8_t RoutingTableService::calculateMaximumMetricOfRoutingTable() {
     return maximumMetricOfRoutingTable + 1;
 }
 
+void RoutingTableService::setRoutingTableChangedCallback(void (*callback)()) {
+    onRoutingTableChanged = callback;
+    ESP_LOGI(LM_TAG, "Routing table change callback registered");
+}
+
+void RoutingTableService::suspendCallback() {
+    callbackSuspended = true;
+    ESP_LOGD(LM_TAG, "Routing table callbacks suspended");
+}
+
+void RoutingTableService::resumeCallback() {
+    callbackSuspended = false;
+    ESP_LOGD(LM_TAG, "Routing table callbacks resumed");
+}
+
+// Static member initialization
 LM_LinkedList<RouteNode>* RoutingTableService::routingTableList = new LM_LinkedList<RouteNode>();
+void (*RoutingTableService::onRoutingTableChanged)() = nullptr;
+bool RoutingTableService::callbackSuspended = false;

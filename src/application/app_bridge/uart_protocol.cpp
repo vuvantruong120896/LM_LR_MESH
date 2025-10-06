@@ -1,5 +1,6 @@
 #include "uart_protocol.h"
 #include "bridge_config.h"
+#include "components/lora_mesh_manager/src/services/RoutingTableService.h"
 #include <esp_log.h>
 
 static const char* TAG = "UART_PROTO";
@@ -147,6 +148,110 @@ void UartProtocol::setProvisioningCallback(void (*callback)(const UartProvisioni
     provisioningCallback = callback;
 }
 
+bool UartProtocol::sendRoutingTable() {
+    // Get routing table from RoutingTableService
+    LM_LinkedList<RouteNode>* routingTable = RoutingTableService::routingTableList;
+    
+    if (!routingTable) {
+        ESP_LOGW(TAG, "Routing table is null");
+        return false;
+    }
+    
+    routingTable->setInUse();
+    
+    size_t totalEntries = routingTable->getLength();
+    uint8_t totalPackets = (totalEntries + MAX_ROUTING_ENTRIES_PER_PACKET - 1) / MAX_ROUTING_ENTRIES_PER_PACKET;
+    
+    if (totalPackets == 0) {
+        totalPackets = 1; // Send at least one packet even if empty
+    }
+    
+    ESP_LOGI(TAG, "Sending routing table: %d entries in %d packet(s)", totalEntries, totalPackets);
+    
+    uint8_t currentPacket = 0;
+    uint8_t entriesProcessed = 0;
+    
+    // Prepare payload buffer
+    uint8_t payload[sizeof(UartRoutingTableHeader) + sizeof(UartRoutingEntry) * MAX_ROUTING_ENTRIES_PER_PACKET];
+    
+    while (currentPacket < totalPackets) {
+        // Prepare header
+        UartRoutingTableHeader* header = reinterpret_cast<UartRoutingTableHeader*>(payload);
+        header->totalEntries = totalEntries;
+        header->currentPacket = currentPacket;
+        header->totalPackets = totalPackets;
+        
+        // Calculate entries for this packet
+        uint8_t entriesInThisPacket = 0;
+        uint8_t maxEntriesThisPacket = (totalEntries - entriesProcessed) < MAX_ROUTING_ENTRIES_PER_PACKET ? 
+                                        (totalEntries - entriesProcessed) : MAX_ROUTING_ENTRIES_PER_PACKET;
+        
+        // Fill entries
+        UartRoutingEntry* entries = reinterpret_cast<UartRoutingEntry*>(payload + sizeof(UartRoutingTableHeader));
+        
+        if (totalEntries > 0) {
+            // Position iterator
+            if (entriesProcessed == 0) {
+                routingTable->moveToStart();
+            }
+            
+            unsigned long currentTime = millis();
+            
+            for (uint8_t i = 0; i < maxEntriesThisPacket; i++) {
+                RouteNode* node = routingTable->getCurrent();
+                if (!node) break;
+                
+                // Fill entry
+                entries[i].address = node->networkNode.address;
+                entries[i].via = node->via;
+                entries[i].metric = node->networkNode.metric;
+                entries[i].role = node->networkNode.role;
+                entries[i].receivedSNR = node->receivedSNR;
+                
+                // Calculate time to live
+                entries[i].timeToLive = (node->timeout > currentTime) ? 
+                                        (node->timeout - currentTime) / 1000 : 0;
+                
+                entriesInThisPacket++;
+                entriesProcessed++;
+                
+                // Move to next node if not last entry
+                if (i < maxEntriesThisPacket - 1) {
+                    if (!routingTable->next()) break;
+                } else {
+                    // For next packet iteration
+                    routingTable->next();
+                }
+            }
+        }
+        
+        header->entriesInPacket = entriesInThisPacket;
+        
+        // Calculate payload size
+        uint8_t payloadSize = sizeof(UartRoutingTableHeader) + (sizeof(UartRoutingEntry) * entriesInThisPacket);
+        
+        // Send packet
+        if (!sendRawPacket(UART_PACKET_DATA, payload, payloadSize)) {
+            ESP_LOGE(TAG, "Failed to send routing table packet %d/%d", currentPacket + 1, totalPackets);
+            routingTable->releaseInUse();
+            return false;
+        }
+        
+        ESP_LOGI(TAG, "Sent routing table packet %d/%d with %d entries", 
+                 currentPacket + 1, totalPackets, entriesInThisPacket);
+        
+        currentPacket++;
+        
+        // Small delay between packets to avoid overwhelming receiver
+        vTaskDelay(50 / portTICK_PERIOD_MS);
+    }
+    
+    routingTable->releaseInUse();
+    
+    ESP_LOGI(TAG, "Routing table transmission complete: %d entries sent", totalEntries);
+    return true;
+}
+
 bool UartProtocol::receivePacket(UartPacket& packet) {
     if (!uart->available()) return false;
     
@@ -245,8 +350,11 @@ void UartProtocol::processReceivedPacket(const UartPacket& packet) {
                 
                 switch (cmd) {
                     case UART_CMD_GET_STATUS:
-                        // Bridge will send status in next cycle
-                        ESP_LOGI(TAG, "Status request received");
+                        ESP_LOGI(TAG, "Status request received - replying with heartbeat");
+                        // Immediately reply with a heartbeat so the external ESP32 can check-alive
+                        if (!sendHeartbeat()) {
+                            ESP_LOGW(TAG, "Failed to send heartbeat in response to GET_STATUS");
+                        }
                         break;
                         
                     case UART_CMD_SET_NETKEY: {
@@ -344,6 +452,14 @@ void UartProtocol::processReceivedPacket(const UartPacket& packet) {
                     case UART_CMD_RESET:
                         ESP_LOGW(TAG, "Reset command received");
                         ESP.restart();
+                        break;
+                    
+                    case UART_CMD_GET_ROUTING_TABLE:
+                        ESP_LOGI(TAG, "Get routing table command received");
+                        if (!sendRoutingTable()) {
+                            ESP_LOGW(TAG, "Failed to send routing table");
+                            sendError(0x03); // Routing table send error
+                        }
                         break;
                         
                     default:

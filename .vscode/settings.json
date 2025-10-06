@@ -1,5 +1,6 @@
 {
     "files.associations": {
         "cmath": "cpp"
-    }
+    },
+    "idf.pythonInstallPath": "e:\\esp\\5.4.2\\tools\\idf-python\\3.11.2\\python.exe"
 }

@@ -36,6 +36,9 @@ bool initializeMeshSecurity() {
             #elif DEVICE_MODE == 2  // Bridge mode
                 config.securityLevel = BRIDGE_SECURITY_LEVEL;
                 ESP_LOGI(MESH_INIT_TAG, "Initializing Bridge security - Level: %d", config.securityLevel);
+            #elif DEVICE_MODE == 3  //  Node mode
+                config.securityLevel = NODE_SECURITY_LEVEL;
+                ESP_LOGI(MESH_INIT_TAG, "Initializing Node security - Level: %d", config.securityLevel);
             #endif
         #endif
     #else
@@ -88,6 +91,8 @@ uint8_t getCurrentSecurityLevel() {
                 return NODE_SECURITY_LEVEL;
             #elif DEVICE_MODE == 2
                 return BRIDGE_SECURITY_LEVEL;
+            #elif DEVICE_MODE == 3
+                return NODE_SECURITY_LEVEL;
             #endif
         #endif
     #endif

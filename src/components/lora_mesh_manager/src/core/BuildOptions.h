@@ -69,13 +69,21 @@ extern const char* LM_VERSION;
 // Routing table max size
 #define RTMAXSIZE 256
 
-//MAX packet size per packet in bytes. It could be changed between 13 and 255 bytes. Recommended 100 or less bytes.
+//MAX packet size per packet in bytes. It could be changed between 13 and 255 bytes. 
+//Recommended 150 or less bytes (tested with SF7/BW250, max PHY layer: 222 bytes).
 //If exceed it will be automatically separated through multiple packets 
 //In bytes (226 bytes [UE max allowed with SF7 and 125khz])
 //MAX payload size for hello packets = LM_MAX_PACKET_SIZE - 7 bytes of header
 //MAX payload size for data packets = LM_MAX_PACKET_SIZE - 7 bytes of header - 2 bytes of via
 //MAX payload size for reliable and large packets = LM_MAX_PACKET_SIZE - 7 bytes of header - 2 bytes of via - 3 of control packet
-#define LM_MAX_PACKET_SIZE 100
+//
+// IMPORTANT: All nodes in the mesh network MUST use the same LM_MAX_PACKET_SIZE value!
+// Changed from 100 to 150 bytes on 2025-10-05 to:
+//   - Support more routes in Hello packets (~21 nodes vs ~13 nodes)
+//   - Accommodate larger sensor payloads (~120 bytes vs ~70 bytes)
+//   - Reduce secure packet overflow issues
+//   - Trade-off: Time on Air increases ~40% (150ms → 210ms @ SF7/BW250)
+#define LM_MAX_PACKET_SIZE 150
 
 // Packet types
 #define NEED_ACK_P 0b00000011
@@ -100,17 +108,20 @@ extern const char* LM_VERSION;
 #define DEFAULT_TIMEOUT HELLO_PACKETS_DELAY*5
 #define MIN_TIMEOUT 20
 
+// Timeout Configuration - Dynamic based on Hello Mode
+#define TIMEOUT_MULTIPLIER 3             // Timeout = Hello Interval × 3 (miss 3 consecutive hellos before removal)
+
 // Dynamic Hello Mode Configuration (Phase 1)
-#define HELLO_NORMAL_INTERVAL 600        // Normal mode: 10 minutes
+#define HELLO_NORMAL_INTERVAL 300        // Normal mode: 5 minutes (optimized from 10 min)
 #define HELLO_FAST_INTERVAL 30           // Fast discovery: 30 seconds  
 #define HELLO_DISCOVERY_DURATION 300     // Stay in fast mode for 5 minutes
 #define HELLO_GRACE_PERIOD 120           // Grace period after switching back
 
 // Phase 2: Stabilization and Route Quality Configuration
-#define HELLO_STABILIZING_INTERVAL 90    // Stabilizing mode: 1.5 minutes
+#define HELLO_STABILIZING_INTERVAL 60    // Stabilizing mode: 1 minute (optimized from 1.5 min)
 #define HELLO_STABILIZATION_DURATION 180 // Stay in stabilizing for 3 minutes
 #define MIN_ROUTE_COUNT 2                // Minimum routes before allowing normal mode
-#define MIN_ROUTE_QUALITY_RSSI -110      // Minimum RSSI for quality routes (dBm)
+#define MIN_ROUTE_QUALITY_RSSI -120      // Minimum RSSI for quality routes (dBm)
 #define ROUTE_QUALITY_CHECK_INTERVAL 60  // Check route quality every 60 seconds
 #define STABLE_ROUTE_DURATION 120        // Route must be stable for 2 minutes
 

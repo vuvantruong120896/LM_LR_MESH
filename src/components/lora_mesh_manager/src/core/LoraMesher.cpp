@@ -132,15 +132,24 @@ void LoraMesher::initializeLoRa() {
 
 #ifdef ARDUINO
     if (config.spi == nullptr) {
-  #ifdef LORA_MISO
-    // SPI.begin which picks up SCK MISO, MOSI, CS rather than LORA_MISO etc
-    // ttgo-lora32-v21new defines LORA_SCK the same as MISO, MOSI, CS etc so it works on default
-    // lilygo_t3_s3_sx127x howwever defines LORA_MISO etc but defines SCK, MISO etc as the same as SD_SCK instead so LoraMesher fails trying to talk to the SD
-        SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
-  #else 
-        SPI.begin(9, 8, 7, 6);
-  #endif
-        config.spi = &SPI;
+        #ifdef LORA_MISO
+            // SPI.begin which picks up SCK MISO, MOSI, CS rather than LORA_MISO etc
+            // ttgo-lora32-v21new defines LORA_SCK the same as MISO, MOSI, CS etc so it works on default
+            // lilygo_t3_s3_sx127x howwever defines LORA_MISO etc but defines SCK, MISO etc as the same as SD_SCK instead so LoraMesher fails trying to talk to the SD
+                SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
+        #else 
+                #if DEVICE_MODE == 1
+                    SPI.begin(9, 8, 7, 6);
+                    ESP_LOGI(LM_TAG, "SPI.begin(%d, %d, %d, %d);", 9, 8, 7, 6); 
+                #elif DEVICE_MODE == 2
+                    SPI.begin(9, 8, 7, 6);
+                    ESP_LOGI(LM_TAG, "SPI.begin(%d, %d, %d, %d);", 9, 8, 7, 6);
+                #elif DEVICE_MODE == 3
+                    SPI.begin(18, 16, 19, 5);
+                    ESP_LOGI(LM_TAG, "SPI.begin(%d, %d, %d, %d);", 18, 16, 19, 5);
+                #endif
+        #endif
+                config.spi = &SPI;
     }
 
     if (radio == nullptr) {
@@ -327,7 +336,7 @@ void LoraMesher::initializeSchedulers() {
     res = xTaskCreate(
         [](void* o) { static_cast<LoraMesher*>(o)->processPackets(); },
         "Process routine",
-        4096,
+        2*4096,
         this,
         3,
         &ReceiveData_TaskHandle);
@@ -337,7 +346,7 @@ void LoraMesher::initializeSchedulers() {
     res = xTaskCreate(
         [](void* o) { static_cast<LoraMesher*>(o)->routingTableManager(); },
         "Routing Table Manager routine",
-        4096,
+        6144,
         this,
         2,
         &RoutingTableManager_TaskHandle);
@@ -398,61 +407,80 @@ void LoraMesher::receivingRoutine() {
             hasReceivedMessage = true;
 
             packetSize = radio->getPacketLength();
-            if (packetSize == 0)
-                ESP_LOGW(LM_TAG, "Empty packet received");
+            
+            // CRITICAL FIX: REJECT oversized packets completely to prevent buffer overflow
+            // RadioLib may ignore the size parameter in readData() and read the entire FIFO
+            // If we receive 247 bytes but only allocate 150 bytes buffer → CRASH
+            size_t max_packet_size = PacketFactory::getMaxPacketSize();
+            if (packetSize > max_packet_size) {
+                ESP_LOGE(LM_TAG, "CRITICAL: Received packet size (%d bytes) exceeds MAX_PACKET_SIZE (%d bytes)!", 
+                         packetSize, max_packet_size);
+                ESP_LOGE(LM_TAG, "DROPPING oversized packet to prevent buffer overflow. Check sender configuration!");
+                
+                // Skip this packet entirely - restart receiving without processing
+                // This clears the radio FIFO buffer safely
+                startReceiving();
+            }
+            else if (packetSize == 0) {
+                ESP_LOGW(LM_TAG, "Empty packet received, skipping");
+                startReceiving();
+            }
             else {
+                // Now safe: packetSize <= max_packet_size
                 Packet<uint8_t>* rx = PacketService::createEmptyPacket(packetSize);
-
-                rssi = (int8_t) round(radio->getRSSI());
-                snr = (int8_t) round(radio->getSNR());
-
-                if (rssi >= 10) {   
-                    deletePacket(rx);
+                
+                // CRITICAL FIX: Check if packet allocation failed
+                if (rx == nullptr) {
+                    ESP_LOGE(LM_TAG, "Failed to allocate RX packet, dropping. Free heap: %d", esp_get_free_heap_size());
                     startReceiving();
-                    return;
-                }
-
-                ESP_LOGI(LM_TAG, "Receiving LoRa packet: Size: %d bytes RSSI: %d SNR: %d", packetSize, rssi, snr);
-
-                size_t max_packet_size = PacketFactory::getMaxPacketSize();
-                if (packetSize > max_packet_size) {
-                    ESP_LOGW(LM_TAG, "Received packet with size greater than MAX Packet Size");
-                    packetSize = max_packet_size;
-                }
-
-                state = radio->readData(reinterpret_cast<uint8_t*>(rx), packetSize);
-
-                if (state != RADIOLIB_ERR_NONE) {
-                    ESP_LOGW(LM_TAG, "Reading packet data gave error: %d", state);
-                    if (state == RADIOLIB_ERR_SPI_WRITE_FAILED) {
-                        ESP_LOGW(LM_TAG, "SPI Write failed, restarting radio");
-                        restartRadio();
-                    }
-
-                    // TODO: Set a count to get the number of CRC errors
-                    deletePacket(rx);
-                }
-                else if (packetSize != rx->packetSize) {
-                    ESP_LOGW(LM_TAG, "Packet size is different from the size read");
-                    deletePacket(rx);
                 }
                 else {
-                    //Create a Packet Queue element containing the Packet
-                    QueuePacket<Packet<uint8_t>>* pq = PacketQueueService::createQueuePacket(rx, 0, 0, rssi, snr);
+                    rssi = (int8_t) round(radio->getRSSI());
+                    snr = (int8_t) round(radio->getSNR());
 
-                    //Add the Packet Queue element created into the ReceivedPackets List
-                    ReceivedPackets->Append(pq);
+                    if (rssi >= 10) {   
+                        deletePacket(rx);
+                        startReceiving();
+                    }
+                    else {
+                        ESP_LOGI(LM_TAG,"============================>\n");             
+                        ESP_LOGI(LM_TAG, "Receiving LoRa packet: Size: %d bytes RSSI: %d SNR: %d", packetSize, rssi, snr);
 
-                    //Notify that a packet needs to be process
-                    TWres = xTaskNotifyFromISR(
-                        ReceiveData_TaskHandle,
-                        0,
-                        eSetValueWithoutOverwrite,
-                        &TWres);
+                        state = radio->readData(reinterpret_cast<uint8_t*>(rx), packetSize);
+
+                        if (state != RADIOLIB_ERR_NONE) {
+                            ESP_LOGW(LM_TAG, "Reading packet data gave error: %d", state);
+                            if (state == RADIOLIB_ERR_SPI_WRITE_FAILED) {
+                                ESP_LOGW(LM_TAG, "SPI Write failed, restarting radio");
+                                restartRadio();
+                            }
+
+                            // TODO: Set a count to get the number of CRC errors
+                            deletePacket(rx);
+                        }
+                        else if (packetSize != rx->packetSize) {
+                            ESP_LOGW(LM_TAG, "Packet size is different from the size read");
+                            deletePacket(rx);
+                        }
+                        else {
+                            //Create a Packet Queue element containing the Packet
+                            QueuePacket<Packet<uint8_t>>* pq = PacketQueueService::createQueuePacket(rx, 0, 0, rssi, snr);
+
+                            //Add the Packet Queue element created into the ReceivedPackets List
+                            ReceivedPackets->Append(pq);
+
+                            //Notify that a packet needs to be process
+                            TWres = xTaskNotifyFromISR(
+                                ReceiveData_TaskHandle,
+                                0,
+                                eSetValueWithoutOverwrite,
+                                &TWres);
+                        }
+
+                        startReceiving();
+                    }
                 }
             }
-
-            startReceiving();
         }
     }
 }
@@ -650,7 +678,13 @@ void LoraMesher::sendHelloPacket() {
                 getLocalAddress(), &nodes[startIndex], nodesInThisPacket, RoleService::getRole()
             );
 
-            setPackedForSend(reinterpret_cast<Packet<uint8_t>*>(tx), DEFAULT_PRIORITY + 1);
+            // CRITICAL FIX: Check if packet creation failed
+            if (tx != nullptr) {
+                setPackedForSend(reinterpret_cast<Packet<uint8_t>*>(tx), DEFAULT_PRIORITY + 1);
+            } else {
+                ESP_LOGE(LM_TAG, "Failed to create Hello packet %d/%d, skipping", i + 1, numPackets);
+                // Continue to next packet or cleanup if this is critical
+            }
         }
 
         // Delete the nodes array
@@ -726,17 +760,39 @@ void LoraMesher::processPackets() {
                         if (decryptedPacket) {
                             ESP_LOGI(LM_TAG, "Packet decrypted successfully");
                             
-                            // Create new queue packet with decrypted data
+                            // CRITICAL FIX: Log heap status before queue packet creation
+                            ESP_LOGI(LM_TAG, "Free heap before createQueuePacket: %d bytes", esp_get_free_heap_size());
+                            
+                            // CRITICAL FIX: Pass RSSI and SNR when creating queue packet
+                            // This avoids NULL pointer issues later when accessing these fields
                             QueuePacket<DataPacket>* decryptedQueue = PacketQueueService::createQueuePacket(
-                                reinterpret_cast<DataPacket*>(decryptedPacket), rx->priority
+                                decryptedPacket,    // No need for reinterpret_cast, it's already DataPacket*
+                                rx->priority,       // Priority
+                                0,                  // Number (not used for single packets)
+                                rx->rssi,           // RSSI from original packet
+                                rx->snr             // SNR from original packet
                             );
-                            decryptedQueue->snr = rx->snr;
                             
-                            // Process decrypted packet
-                            processDataPacket(decryptedQueue);
-                            
-                            // Clean up original secure packet
-                            PacketQueueService::deleteQueuePacketAndPacket(rx);
+                            // CRITICAL FIX: Check if createQueuePacket failed
+                            if (decryptedQueue == nullptr) {
+                                ESP_LOGE(LM_TAG, "Failed to create queue packet for decrypted data (free heap: %d)",
+                                         esp_get_free_heap_size());
+                                // Clean up decrypted packet to avoid memory leak
+                                vPortFree(decryptedPacket);
+                                // Clean up original secure packet
+                                PacketQueueService::deleteQueuePacketAndPacket(rx);
+                            } else {
+                                // Log to debug
+                                ESP_LOGI(LM_TAG, "Decrypted packet queued successfully (free heap: %d)",
+                                         esp_get_free_heap_size());
+                                // No need to set SNR again - already set in createQueuePacket
+                                
+                                // Process decrypted packet
+                                processDataPacket(decryptedQueue);
+                                
+                                // Clean up original secure packet
+                                PacketQueueService::deleteQueuePacketAndPacket(rx);
+                            }
                         } else {
                             ESP_LOGW(LM_TAG, "Failed to decrypt packet, dropping");
                             PacketQueueService::deleteQueuePacketAndPacket(rx);
@@ -839,26 +895,62 @@ void LoraMesher::routingTableManager() {
     ESP_LOGV(LM_TAG, "Routing Table Manager routine started");
     vTaskSuspend(NULL);
 
-    for (;;) {
-        //truongvv
-        // ESP_LOGV(LM_TAG, "Stack space unused after entering the task: %d", uxTaskGetStackHighWaterMark(NULL));
-        // ESP_LOGV(LM_TAG, "Free heap: %d", getFreeHeap());
+    unsigned long lastPrintTime = 0;
+    unsigned long lastTimeoutCheckTime = 0;
+    const unsigned long PRINT_INTERVAL_MS = 30000;  // Print routing table every 30 seconds
+    // CRITICAL FIX: Check timeout frequently (every 60s) instead of every DEFAULT_TIMEOUT (3000s = 50min!)
+    // This ensures expired nodes are removed promptly when TTL reaches 0
+    const unsigned long TIMEOUT_CHECK_INTERVAL_MS = 60000;  // Check timeout every 60 seconds
 
-        // TODO: If the routing table removes a node, remove the nodes from the Q_WSP and Q_WRP
-        RoutingTableService::manageTimeoutRoutingTable();
+    for (;;) {
+        unsigned long currentTime = millis();
+
+        // Print routing table every 30 seconds (independent of timeout check)
+        if (currentTime - lastPrintTime >= PRINT_INTERVAL_MS) {
+            // CRITICAL DEBUG: Log stack and heap BEFORE operations that might crash
+            UBaseType_t stackHighWater = uxTaskGetStackHighWaterMark(NULL);
+            uint32_t freeHeap = esp_get_free_heap_size();
+            
+            ESP_LOGI(LM_TAG, "=== Periodic Routing Table Display (every 30s) ===");
+            ESP_LOGI(LM_TAG, "Stack free: %u bytes, Heap free: %u bytes", stackHighWater, freeHeap);
+            
+            // CRITICAL: Check for stack overflow danger
+            if (stackHighWater < 512) {
+                ESP_LOGE(LM_TAG, "⚠️ STACK OVERFLOW DANGER! Only %u bytes free!", stackHighWater);
+            }
+            if (freeHeap < 10000) {
+                ESP_LOGW(LM_TAG, "⚠️ LOW HEAP! Only %u bytes free", freeHeap);
+            }
+            
+            RoutingTableService::printRoutingTable();
+            lastPrintTime = currentTime;
+            
+            // CRITICAL DEBUG: Log after print to detect if crash happens during print
+            ESP_LOGI(LM_TAG, "Routing table print completed successfully");
+        }
+
+        // Check for timeout and remove inactive nodes every DEFAULT_TIMEOUT
+        if (currentTime - lastTimeoutCheckTime >= TIMEOUT_CHECK_INTERVAL_MS) {
+            // TODO: If the routing table removes a node, remove the nodes from the Q_WSP and Q_WRP
+            RoutingTableService::manageTimeoutRoutingTable();
+            lastTimeoutCheckTime = currentTime;
+        }
         
         // SIMPLIFIED: No longer using route discovery service, routing is purely HELLO-based
         
-        // Record the state for the simulation
+        // Record the state for the simulation (with safety checks)
         recordState(LM_StateType::STATE_TYPE_MANAGER);
 
-        // if (q_WRP->getLength() != 0 || q_WSP->getLength() != 0) {
-        //     vTaskDelay(randomDelay * 1000 / portTICK_PERIOD_MS);
-        //     continue;
-        // }
+        // CRITICAL DEBUG: Verify task is still healthy before delay
+        ESP_LOGV(LM_TAG, "RoutingTableManager iteration complete, stack free: %u", 
+                 uxTaskGetStackHighWaterMark(NULL));
 
-        vTaskDelay(DEFAULT_TIMEOUT * 1000 / portTICK_PERIOD_MS);
+        // Use shorter delay to allow more frequent checks (1 second)
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
+    
+    // Should never reach here
+    ESP_LOGE(LM_TAG, "RoutingTableManager exited loop - THIS SHOULD NOT HAPPEN!");
 }
 
 void LoraMesher::queueManager() {
@@ -1117,9 +1209,17 @@ void LoraMesher::recalculateMaxTimeOnAir() {
 }
 
 void LoraMesher::recordState(LM_StateType type, Packet<uint8_t>* packet) {
+    // CRITICAL FIX: Validate simulatorService pointer before use
     if (simulatorService == nullptr)
         return;
+    
+    // CRITICAL FIX: Validate all queue pointers before accessing
+    if (ReceivedPackets == nullptr || q_WRP == nullptr || q_WSP == nullptr) {
+        ESP_LOGW(LM_TAG, "recordState: Queue pointer is NULL, skipping");
+        return;
+    }
 
+    // Safe to call now
     simulatorService->addState(ReceivedPackets->getLength(), getSendQueueSize(),
         getReceivedQueueSize(), routingTableSize(), q_WRP->getLength(), q_WSP->getLength(),
         type, packet);
@@ -1334,6 +1434,7 @@ void LoraMesher::joinPacketsAndNotifyUser(listConfiguration* listConfig) {
 
     list->setInUse();
     if (!list->moveToStart()) {
+        ESP_LOGE(LM_TAG, "CRITICAL: List is empty in joinPacketsAndNotifyUser");
         list->releaseInUse();
         return;
     }
@@ -1343,7 +1444,20 @@ void LoraMesher::joinPacketsAndNotifyUser(listConfiguration* listConfig) {
     size_t number = 1;
 
     do {
-        ControlPacket* currentP = reinterpret_cast<ControlPacket*>(list->getCurrent()->packet);
+        // CRITICAL FIX: Check if getCurrent() returns NULL before dereferencing
+        QueuePacket<ControlPacket>* currentQueuePacket = list->getCurrent();
+        if (currentQueuePacket == nullptr) {
+            ESP_LOGE(LM_TAG, "CRITICAL: NULL queue packet in joinPacketsAndNotifyUser at position %d", number);
+            list->releaseInUse();
+            return;
+        }
+        
+        ControlPacket* currentP = currentQueuePacket->packet;
+        if (currentP == nullptr) {
+            ESP_LOGE(LM_TAG, "CRITICAL: NULL control packet in joinPacketsAndNotifyUser at position %d", number);
+            list->releaseInUse();
+            return;
+        }
 
         if (number != (currentP->number))
             //TODO: ORDER THE PACKETS if they are not ordered?
@@ -1356,7 +1470,13 @@ void LoraMesher::joinPacketsAndNotifyUser(listConfiguration* listConfig) {
     //Move to start again
     list->moveToStart();
 
-    ControlPacket* currentP = list->getCurrent()->packet;
+    // CRITICAL FIX: Check getCurrent() again after moveToStart()
+    QueuePacket<ControlPacket>* firstQueuePacket = list->getCurrent();
+    if (firstQueuePacket == nullptr || firstQueuePacket->packet == nullptr) {
+        ESP_LOGE(LM_TAG, "CRITICAL: NULL packet after moveToStart in joinPacketsAndNotifyUser");
+        list->releaseInUse();
+        return;
+    }
 
     uint32_t appPacketLength = sizeof(AppPacket<uint8_t>);
 
@@ -1365,21 +1485,35 @@ void LoraMesher::joinPacketsAndNotifyUser(listConfiguration* listConfig) {
 
     AppPacket<uint8_t>* p = static_cast<AppPacket<uint8_t>*>(pvPortMalloc(packetLength));
 
+    // CRITICAL FIX: Check if malloc failed BEFORE using p
+    if (p == nullptr) {
+        ESP_LOGE(LM_TAG, "CRITICAL: Failed to allocate %d bytes for joined packet (free heap: %d)",
+                 packetLength, esp_get_free_heap_size());
+        list->releaseInUse();
+        return;
+    }
+
     ESP_LOGV(LM_TAG, "Large Packet Packet length: %d Payload Size: %d", (int) packetLength, payloadSize);
 
-    if (p) {
-        //Copy the payload into the packet
-        unsigned long actualPayloadSizeDst = appPacketLength;
+    //Copy the payload into the packet
+    unsigned long actualPayloadSizeDst = appPacketLength;
 
-        do {
-            currentP = list->getCurrent()->packet;
+    do {
+        QueuePacket<ControlPacket>* currentQueuePacket = list->getCurrent();
+        if (currentQueuePacket == nullptr || currentQueuePacket->packet == nullptr) {
+            ESP_LOGE(LM_TAG, "CRITICAL: NULL packet during copy in joinPacketsAndNotifyUser");
+            vPortFree(p);
+            list->releaseInUse();
+            return;
+        }
+        
+        ControlPacket* currentP = currentQueuePacket->packet;
 
-            size_t actualPayloadSizeSrc = PacketService::getPacketPayloadLength(currentP);
+        size_t actualPayloadSizeSrc = PacketService::getPacketPayloadLength(currentP);
 
-            memcpy(reinterpret_cast<void*>((unsigned long) p + (actualPayloadSizeDst)), currentP->payload, actualPayloadSizeSrc);
-            actualPayloadSizeDst += actualPayloadSizeSrc;
-        } while (list->next());
-    }
+        memcpy(reinterpret_cast<void*>((unsigned long) p + (actualPayloadSizeDst)), currentP->payload, actualPayloadSizeSrc);
+        actualPayloadSizeDst += actualPayloadSizeSrc;
+    } while (list->next());
 
     list->releaseInUse();
 
@@ -1521,6 +1655,14 @@ void LoraMesher::clearLinkedList(listConfiguration* listConfig) {
 
     for (int i = 0; i < listSize; i++) {
         QueuePacket<ControlPacket>* current = list->getCurrent();
+        
+        // CRITICAL FIX: Check if getCurrent() returned NULL
+        if (current == nullptr) {
+            ESP_LOGW(LM_TAG, "NULL queue packet at position %d during clearLinkedList, skipping", i);
+            list->DeleteCurrent(); // Still need to advance
+            continue;
+        }
+        
         PacketQueueService::deleteQueuePacketAndPacket(current);
         list->DeleteCurrent();
     }

@@ -24,7 +24,8 @@ enum UartCommand : uint8_t {
     UART_CMD_SET_NETKEY = 0x14,     // Set network key for mesh
     UART_CMD_START_PROVISIONING = 0x15,  // Start provisioning mode
     UART_CMD_STOP_PROVISIONING = 0x16,   // Stop provisioning mode
-    UART_CMD_GET_PROVISIONING_STATUS = 0x17  // Get provisioning status
+    UART_CMD_GET_PROVISIONING_STATUS = 0x17,  // Get provisioning status
+    UART_CMD_GET_ROUTING_TABLE = 0x20    // Request full routing table
 };
 
 // UART packet structure
@@ -91,6 +92,31 @@ struct UartProvisioningStatus {
     uint16_t successfulProvisions; // Successful provisions
     uint16_t rejectedRequests;     // Rejected requests
 };
+
+// Routing table entry structure (packed for on-wire layout)
+struct UartRoutingEntry {
+    uint16_t address;              // Node address
+    uint16_t via;                  // Next hop address (via)
+    uint8_t metric;                // Hop count
+    uint8_t role;                  // Node role
+    int8_t receivedSNR;            // Received SNR (signal quality)
+    uint32_t timeToLive;           // Time remaining before timeout (seconds)
+};
+
+// Routing table response header (packed for on-wire layout)
+struct UartRoutingTableHeader {
+    uint8_t totalEntries;          // Total number of entries
+    uint8_t currentPacket;         // Current packet index (0-based)
+    uint8_t totalPackets;          // Total packets needed
+    uint8_t entriesInPacket;       // Number of entries in this packet
+};
+
+// Maximum routing entries per UART packet (considering 200 byte payload limit)
+// UartRoutingTableHeader = 4 bytes
+// UartRoutingEntry = 12 bytes each
+// Max entries = (200 - 4) / 12 = 16 entries per packet
+#define MAX_ROUTING_ENTRIES_PER_PACKET 16
+
 #pragma pack()
 
 // UART communication class
@@ -133,6 +159,9 @@ public:
     // Provisioning control handling
     void setProvisioningCallback(void (*callback)(const UartProvisioningControl& control));
     bool sendProvisioningStatus(const UartProvisioningStatus& status);
+    
+    // Routing table handling
+    bool sendRoutingTable();  // Send entire routing table (may span multiple packets)
     
     // Utility functions
     void update();  // Call in main loop to handle incoming data

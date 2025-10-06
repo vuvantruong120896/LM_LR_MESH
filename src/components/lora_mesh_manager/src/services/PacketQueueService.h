@@ -26,6 +26,13 @@ public:
     template<class T>
     static QueuePacket<T>* createQueuePacket(T* p, uint8_t priority, uint16_t number = 0, int8_t rssi = 0, int8_t snr = 0) {
         QueuePacket<T>* qp = new QueuePacket<T>();
+        
+        // CRITICAL FIX: Check if allocation failed
+        if (qp == nullptr) {
+            ESP_LOGE(LM_TAG, "Failed to allocate QueuePacket (free heap: %d)", esp_get_free_heap_size());
+            return nullptr;
+        }
+        
         qp->priority = priority;
         qp->number = number;
         qp->packet = p;

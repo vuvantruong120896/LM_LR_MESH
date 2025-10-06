@@ -1106,40 +1106,37 @@ uint16_t NVSStorageService::loadRoutingTable(RouteEntry* entries, uint16_t maxEn
         return 0;
     }
     
-    // Limit search to reasonable address ranges instead of full scan
-    // Most mesh networks have nodes in limited address ranges
-    uint16_t searchRanges[][2] = {
-        {0x3000, 0x4000},  // Common range for dynamic addresses
-        {0x6000, 0x7000},  // Gateway range
-        {0x1000, 0x2000},  // Lower range
-    };
+    // CRITICAL FIX: Scan ALL possible addresses (0x0000-0xFFFF) instead of limited ranges
+    // Previous bug: Hard-coded ranges missed many actual node addresses (e.g., 0xCC64, 0xE764, 0x4F70)
+    // This ensures ALL saved routing entries are found regardless of address
     
     char routeKey[16];
     
-    for (int range = 0; range < 3 && loadedCount < maxEntries; range++) {
-        uint16_t startAddr = searchRanges[range][0];
-        uint16_t endAddr = searchRanges[range][1];
+    ESP_LOGI(TAG, "Scanning full address space for routing entries (0x0000-0xFFFF)...");
+    
+    // Scan entire 16-bit address space
+    // Optimize: Only check every 1 address (could skip but this is safer)
+    for (uint32_t addr = 0; addr <= 0xFFFF && loadedCount < maxEntries; addr++) {
+        snprintf(routeKey, sizeof(routeKey), "%s%04X", NVS_KEY_ROUTING_PREFIX, (uint16_t)addr);
         
-        ESP_LOGD(TAG, "Searching address range 0x%04X-0x%04X", startAddr, endAddr);
+        size_t required_size = sizeof(RouteEntry);
+        err = nvs_get_blob(handle, routeKey, &entries[loadedCount], &required_size);
         
-        for (uint16_t addr = startAddr; addr <= endAddr && loadedCount < maxEntries; addr++) {
-            snprintf(routeKey, sizeof(routeKey), "%s%04X", NVS_KEY_ROUTING_PREFIX, addr);
-            
-            size_t required_size = sizeof(RouteEntry);
-            err = nvs_get_blob(handle, routeKey, &entries[loadedCount], &required_size);
-            
-            if (err == ESP_OK && required_size == sizeof(RouteEntry)) {
-                if (entries[loadedCount].isValid) {
-                    ESP_LOGD(TAG, "Loaded route: addr=0x%04X, via=0x%04X, hops=%u, role=0x%02X, netId=0x%04X",
-                            entries[loadedCount].address, entries[loadedCount].via, 
-                            entries[loadedCount].metric, entries[loadedCount].role, entries[loadedCount].networkId);
-                    loadedCount++;
-                } else {
-                    ESP_LOGD(TAG, "Skipping invalid route entry for addr 0x%04X", addr);
+        if (err == ESP_OK && required_size == sizeof(RouteEntry)) {
+            if (entries[loadedCount].isValid) {
+                ESP_LOGD(TAG, "Loaded route: addr=0x%04X, via=0x%04X, hops=%u, role=0x%02X, netId=0x%04X",
+                        entries[loadedCount].address, entries[loadedCount].via, 
+                        entries[loadedCount].metric, entries[loadedCount].role, entries[loadedCount].networkId);
+                loadedCount++;
+                
+                // Early exit optimization: If we've found all expected entries, stop scanning
+                if (loadedCount >= savedCount) {
+                    ESP_LOGD(TAG, "Found all %u expected entries, stopping scan early", savedCount);
+                    break;
                 }
+            } else {
+                ESP_LOGD(TAG, "Skipping invalid route entry for addr 0x%04X", (uint16_t)addr);
             }
-            
-            // Do not early-exit based on savedCount; continue scanning all ranges to pick up any valid entries
         }
     }
     

@@ -8,13 +8,23 @@
 Packet<uint8_t>* PacketService::createEmptyPacket(size_t packetSize) {
     size_t maxPacketSize = PacketFactory::getMaxPacketSize();
     if (packetSize > maxPacketSize) {
-        ESP_LOGI(LM_TAG, "Trying to create a packet greater than %d bytes", maxPacketSize);
+        // CRITICAL: Caller should have validated size before calling!
+        // This is a last-resort safety check
+        ESP_LOGE(LM_TAG, "CRITICAL: Trying to create a packet greater than %d bytes (requested: %d). "
+                 "Caller should validate size first! Truncating to max.", maxPacketSize, packetSize);
         packetSize = maxPacketSize;
     }
 
     Packet<uint8_t>* p = static_cast<Packet<uint8_t>*>(pvPortMalloc(packetSize));
 
-    // ESP_LOGI(LM_TAG, "Packet created with %d bytes", packetSize);
+    // CRITICAL FIX: Check if malloc failed
+    if (p == nullptr) {
+        ESP_LOGE(LM_TAG, "Failed to allocate packet memory: %d bytes (free heap: %d)", 
+                 packetSize, esp_get_free_heap_size());
+        return nullptr;
+    }
+
+    ESP_LOGV(LM_TAG, "Packet created with %d bytes", packetSize);
 
     return p;
 
@@ -122,6 +132,14 @@ RoutePacket* PacketService::createRoutingPacket(uint16_t localAddress, NetworkNo
     size_t routingSizeInBytes = numOfNodes * sizeof(NetworkNode);
 
     RoutePacket* routePacket = PacketFactory::createPacket<RoutePacket>(reinterpret_cast<uint8_t*>(nodes), routingSizeInBytes);
+    
+    // CRITICAL FIX: Check if packet creation failed
+    if (routePacket == nullptr) {
+        ESP_LOGE(LM_TAG, "Failed to create routing packet: numNodes=%d, size=%d bytes (free heap: %d)",
+                 numOfNodes, routingSizeInBytes + sizeof(RoutePacket), esp_get_free_heap_size());
+        return nullptr;
+    }
+    
     routePacket->dst = BROADCAST_ADDR;
     routePacket->src = localAddress;
     routePacket->type = HELLO_P;
@@ -150,6 +168,13 @@ ControlPacket* PacketService::controlPacket(Packet<uint8_t>* p) {
 
 ControlPacket* PacketService::createControlPacket(uint16_t dst, uint16_t src, uint8_t type, uint8_t* payload, uint8_t payloadSize) {
     ControlPacket* packet = PacketFactory::createPacket<ControlPacket>(payload, payloadSize);
+    
+    // CRITICAL FIX: Check if packet creation failed
+    if (packet == nullptr) {
+        ESP_LOGE(LM_TAG, "Failed to create control packet (free heap: %d)", esp_get_free_heap_size());
+        return nullptr;
+    }
+    
     packet->dst = dst;
     packet->src = src;
     packet->type = type;
@@ -160,6 +185,13 @@ ControlPacket* PacketService::createControlPacket(uint16_t dst, uint16_t src, ui
 
 ControlPacket* PacketService::createEmptyControlPacket(uint16_t dst, uint16_t src, uint8_t type, uint8_t seq_id, uint16_t num_packets) {
     ControlPacket* packet = PacketFactory::createPacket<ControlPacket>(nullptr, 0);
+    
+    // CRITICAL FIX: Check if packet creation failed
+    if (packet == nullptr) {
+        ESP_LOGE(LM_TAG, "Failed to create empty control packet (free heap: %d)", esp_get_free_heap_size());
+        return nullptr;
+    }
+    
     packet->dst = dst;
     packet->src = src;
     packet->type = type;
@@ -172,6 +204,13 @@ ControlPacket* PacketService::createEmptyControlPacket(uint16_t dst, uint16_t sr
 
 DataPacket* PacketService::createDataPacket(uint16_t dst, uint16_t src, uint8_t type, const uint8_t* payload, uint8_t payloadSize) {
     DataPacket* packet = PacketFactory::createPacket<DataPacket>(payload, payloadSize);
+    
+    // CRITICAL FIX: Check if packet creation failed
+    if (packet == nullptr) {
+        ESP_LOGE(LM_TAG, "Failed to create data packet (free heap: %d)", esp_get_free_heap_size());
+        return nullptr;
+    }
+    
     packet->dst = dst;
     packet->src = src;
     packet->type = type;

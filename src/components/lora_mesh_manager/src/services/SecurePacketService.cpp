@@ -1,5 +1,6 @@
 #include "secure_packet.h"
 #include "mesh_security.h"
+#include "PacketFactory.h"
 #include "esp_log.h"
 
 static const char* SECURE_PKT_TAG = "SecurePacket";
@@ -18,10 +19,23 @@ SecureDataPacket* SecurePacketService::wrapPacket(const DataPacket* originalPack
     // Calculate secure packet size
     size_t secureSize = SecureDataPacket::calculateSecurePacketSize(originalSize, securityLevel);
     
+    // CRITICAL FIX: Validate size BEFORE allocation to prevent buffer overflow
+    size_t maxSize = PacketFactory::getMaxPacketSize();
+    if (secureSize > maxSize) {
+        ESP_LOGE(SECURE_PKT_TAG, 
+                 "Secure packet size (%zu bytes) exceeds maximum allowed (%zu bytes). "
+                 "Original size: %zu, Security level: %d, Overhead: %zu bytes",
+                 secureSize, maxSize, originalSize, securityLevel, 
+                 secureSize - originalSize);
+        ESP_LOGE(SECURE_PKT_TAG, "Cannot wrap packet - payload too large for secure transmission");
+        return nullptr;
+    }
+    
     // Allocate secure packet
     SecureDataPacket* securePacket = SecurePacketFactory::allocateSecurePacket(secureSize);
     if (!securePacket) {
-        ESP_LOGE(SECURE_PKT_TAG, "Failed to allocate secure packet");
+        ESP_LOGE(SECURE_PKT_TAG, "Failed to allocate secure packet (free heap: %d)", 
+                 esp_get_free_heap_size());
         return nullptr;
     }
     

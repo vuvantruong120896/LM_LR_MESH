@@ -59,6 +59,10 @@ private:
     void sendBridgeStatus();
     void updateUARTConnection();
     
+    // Routing table persistence
+    static void saveRoutingTableToNVS();
+    static void loadRoutingTableFromNVS();
+    
     // Static callbacks
     static void onNetkeyReceived(const UartNetworkKey& netkey);
     static void onNetkeyUpdated(const uint8_t* newKey, uint8_t version);

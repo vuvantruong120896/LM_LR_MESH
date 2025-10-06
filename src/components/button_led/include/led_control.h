@@ -5,7 +5,13 @@
 
 // Default LED configuration (can be overridden by app_config.h)
 #ifndef BOARD_LED
+#if DEVICE_MODE == 1  // Node mode
+#define BOARD_LED   0   
+#elif DEVICE_MODE == 2  // Bridge mode
 #define BOARD_LED   0
+#elif DEVICE_MODE == 3  // Node mode
+#define BOARD_LED   2 
+#endif
 #endif
 
 #ifndef LED_ON

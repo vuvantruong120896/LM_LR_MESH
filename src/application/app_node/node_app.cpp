@@ -12,6 +12,15 @@ static uint16_t findGatewayAddress();
 static void saveRoutingTableToNVS();
 static void loadRoutingTableFromNVS();
 
+// Compute a 16-bit Node ID using the last 2 bytes of the WiFi MAC (STA MAC)
+static uint16_t computeNodeIdFromWifiMac() {
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    // Use the last 2 bytes of the MAC as a 16-bit ID (big-endian)
+    uint16_t id = ((uint16_t)mac[4] << 8) | (uint16_t)mac[5];
+    return id;
+}
+
 // Static instance pointer for callbacks
 static NodeApp* nodeAppInstance = nullptr;
 
@@ -96,7 +105,8 @@ static uint16_t findGatewayAddress() {
 
 void NodeApp::setup() {
     ESP_LOGI(LM_TAG, "=== LoRaMesh Node Application ===");
-    ESP_LOGI(LM_TAG, "Node ID: 0x%X", NODE_ID);
+    uint16_t runtimeNodeId = computeNodeIdFromWifiMac();
+    ESP_LOGI(LM_TAG, "Node ID (from WiFi MAC last 2 bytes): 0x%04X", runtimeNodeId);
     
     led_init();
     led_pattern_startup();
@@ -169,6 +179,11 @@ void NodeApp::setup() {
     NetkeyDistributionService::setNetkeyUpdateCallback(onNetkeyUpdated);
     ESP_LOGI(LM_TAG, "Netkey Distribution Service initialized for node");
     
+    // Register callback for routing table changes (when nodes are removed due to timeout)
+    // This ensures routing table is saved to NVS when nodes become inactive
+    RoutingTableService::setRoutingTableChangedCallback(saveRoutingTableToNVS);
+    ESP_LOGI(LM_TAG, "Routing table change callback registered for automatic NVS save");
+    
     // Initialize ProvisioningService for Node
     if (!ProvisioningService::initialize()) {
         ESP_LOGE(LM_TAG, "Failed to initialize Provisioning Service");
@@ -195,7 +210,7 @@ void NodeApp::setup() {
              (provisioningState == NODE_STATE_PROVISIONING) ? "PROVISIONING" :
              (provisioningState == NODE_STATE_PROVISIONED) ? "PROVISIONED" : "FAILED");
     ESP_LOGI(LM_TAG, "Node status: HasValidNetworkKey=%s, AssignedAddress=0x%04X, LocalAddress=0x%04X", 
-             hasValidNetworkKey ? "YES" : "NO", assignedAddress, NODE_ID);
+             hasValidNetworkKey ? "YES" : "NO", assignedAddress, runtimeNodeId);
     ESP_LOGI(LM_TAG, "=== NODE SETUP COMPLETED - STARTING MAIN LOOP ===");
 }
 
@@ -209,6 +224,17 @@ void NodeApp::loop() {
         static uint32_t lastRoutingSave = 0;
         
         if (currentTime - lastDataSend >= SEND_INTERVAL_MS) {
+            // Check if we're in provisioning mode (Fast Discovery)
+            // Don't send sensor data during provisioning - only Hello packets
+            uint8_t currentMode = radio.getCurrentHelloMode();
+            if (currentMode == HELLO_MODE_FAST_DISCOVERY) {
+                ESP_LOGD(LM_TAG, "Skipping sensor data send - in Fast Discovery Mode (provisioning)");
+                lastDataSend = currentTime; // Update timestamp to avoid spam logs
+                // Continue to next iteration - Hello packets will still be sent automatically
+                vTaskDelay(1000 / portTICK_PERIOD_MS);
+                return;
+            }
+            
             // Create and send sensor data
             sensorData s = simulateSensorData();
 
@@ -218,7 +244,7 @@ void NodeApp::loop() {
             s.timestamp = currentTime;
             s.nodeId = assignedAddress ? assignedAddress : localAddr;
 
-            ESP_LOGI(LM_TAG, "Sending sensor data #%d - Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV", 
+            ESP_LOGI(LM_TAG, "Node==================>Sending sensor data #%d - Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV", 
                      s.counter, s.temperature, s.humidity, s.battery);
 
             // Send sensorData struct to Bridge (use createPacketAndSend so secure wrapping is applied when enabled)
@@ -235,12 +261,9 @@ void NodeApp::loop() {
             lastDataSend = currentTime;
         }
         
-        // Periodically save routing table to NVS (every 2 minutes)
-        if (currentTime - lastRoutingSave >= 120000) {
-            ESP_LOGD(LM_TAG, "Periodic routing table save to NVS");
-            saveRoutingTableToNVS();
-            lastRoutingSave = currentTime;
-        }
+        // NOTE: Routing table is now saved to NVS ONLY when changes occur (node added/removed)
+        // via callback mechanism. Periodic save removed to reduce flash wear.
+        // See: RoutingTableService::setRoutingTableChangedCallback() in setup()
     } else {
         // Node is not provisioned - wait for netkey from Bridge
         static uint32_t lastStatusLog = 0;
@@ -267,11 +290,25 @@ sensorData NodeApp::simulateSensorData() {
 
 void NodeApp::setupLoRaMesher() {
     LoraMesher::LoraMesherConfig config;
-    config.loraCs = LORA_CS;
-    config.loraRst = LORA_RST;
-    config.loraIrq = LORA_IRQ;
-    config.loraIo1 = LORA_IO1;
-    config.module = LORA_MODULE;
+    #if DEVICE_MODE == 1  // Node mode
+        config.loraCs = LORA_CS;
+        config.loraRst = LORA_RST;
+        config.loraIrq = LORA_IRQ;
+        config.loraIo1 = LORA_IO1;
+        config.module = LORA_MODULE;
+    #elif DEVICE_MODE == 2  // Bridge mode
+        config.loraCs = LORA_CS;
+        config.loraRst = LORA_RST;
+        config.loraIrq = LORA_IRQ;
+        config.loraIo1 = LORA_IO1;
+        config.module = LORA_MODULE;
+    #elif DEVICE_MODE == 3  // Node mode
+        config.loraCs = 5;
+        config.loraRst = 4;
+        config.loraIrq = 15;
+        config.loraIo1 = -1;
+        config.module = LORA_MODULE;
+    #endif 
     
     radio.begin(config);
     
@@ -608,8 +645,11 @@ static void loadRoutingTableFromNVS() {
             }
         }
         
-        // TODO: Consider populating LoraMesher routing table with loaded entries
-        // This would require access to RoutingTableService or LoraMesher internal methods
+        // CRITICAL FIX: Suspend callbacks during bulk restore to prevent premature NVS saves
+        // Problem: Each processRoute() triggers save → overwrites remaining entries in NVS!
+        RoutingTableService::suspendCallback();
+        
+        // Populate LoraMesher routing table with loaded entries
         for (uint16_t i = 0; i < loadedCount; i++) {
             if (entries[i].isValid) {
                 // Populate the runtime routing table by processing each saved entry.
@@ -620,6 +660,9 @@ static void loadRoutingTableFromNVS() {
                 RoutingTableService::processRoute(entries[i].via, &node);
             }
         }
+        
+        // Resume callbacks after all entries restored
+        RoutingTableService::resumeCallback();
     } else {
         ESP_LOGD(LM_TAG, "No routing table entries found in NVS");
     }

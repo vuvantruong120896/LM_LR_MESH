@@ -293,8 +293,35 @@ public:
 
         ESP_LOGV(LM_TAG, "Creating a packet for send with %d bytes", payloadSizeInBytes);
 
+        // CRITICAL FIX: Pre-validate size for secure transmission
+#ifdef ENABLE_MESH_SECURITY
+        if (isSecurityEnabled()) {
+            // Calculate base packet size
+            size_t basePacketSize = sizeof(DataPacket) + payloadSizeInBytes;
+            
+            // Calculate secure packet size with overhead
+            size_t secureSize = SecureDataPacket::calculateSecurePacketSize(basePacketSize, getSecurityLevel());
+            size_t maxSize = PacketFactory::getMaxPacketSize();
+            
+            if (secureSize > maxSize) {
+                ESP_LOGE(LM_TAG, 
+                         "Payload too large for secure transmission: %zu bytes payload + %zu bytes overhead = %zu bytes total (max: %zu)",
+                         payloadSizeInBytes, secureSize - basePacketSize, secureSize, maxSize);
+                ESP_LOGE(LM_TAG, "Reduce payload size to %zu bytes or disable security", 
+                         maxSize - (secureSize - basePacketSize) - sizeof(DataPacket));
+                return; // Abort - cannot send
+            }
+        }
+#endif
+
         //Create a data packet with the payload
         DataPacket* dPacket = PacketService::createDataPacket(dst, getLocalAddress(), DATA_P, reinterpret_cast<uint8_t*>(payload), payloadSizeInBytes);
+
+        // CRITICAL FIX: Check if data packet creation failed
+        if (dPacket == nullptr) {
+            ESP_LOGE(LM_TAG, "Failed to create data packet - aborting send");
+            return;
+        }
 
         // Apply security if enabled
         Packet<uint8_t>* finalPacket = reinterpret_cast<Packet<uint8_t>*>(dPacket);
@@ -306,7 +333,9 @@ public:
                 finalPacket = reinterpret_cast<Packet<uint8_t>*>(securePacket);
                 delete dPacket; // Free original packet
             } else {
-                ESP_LOGW(LM_TAG, "Failed to secure packet, sending unencrypted");
+                ESP_LOGE(LM_TAG, "Failed to secure packet - ABORTING send (packet too large or memory error)");
+                delete dPacket; // Free original packet
+                return; // Don't send insecure when security is enabled
             }
         }
 #endif
@@ -751,9 +780,9 @@ private:
      * @param priority Priority set DEFAULT_PRIORITY by default. 0 most priority
      */
     void setPackedForSend(Packet<uint8_t>* p, uint8_t priority) {
-        ESP_LOGI(LM_TAG, "Adding packet to Q_SP");
+        ESP_LOGD(LM_TAG, "Adding packet to Q_SP");
         QueuePacket<Packet<uint8_t>>* send = PacketQueueService::createQueuePacket(p, priority);
-        ESP_LOGI(LM_TAG, "Created packet to Q_SP");
+        ESP_LOGD(LM_TAG, "Created packet to Q_SP");
         addToSendOrderedAndNotify(send);
         //TODO: Using vTaskDelay to kill the packet inside LoraMesher
     }
@@ -1256,6 +1285,12 @@ public:
      * @return true if in stabilizing mode  
      */
     bool isStabilizingModeActive() const { return currentHelloMode == HELLO_MODE_STABILIZING; }
+    
+    /**
+     * @brief Get current HELLO delay based on mode
+     * @return Current delay in seconds
+     */
+    uint16_t getCurrentHelloDelay();
 
     // Phase 2: Route Quality Check methods
     /**
@@ -1336,12 +1371,6 @@ private:
      * @param durationMs Duration in milliseconds
      */
     void broadcastHelloModeChange(uint8_t mode, uint32_t durationMs);
-
-    /**
-     * @brief Get current HELLO delay based on mode
-     * @return Current delay in seconds
-     */
-    uint16_t getCurrentHelloDelay();
 };
 
 #endif

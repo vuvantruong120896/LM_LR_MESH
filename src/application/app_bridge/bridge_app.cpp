@@ -73,8 +73,16 @@ void BridgeApp::setup() {
     // Log security status
     logSecurityStatus();
 
+    // Register callback for routing table changes (when nodes are removed due to timeout)
+    // This ensures routing table is saved to NVS when nodes become inactive
+    RoutingTableService::setRoutingTableChangedCallback(saveRoutingTableToNVS);
+    ESP_LOGI(TAG, "Routing table change callback registered for automatic NVS save");
+
     setupLoRaMesher();
     setupUART();
+    
+    // Load persistent routing table from NVS (if available)
+    loadRoutingTableFromNVS();
 
     ESP_LOGI(TAG, "Bridge setup complete");
     led_pattern_connected();
@@ -117,20 +125,10 @@ void BridgeApp::loop() {
         uartProtocol->update();
         updateUARTConnection();
     }
-
-    // Send periodic heartbeat
-    if (currentTime - bridgeState.lastHeartbeat >= BRIDGE_HEARTBEAT_INTERVAL) {
-        if (uartProtocol && bridgeState.uartConnected) {
-            uartProtocol->sendHeartbeat();
-        }
-        bridgeState.lastHeartbeat = currentTime;
-    }
-
-    // Send periodic status
-    if (currentTime - bridgeState.lastStatusSent >= BRIDGE_STATUS_INTERVAL) {
-        sendBridgeStatus();
-        bridgeState.lastStatusSent = currentTime;
-    }
+    
+    // NOTE: Routing table is now saved to NVS ONLY when changes occur (node added/removed)
+    // via callback mechanism. Periodic save removed to reduce flash wear.
+    // See: RoutingTableService::setRoutingTableChangedCallback() in setup()
 
     // Simple status LED indication
     if (statusCounter++ % 100 == 0) {
@@ -193,6 +191,15 @@ void BridgeApp::setupUART() {
 void BridgeApp::forwardToUART(AppPacket<sensorData>* packet) {
     if (!uartProtocol || !bridgeState.uartConnected) {
         ESP_LOGW(TAG, "UART not available for forwarding");
+        return;
+    }
+
+    // Check if we're in provisioning mode (Fast Discovery)
+    // Don't process/forward sensor data during provisioning - only Hello packets
+    uint8_t currentMode = radio.getCurrentHelloMode();
+    if (currentMode == HELLO_MODE_FAST_DISCOVERY) {
+        ESP_LOGD(TAG, "Dropping sensor data packet - in Fast Discovery Mode (provisioning)");
+        ESP_LOGD(TAG, "Only Hello packets are processed during provisioning for routing table building");
         return;
     }
 
@@ -276,15 +283,15 @@ void BridgeApp::processBridgePackets(void* parameter) {
     ESP_LOGI(TAG, "[BRIDGE-TASK] Bridge packet processing task started");
 
     for (;;) {
-        ESP_LOGI(TAG, "[BRIDGE-TASK] Waiting for mesh packet notification...");
+        // ESP_LOGI(TAG, "[BRIDGE-TASK] Waiting for mesh packet notification...");
         ulTaskNotifyTake(pdPASS, portMAX_DELAY);
 
         ESP_LOGI(TAG, "[BRIDGE-TASK] GOT NOTIFICATION! Processing bridge packets...");
         led_pattern_message();
 
         while (BridgeApp::instance->radio.getReceivedQueueSize() > 0) {
-            ESP_LOGI(TAG, "[BRIDGE-TASK] Processing received mesh packet for bridge");
-            ESP_LOGI(TAG, "[BRIDGE-TASK] Queue size: %d", BridgeApp::instance->radio.getReceivedQueueSize());
+            ESP_LOGD(TAG, "[BRIDGE-TASK] Processing received mesh packet for bridge");
+            ESP_LOGD(TAG, "[BRIDGE-TASK] Queue size: %d", BridgeApp::instance->radio.getReceivedQueueSize());
 
             AppPacket<uint8_t>* packet = BridgeApp::instance->radio.getNextAppPacket<uint8_t>();
 
@@ -415,7 +422,16 @@ void BridgeApp::onProvisioningControl(const UartProvisioningControl& control) {
     
     switch (control.action) {
         case 0: { // Stop provisioning
-            ESP_LOGI(TAG, "Provisioning control - Stop acknowledged (no action needed in simplified mode)");
+            ESP_LOGI(TAG, "*** STOP PROVISIONING - Returning to normal operation mode ***");
+            
+            // Stop fast discovery mode and return to normal hello mode
+            if (BridgeApp::instance) {
+                BridgeApp::instance->radio.stopFastDiscoveryMode();
+                ESP_LOGI(TAG, "Fast discovery mode stopped - Bridge returning to normal operation");
+                ESP_LOGI(TAG, "Network will automatically stabilize and return to normal hello intervals");
+            }
+            
+            ESP_LOGI(TAG, "*** Bridge and all nodes will transition to normal operation mode ***");
             break;
         }
 
@@ -473,4 +489,117 @@ void BridgeApp::getProvisioningStatus(UartProvisioningStatus& status) const {
     status.rejectedRequests = 0;
     
     ESP_LOGI(TAG, "Simplified Provisioning Status - Always inactive, using netkey distribution");
+}
+
+// Helper function to save current routing table to NVS for persistence
+void BridgeApp::saveRoutingTableToNVS() {
+    ESP_LOGI(TAG, "Saving routing table to NVS...");
+    
+    LM_LinkedList<RouteNode>* routingTable = RoutingTableService::routingTableList;
+    if (!routingTable) {
+        ESP_LOGW(TAG, "Routing table is null");
+        return;
+    }
+    
+    routingTable->setInUse();
+    size_t totalNodes = routingTable->getLength();
+    
+    if (totalNodes == 0) {
+        ESP_LOGI(TAG, "Routing table is empty, clearing NVS entries");
+        routingTable->releaseInUse();
+        NVSStorageService::saveRoutingTable(nullptr, 0);
+        return;
+    }
+    
+    // Allocate buffer for routing entries
+    RouteEntry* entries = new RouteEntry[totalNodes];
+    if (!entries) {
+        ESP_LOGE(TAG, "Failed to allocate memory for routing entries");
+        routingTable->releaseInUse();
+        return;
+    }
+    
+    // Copy routing table to entries array
+    size_t index = 0;
+    if (routingTable->moveToStart()) {
+        do {
+            RouteNode* node = routingTable->getCurrent();
+            if (node && index < totalNodes) {
+                // CRITICAL FIX: Set ALL fields including networkId, lastSeen, and isValid
+                entries[index] = {
+                    .address = node->networkNode.address,
+                    .via = node->via,
+                    .metric = node->networkNode.metric,
+                    .role = node->networkNode.role,
+                    .networkId = node->networkNode.networkId,
+                    .lastSeen = (uint32_t)(esp_timer_get_time() / 1000000),
+                    .isValid = true
+                };
+                
+                ESP_LOGD(TAG, "Entry[%d]: 0x%04X via 0x%04X hops:%d role:0x%02X netId:0x%04X", 
+                         index, entries[index].address, entries[index].via, 
+                         entries[index].metric, entries[index].role, entries[index].networkId);
+                index++;
+            }
+        } while (routingTable->next() && index < totalNodes);
+    }
+    
+    routingTable->releaseInUse();
+    
+    // Save to NVS
+    uint16_t validEntries = index;
+    if (validEntries > 0) {
+        if (NVSStorageService::saveRoutingTable(entries, validEntries)) {
+            ESP_LOGI(TAG, "Routing table saved to NVS: %d entries", validEntries);
+        } else {
+            ESP_LOGW(TAG, "Failed to save routing table to NVS");
+        }
+    } else {
+        ESP_LOGW(TAG, "No valid routing entries to save");
+    }
+    
+    delete[] entries;
+}
+
+// Helper function to load routing table from NVS on startup
+void BridgeApp::loadRoutingTableFromNVS() {
+    ESP_LOGI(TAG, "Loading routing table from NVS...");
+    
+    RouteEntry entries[50]; // Max 50 entries
+    
+    // loadRoutingTable returns number of entries loaded
+    uint16_t count = NVSStorageService::loadRoutingTable(entries, 50);
+    
+    if (count == 0) {
+        ESP_LOGI(TAG, "No routing table found in NVS or table is empty");
+        return;
+    }
+    
+    ESP_LOGI(TAG, "Loaded %d routing entries from NVS", count);
+    
+    // CRITICAL FIX: Suspend callbacks during bulk restore to prevent premature NVS saves
+    // Problem: Each processRoute() triggers save → overwrites remaining entries in NVS!
+    RoutingTableService::suspendCallback();
+    
+    // Restore entries to routing table
+    for (uint16_t i = 0; i < count; i++) {
+        NetworkNode netNode;
+        netNode.address = entries[i].address;
+        netNode.metric = entries[i].metric;
+        netNode.role = entries[i].role;
+        netNode.networkId = entries[i].networkId;  // CRITICAL FIX: Restore networkId
+        
+        // Add to routing table via RoutingTableService
+        RoutingTableService::processRoute(entries[i].via, &netNode);
+        
+        ESP_LOGI(TAG, "Restored route: 0x%04X via 0x%04X hops:%d role:%d netId:0x%04X",
+                 entries[i].address, entries[i].via, entries[i].metric, 
+                 entries[i].role, entries[i].networkId);
+    }
+    
+    // Resume callbacks after all entries restored
+    RoutingTableService::resumeCallback();
+    
+    ESP_LOGI(TAG, "Routing table restoration complete");
+    RoutingTableService::printRoutingTable();
 }

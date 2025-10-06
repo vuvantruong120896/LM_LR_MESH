@@ -121,9 +121,39 @@ public:
 
 	/**
 	 * @brief Checks all the routing entries for a route timeout and remove the entry.
-	 *
+	 * 
+	 * @return bool Returns true if any node was removed from the routing table
 	 */
-	static void manageTimeoutRoutingTable();
+	static bool manageTimeoutRoutingTable();
+
+	/**
+	 * @brief Callback function to be called after nodes are removed from routing table due to timeout
+	 * This allows application layer to save routing table to NVS
+	 */
+	static void (*onRoutingTableChanged)();
+
+	/**
+	 * @brief Flag to temporarily suspend callbacks during bulk operations
+	 */
+	static bool callbackSuspended;
+
+	/**
+	 * @brief Set the callback for routing table changes
+	 * 
+	 * @param callback Function pointer to be called when routing table changes (nodes removed)
+	 */
+	static void setRoutingTableChangedCallback(void (*callback)());
+
+	/**
+	 * @brief Temporarily suspend routing table change callbacks
+	 * Used during bulk operations like loading from NVS to prevent premature saves
+	 */
+	static void suspendCallback();
+
+	/**
+	 * @brief Resume routing table change callbacks
+	 */
+	static void resumeCallback();
 
 	/**
 	 * @brief process the network node, adds the node in the routing table if can
