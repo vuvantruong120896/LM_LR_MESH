@@ -1,6 +1,6 @@
 #include "RoutingTableService.h"
 #include "NetkeyDistributionService.h"
-#include "NVSStorageService.h"
+// REMOVED: #include "NVSStorageService.h" - No longer persisting routing table to flash
 #include "../core/LoraMesher.h"
 
 size_t RoutingTableService::routingTableSize() {
@@ -121,7 +121,7 @@ void RoutingTableService::processRoute(uint16_t via, NetworkNode* node) {
     uint16_t localAddress = WiFiService::getLocalAddress();
     
     if (node->address == localAddress) {
-        ESP_LOGW(LM_TAG, "FIX #1: Rejected self-route: 0x%04X via 0x%04X (hops: %d)", 
+        ESP_LOGD(LM_TAG, "FIX #1: Rejected self-route: 0x%04X via 0x%04X (hops: %d)", 
                  node->address, via, node->metric);
         return;  // Critical: Don't process routes to ourselves!
     }
@@ -136,46 +136,19 @@ void RoutingTableService::processRoute(uint16_t via, NetworkNode* node) {
 
     //Update the metric and restart timeout if needed
     if (node->metric < rNode->networkNode.metric) {
-        // FIX #2 (Part 1): Better route found - update and reset timeout
+        // Better route found - update and reset timeout
         uint8_t oldMetric = rNode->networkNode.metric;
         rNode->networkNode.metric = node->metric;
         rNode->via = via;
         resetTimeoutRoutingNode(rNode);
-        ESP_LOGI(LM_TAG, "Found better route for %X via %X metric %d", node->address, via, node->metric);
+        ESP_LOGI(LM_TAG, "Found better route for %X via %X metric %d (was %d)", 
+                 node->address, via, node->metric, oldMetric);
         
-        // Write-Through Cache: Update NVS if route became direct or was already direct
-        bool wasDirect = (oldMetric == 1);
-        bool isDirect = (node->metric == 1);
-        bool isGateway = (node->role & ROLE_GATEWAY);
-        
-        if (isDirect || isGateway) {
-            // Route is now direct/gateway - save to NVS
-            RouteEntry entry = {
-                .address = node->address,
-                .via = via,
-                .metric = (uint8_t)node->metric,
-                .role = node->role,
-                .networkId = node->networkId,
-                .lastSeen = (uint32_t)(esp_timer_get_time() / 1000000),
-                .isValid = true
-            };
-            
-            if (NVSStorageService::saveRouteEntryIncremental(entry)) {
-                ESP_LOGI(LM_TAG, "✓ Write-Through: Updated 0x%04X in NVS (metric %d→%d)", 
-                         node->address, oldMetric, node->metric);
-            } else {
-                ESP_LOGW(LM_TAG, "✗ Write-Through: Failed to update 0x%04X in NVS", node->address);
-            }
-        } else if (wasDirect && !isDirect) {
-            // Route was direct but became indirect - delete from NVS
-            if (NVSStorageService::deleteRouteEntry(node->address)) {
-                ESP_LOGI(LM_TAG, "✓ Write-Through: Deleted indirect 0x%04X from NVS (metric %d→%d)", 
-                         node->address, oldMetric, node->metric);
-            }
-        }
+        // REMOVED: NVS Write-Through Cache - routing table no longer persisted
+        // Network will rebuild routes naturally via HELLO protocol after reboot
     }
     else if (node->metric == rNode->networkNode.metric) {
-        // FIX #2 (Part 2): Same route - reset timeout to keep it alive
+        // Same route - reset timeout to keep it alive
         resetTimeoutRoutingNode(rNode);
     }
     // FIX #2 (Part 3): Worse route (node->metric > rNode->metric)
@@ -213,35 +186,14 @@ void RoutingTableService::addNodeToRoutingTable(NetworkNode* node, uint16_t via)
 
     ESP_LOGI(LM_TAG, "New route added: %X via %X metric %d, role %d", node->address, via, node->metric, node->role);
     
-    // Write-Through Cache: Save to NVS immediately (only direct routes or gateways)
-    // FIX #3: Filter - only save direct neighbors (metric==1) or gateway nodes
-    bool isDirect = (node->metric == 1);
-    bool isGateway = (node->role & ROLE_GATEWAY);
+    // REMOVED: NVS Write-Through Cache - routing table no longer persisted
+    // Benefits:
+    //   - Zero flash wear (no more NVS writes on every route change)
+    //   - No stale routes after reboot (network rebuilds fresh via HELLO)
+    //   - Simpler code (no save/suspend/resume logic)
+    //   - Faster convergence (rely purely on HELLO protocol)
     
-    if ((isDirect || isGateway) && !callbackSuspended) {
-        RouteEntry entry = {
-            .address = node->address,
-            .via = via,
-            .metric = (uint8_t)node->metric,
-            .role = node->role,
-            .networkId = node->networkId,
-            .lastSeen = (uint32_t)(esp_timer_get_time() / 1000000),
-            .isValid = true
-        };
-        
-        if (NVSStorageService::saveRouteEntryIncremental(entry)) {
-            ESP_LOGI(LM_TAG, "✓ Write-Through: Saved 0x%04X to NVS (metric=%d)", node->address, node->metric);
-        } else {
-            ESP_LOGW(LM_TAG, "✗ Write-Through: Failed to save 0x%04X to NVS", node->address);
-        }
-    } else if (callbackSuspended) {
-        ESP_LOGD(LM_TAG, "NVS save suspended - skipping incremental save");
-    } else {
-        ESP_LOGD(LM_TAG, "FIX #3: Skipped NVS save for indirect route 0x%04X (metric=%d)", 
-                 node->address, node->metric);
-    }
-    
-    // Legacy callback support (for backward compatibility, but incremental save above is primary)
+    // Legacy callback support (for backward compatibility)
     if (onRoutingTableChanged != nullptr && !callbackSuspended) {
         onRoutingTableChanged();
     }
@@ -343,10 +295,9 @@ void RoutingTableService::printRoutingTable() {
 }
 
 bool RoutingTableService::manageTimeoutRoutingTable() {
-    // Check current Hello Mode - DO NOT remove nodes during Fast Discovery or Stabilizing modes
-    // - Fast Discovery: Provisioning phase with high collision rate
-    // - Stabilizing: Network is forming stable routes after provisioning
-    // - Normal: Fully stable network - safe to remove inactive nodes
+    // SIMPLIFIED: Check current Hello Mode - DO NOT remove nodes during Fast Discovery mode only
+    // - Fast Discovery: Provisioning phase with high collision rate - skip timeout check
+    // - Normal: Regular operation with 120s intervals - perform timeout check
     uint8_t currentMode = LoraMesher::getInstance().getCurrentHelloMode();
     
     if (currentMode == HELLO_MODE_FAST_DISCOVERY) {
@@ -355,13 +306,9 @@ bool RoutingTableService::manageTimeoutRoutingTable() {
         return false; // No nodes removed
     }
     
-    if (currentMode == HELLO_MODE_STABILIZING) {
-        ESP_LOGI(LM_TAG, "Skipping timeout check - in Stabilizing Mode (post-provisioning)");
-        ESP_LOGI(LM_TAG, "Node removal is disabled during network stabilization to allow routes to form");
-        return false; // No nodes removed
-    }
+    // REMOVED: Stabilizing mode check - no longer exists in simplified system
     
-    ESP_LOGI(LM_TAG, "Checking routes timeout (Hello Mode: %d - Normal operation)", currentMode);
+    ESP_LOGI(LM_TAG, "Checking routes timeout (Hello Mode: %d)", currentMode);
 
     bool nodeRemoved = false;
 
@@ -378,14 +325,8 @@ bool RoutingTableService::manageTimeoutRoutingTable() {
                 
                 ESP_LOGW(LM_TAG, "Route timeout %X via %X (metric=%d)", removedAddress, removedVia, removedMetric);
 
-                // Write-Through Cache: Delete from NVS immediately (if not suspended)
-                if (!callbackSuspended) {
-                    if (NVSStorageService::deleteRouteEntry(removedAddress)) {
-                        ESP_LOGI(LM_TAG, "✓ Write-Through: Deleted 0x%04X from NVS", removedAddress);
-                    } else {
-                        ESP_LOGD(LM_TAG, "✗ Write-Through: Failed to delete 0x%04X from NVS (may not exist)", removedAddress);
-                    }
-                }
+                // REMOVED: NVS Write-Through Cache delete
+                // Routing table no longer persisted - timeout simply removes from memory
 
                 delete node;
                 routingTableList->DeleteCurrent();

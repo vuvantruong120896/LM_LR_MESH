@@ -323,13 +323,26 @@ public:
             return;
         }
 
+        // CRITICAL FIX: Set via field BEFORE wrapping for secure packets
+        // Non-broadcast data packets need routing via field set before encryption
+        if (dst != BROADCAST_ADDR) {
+            uint16_t nextHop = RoutingTableService::getNextHop(dst);
+            if (nextHop == 0) {
+                ESP_LOGE(LM_TAG, "NextHop not found for destination 0x%04X - aborting send", dst);
+                delete dPacket;
+                return;
+            }
+            dPacket->via = nextHop;
+            ESP_LOGD(LM_TAG, "Set via=0x%04X for dst=0x%04X before wrapping", nextHop, dst);
+        }
+
         // Apply security if enabled
         Packet<uint8_t>* finalPacket = reinterpret_cast<Packet<uint8_t>*>(dPacket);
 #ifdef ENABLE_MESH_SECURITY
         if (isSecurityEnabled()) {
             SecureDataPacket* securePacket = SecurePacketService::wrapPacket(dPacket, dPacket->packetSize, getSecurityLevel());
             if (securePacket) {
-                ESP_LOGI(LM_TAG, "Packet encrypted and authenticated");
+                ESP_LOGI(LM_TAG, "Packet encrypted and authenticated (via=0x%04X preserved)", dPacket->via);
                 finalPacket = reinterpret_cast<Packet<uint8_t>*>(securePacket);
                 delete dPacket; // Free original packet
             } else {
@@ -1269,6 +1282,16 @@ public:
     void stopFastDiscoveryMode();
     
     /**
+     * @brief Broadcast hello mode change to all nodes (Bridge only)
+     * @param targetMode Target hello mode (HELLO_MODE_NORMAL or HELLO_MODE_FAST_DISCOVERY)
+     * @param durationMs Duration for the mode (0 = permanent)
+     * 
+     * Use case: When Bridge receives "Start Provisioning" command, it broadcasts
+     *           FAST_DISCOVERY mode to help discover new nodes faster
+     */
+    void broadcastHelloModeChange(HelloMode targetMode, uint32_t durationMs = 0);
+    
+    /**
      * @brief Get current hello mode
      * @return Current hello mode (HELLO_MODE_NORMAL, HELLO_MODE_FAST_DISCOVERY, etc.)
      */
@@ -1280,11 +1303,7 @@ public:
      */
     bool isFastDiscoveryActive() const { return currentHelloMode == HELLO_MODE_FAST_DISCOVERY; }
     
-    /**
-     * @brief Check if currently in stabilizing mode
-     * @return true if in stabilizing mode  
-     */
-    bool isStabilizingModeActive() const { return currentHelloMode == HELLO_MODE_STABILIZING; }
+    // REMOVED: isStabilizingModeActive() - no stabilizing mode in simplified system
     
     /**
      * @brief Get current HELLO delay based on mode
@@ -1292,24 +1311,9 @@ public:
      */
     uint16_t getCurrentHelloDelay();
 
-    // Phase 2: Route Quality Check methods
-    /**
-     * @brief Check if network has sufficient route quality to transition to normal mode
-     * @return true if route quality is sufficient
-     */
-    bool hasQualityRoutes();
-    
-    /**
-     * @brief Get count of routes meeting quality threshold
-     * @return Number of quality routes
-     */
-    uint8_t getQualityRouteCount();
-    
-    /**
-     * @brief Check if routes have been stable for required duration
-     * @return true if routes are stable
-     */
-    bool areRoutesStable();
+    // REMOVED: Route Quality Check methods
+    // hasQualityRoutes(), getQualityRouteCount(), areRoutesStable()
+    // Reasoning: Timeout mechanism is sufficient for route management
 
 #ifdef ENABLE_MESH_SECURITY
     /**
@@ -1361,16 +1365,12 @@ private:
     void setHelloMode(uint8_t mode, uint32_t durationMs = 0);
     
     /**
-     * @brief Check and update hello mode based on timeout
+     * @brief Check and update hello mode based on timeout (simplified - no quality checks)
      */
     void updateHelloMode();
     
-    /**
-     * @brief Broadcast hello mode change to all nodes
-     * @param mode Target hello mode
-     * @param durationMs Duration in milliseconds
-     */
-    void broadcastHelloModeChange(uint8_t mode, uint32_t durationMs);
+    // REMOVED: broadcastHelloModeChange()
+    // Reasoning: Each node manages its own hello timing independently
 };
 
 #endif

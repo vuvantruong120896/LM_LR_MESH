@@ -59,9 +59,10 @@ private:
     void sendBridgeStatus();
     void updateUARTConnection();
     
-    // Routing table persistence
-    static void saveRoutingTableToNVS();
-    static void loadRoutingTableFromNVS();
+    // REMOVED: Routing table persistence functions
+    // Routing table no longer saved to NVS - rebuilds naturally via HELLO protocol
+    // static void saveRoutingTableToNVS();
+    // static void loadRoutingTableFromNVS();
     
     // Static callbacks
     static void onNetkeyReceived(const UartNetworkKey& netkey);

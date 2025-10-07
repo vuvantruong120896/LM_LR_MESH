@@ -443,8 +443,7 @@ void LoraMesher::receivingRoutine() {
                         startReceiving();
                     }
                     else {
-                        ESP_LOGI(LM_TAG,"============================>\n");             
-                        ESP_LOGI(LM_TAG, "Receiving LoRa packet: Size: %d bytes RSSI: %d SNR: %d", packetSize, rssi, snr);
+                        ESP_LOGI(LM_TAG, "📨🟨 Receiving LoRa packet: Size: %d bytes RSSI: %d SNR: %d", packetSize, rssi, snr);
 
                         state = radio->readData(reinterpret_cast<uint8_t*>(rx), packetSize);
 
@@ -583,7 +582,11 @@ void LoraMesher::sendPackets() {
                     tx->packet->id = sendId++;
 
                 //If the packet has a data packet and its destination is not broadcast add the via to the packet and forward the packet
-                if (PacketService::isDataPacket(tx->packet->type) && tx->packet->dst != BROADCAST_ADDR) {
+                // CRITICAL FIX: Skip via modification for secure packets - via is already set during wrapPacket()
+                if (PacketService::isDataPacket(tx->packet->type) && 
+                    tx->packet->dst != BROADCAST_ADDR && 
+                    !SecurePacketService::isSecurePacket(tx->packet->type)) {
+                    
                     uint16_t nextHop = RoutingTableService::getNextHop(tx->packet->dst);
 
                     //Next hop not found
@@ -652,9 +655,8 @@ void LoraMesher::sendHelloPacket() {
 
     for (;;) {
         ESP_LOGV(LM_TAG, "Creating Routing Packet");
-        //truongvv
-        // ESP_LOGV(LM_TAG, "Stack space unused after entering the task: %d", uxTaskGetStackHighWaterMark(NULL));
-        // ESP_LOGV(LM_TAG, "Free heap: %d", getFreeHeap());
+        ESP_LOGV(LM_TAG, "Stack space unused after entering the task: %d", uxTaskGetStackHighWaterMark(NULL));
+        ESP_LOGV(LM_TAG, "Free heap: %d", getFreeHeap());
 
         incSentHelloPackets();
 
@@ -750,7 +752,7 @@ void LoraMesher::processPackets() {
 #ifdef ENABLE_MESH_SECURITY
                     // Check if this is a secure packet
                     if (PacketService::isSecurePacket(type)) {
-                        ESP_LOGI(LM_TAG, "Secure packet received, decrypting...");
+                        ESP_LOGD(LM_TAG, "Secure packet received, decrypting...");
                         
                         // Convert to secure packet and unwrap
                         SecureDataPacket* securePacket = reinterpret_cast<SecureDataPacket*>(rx->packet);
@@ -855,26 +857,39 @@ void LoraMesher::processPackets() {
                     ESP_LOGD(LM_TAG, "Route reply packet ignored - using HELLO-based routing only");
                     PacketQueueService::deleteQueuePacketAndPacket(rx);
                 }
+                // Handle hello mode control packets from Bridge
+                // Purpose: Bridge can remotely trigger fast discovery mode during provisioning
                 else if (type == HELLO_MODE_CONTROL_P) {
                     ESP_LOGI(LM_TAG, "Hello mode control packet received from 0x%04X", rx->packet->src);
                     
-                    // Process hello mode control packet
-                    // Define struct locally since it's simple
-                    struct {
-                        PacketHeader header;
-                        uint8_t targetMode;
-                        uint32_t durationMs;
-                        uint32_t timestamp;
-                    } *controlPacket = reinterpret_cast<decltype(controlPacket)>(rx->packet);
+                    ControlPacket* controlPacket = reinterpret_cast<ControlPacket*>(rx->packet);
                     
-                    if (rx->packet->packetSize >= (sizeof(PacketHeader) + 9)) { // 1+4+4 bytes payload
-                        ESP_LOGI(LM_TAG, "Hello mode control - Target: %d, Duration: %dms", 
-                                 controlPacket->targetMode, controlPacket->durationMs);
-                        
-                        // Apply mode change locally (don't re-broadcast)
-                        setHelloMode(controlPacket->targetMode, controlPacket->durationMs);
+                    // Calculate payload size: packetSize - header_size
+                    size_t headerSize = sizeof(ControlPacket);
+                    size_t payloadSize = (controlPacket->packetSize > headerSize) ? 
+                                        (controlPacket->packetSize - headerSize) : 0;
+                    
+                    // Validate payload size
+                    if (payloadSize < sizeof(HelloModeControlPayload)) {
+                        ESP_LOGW(LM_TAG, "Invalid hello mode control payload size: %zu (expected %zu)", 
+                                 payloadSize, sizeof(HelloModeControlPayload));
+                        PacketQueueService::deleteQueuePacketAndPacket(rx);
+                        continue;
+                    }
+                    
+                    HelloModeControlPayload* payload = (HelloModeControlPayload*)controlPacket->payload;
+                    HelloMode targetMode = payload->targetMode;
+                    uint32_t durationMs = payload->durationMs;
+                    
+                    ESP_LOGI(LM_TAG, "Applying hello mode change: mode=%d, duration=%dms", targetMode, durationMs);
+                    
+                    // Apply the mode change
+                    if (targetMode == HELLO_MODE_FAST_DISCOVERY) {
+                        startFastDiscoveryMode(durationMs);
+                    } else if (targetMode == HELLO_MODE_NORMAL) {
+                        stopFastDiscoveryMode();
                     } else {
-                        ESP_LOGW(LM_TAG, "Invalid hello mode control packet size: %d", rx->packet->packetSize);
+                        ESP_LOGW(LM_TAG, "Unknown hello mode: %d", targetMode);
                     }
                     
                     PacketQueueService::deleteQueuePacketAndPacket(rx);
@@ -1895,20 +1910,16 @@ bool LoraMesher::isProvisioningModeActive() {
 }
 
 uint16_t LoraMesher::getCurrentHelloDelay() {
-    // Phase 1: Dynamic Hello Mode - update mode based on timeout first
+    // SIMPLIFIED: 2-phase system - update mode based on timeout first
     updateHelloMode();
     
     // Return delay based on current mode
     switch (currentHelloMode) {
         case HELLO_MODE_FAST_DISCOVERY:
-            return HELLO_FAST_INTERVAL;
-        case HELLO_MODE_STABILIZING:    // Phase 2: Stabilizing mode
-            return HELLO_STABILIZING_INTERVAL;
-        case HELLO_MODE_TRANSITION:
-            return (HELLO_FAST_INTERVAL + HELLO_NORMAL_INTERVAL) / 2; // Gradual transition
+            return HELLO_FAST_INTERVAL;      // 30s - for provisioning/discovery
         case HELLO_MODE_NORMAL:
         default:
-            return HELLO_NORMAL_INTERVAL;
+            return HELLO_NORMAL_INTERVAL;    // 120s - for normal operation
     }
 }
 
@@ -1948,217 +1959,103 @@ void LoraMesher::setHelloMode(uint8_t mode, uint32_t durationMs) {
 }
 
 void LoraMesher::updateHelloMode() {
-    uint32_t currentTime = millis();
-    
-    // Phase 2: Check route quality periodically
-    if (currentTime - lastRouteQualityCheckTime >= ROUTE_QUALITY_CHECK_INTERVAL * 1000) {
-        lastRouteQualityCheckTime = currentTime;
-        
-        // Update route stability tracking
-        bool currentlyHasQualityRoutes = hasQualityRoutes();
-        if (currentlyHasQualityRoutes && !routesWereStableLastCheck) {
-            // Routes became stable - start tracking
-            stabilizationStartTime = currentTime;
-            routesWereStableLastCheck = true;
-            ESP_LOGI(LM_TAG, "Routes became stable - starting stability timer");
-        } else if (!currentlyHasQualityRoutes) {
-            // Routes lost stability - reset tracking
-            routesWereStableLastCheck = false;
-            ESP_LOGD(LM_TAG, "Routes lost stability");
-        }
-    }
+    // SIMPLIFIED: 2-phase system with simple timeout-based transition
+    // Removed: Complex route quality checks, stabilizing phase, transition phase
+    // Reasoning: Bellman-Ford converges fast, timeout mechanism handles instability
     
     if (helloModeDuration == 0) {
-        return; // No timeout configured
+        return; // No timeout configured (normal mode runs indefinitely)
     }
     
+    uint32_t currentTime = millis();
     uint32_t elapsed = currentTime - helloModeStartTime;
     
-    // Check for timeout and Phase 2 quality gates
-    if (elapsed >= helloModeDuration) {
-        switch (currentHelloMode) {
-            case HELLO_MODE_FAST_DISCOVERY:
-                // Phase 2: Transition to stabilizing mode instead of normal
-                if (hasQualityRoutes()) {
-                    ESP_LOGI(LM_TAG, "Fast discovery timeout with quality routes - switching to stabilizing mode");
-                    setHelloMode(HELLO_MODE_STABILIZING, HELLO_STABILIZATION_DURATION * 1000);
-                } else {
-                    ESP_LOGI(LM_TAG, "Fast discovery timeout without quality routes - extending fast discovery");
-                    // Extend fast discovery by half duration
-                    helloModeStartTime = currentTime;
-                    helloModeDuration = (HELLO_DISCOVERY_DURATION * 1000) / 2;
-                    // Notify Hello task about the extension (same mode, same interval)
-                    if (Hello_TaskHandle != nullptr) {
-                        xTaskNotify(Hello_TaskHandle, 0, eNoAction);
-                        ESP_LOGD(LM_TAG, "Notified Hello task about fast discovery extension");
-                    }
-                }
-                break;
-                
-            case HELLO_MODE_STABILIZING:
-                // Phase 2: Check if routes are stable before switching to normal
-                if (areRoutesStable()) {
-                    ESP_LOGI(LM_TAG, "Stabilization complete with stable routes - switching to normal mode");
-                    setHelloMode(HELLO_MODE_NORMAL, 0);
-                } else {
-                    ESP_LOGI(LM_TAG, "Stabilization timeout but routes not stable - extending stabilization");
-                    // Extend stabilization by half duration
-                    helloModeStartTime = currentTime;
-                    helloModeDuration = (HELLO_STABILIZATION_DURATION * 1000) / 2;
-                    // Notify Hello task about the extension (same mode, same interval)
-                    if (Hello_TaskHandle != nullptr) {
-                        xTaskNotify(Hello_TaskHandle, 0, eNoAction);
-                        ESP_LOGD(LM_TAG, "Notified Hello task about stabilization extension");
-                    }
-                }
-                break;
-                
-            case HELLO_MODE_TRANSITION:
-                ESP_LOGI(LM_TAG, "Transition timeout - switching to normal mode");
-                setHelloMode(HELLO_MODE_NORMAL, 0);
-                break;
-                
-            default:
-                // No action needed for normal mode
-                break;
-        }
+    // Simple timeout check for fast discovery mode
+    if (elapsed >= helloModeDuration && currentHelloMode == HELLO_MODE_FAST_DISCOVERY) {
+        // Fast discovery timeout - switch directly to normal mode
+        ESP_LOGI(LM_TAG, "Fast discovery complete (5min) - switching to normal mode (120s intervals)");
+        setHelloMode(HELLO_MODE_NORMAL, 0);
     }
 }
 
-void LoraMesher::broadcastHelloModeChange(uint8_t mode, uint32_t durationMs) {
-    ESP_LOGI(LM_TAG, "Broadcasting hello mode change: %d (duration: %dms)", mode, durationMs);
-    
-    // Create hello mode control packet with simple struct
-    struct HelloModeControlPacket {
-        PacketHeader header;
-        uint8_t targetMode;
-        uint32_t durationMs;
-        uint32_t timestamp;
-    };
-    
-    HelloModeControlPacket* packet = (HelloModeControlPacket*)malloc(sizeof(HelloModeControlPacket));
-    if (!packet) {
-        ESP_LOGE(LM_TAG, "Failed to allocate hello mode control packet");
-        return;
-    }
-    
-    // Fill packet header - use available PacketHeader fields only
-    packet->header.src = getLocalAddress();
-    packet->header.dst = BROADCAST_ADDR;
-    packet->header.type = HELLO_MODE_CONTROL_P;
-    packet->header.id = 0;
-    packet->header.packetSize = sizeof(HelloModeControlPacket);
-    
-    // Fill control data
-    packet->targetMode = mode;
-    packet->durationMs = durationMs;
-    packet->timestamp = millis();
-    
-    // Queue packet for transmission
-    QueuePacket<Packet<uint8_t>>* queuePacket = PacketQueueService::createQueuePacket(
-        reinterpret_cast<Packet<uint8_t>*>(packet), DEFAULT_PRIORITY);
-    
-    if (queuePacket) {
-        addToSendOrderedAndNotify(queuePacket);
-        ESP_LOGI(LM_TAG, "Hello mode control packet queued for broadcast");
-    } else {
-        ESP_LOGE(LM_TAG, "Failed to create queue packet for hello mode control");
-        free(packet);
-    }
-}
+// REMOVED: broadcastHelloModeChange()
+// Reasoning: Each node manages its own hello timing independently
+//            Provisioning mode is typically triggered only on bridge/gateway via UART
+//            Broadcast hello mode control adds complexity without benefit
+//            Nodes will naturally adjust their routing tables based on received hello packets
 
 void LoraMesher::startFastDiscoveryMode(uint32_t durationMs) {
-    ESP_LOGI(LM_TAG, "Starting fast discovery mode for %dms", durationMs);
+    ESP_LOGI(LM_TAG, "Starting fast discovery mode (30s intervals) for %dms", durationMs);
     
-    // Set local mode
+    // SIMPLIFIED: Direct mode change without broadcast
+    // Note: Broadcast removed - each node manages its own hello timing
+    //       Provisioning is typically triggered only on bridge/gateway
     setHelloMode(HELLO_MODE_FAST_DISCOVERY, durationMs);
-    
-    // Broadcast to other nodes
-    broadcastHelloModeChange(HELLO_MODE_FAST_DISCOVERY, durationMs);
 }
 
 void LoraMesher::stopFastDiscoveryMode() {
-    ESP_LOGI(LM_TAG, "Stopping fast discovery mode");
+    ESP_LOGI(LM_TAG, "Stopping fast discovery mode - switching to normal mode (120s intervals)");
     
-    // Phase 2: Check if we should go to stabilizing mode
-    if (hasQualityRoutes()) {
-        ESP_LOGI(LM_TAG, "Quality routes found - switching to stabilizing mode");
-        setHelloMode(HELLO_MODE_STABILIZING, HELLO_STABILIZATION_DURATION * 1000);
-        broadcastHelloModeChange(HELLO_MODE_STABILIZING, HELLO_STABILIZATION_DURATION * 1000);
+    // SIMPLIFIED: Direct transition to normal mode
+    // Removed: Complex quality checks, stabilizing phase, transition mode
+    // Reasoning: 5 minutes of fast discovery is sufficient for convergence
+    setHelloMode(HELLO_MODE_NORMAL, 0);
+}
+
+/**
+ * @brief Broadcast hello mode change command to all nodes
+ * @param targetMode Hello mode to broadcast (HELLO_MODE_FAST_DISCOVERY or HELLO_MODE_NORMAL)
+ * @param durationMs Duration for the mode (0 for permanent)
+ * 
+ * Purpose: Allow Bridge to remotely control hello mode of all nodes
+ * Use case: When Bridge receives "Start Provisioning" command from ESP32,
+ *           it broadcasts FAST_DISCOVERY mode to help discover new nodes faster
+ * 
+ * Note: This is NOT automatic synchronization - it's manual control triggered
+ *       by Bridge when provisioning starts
+ */
+void LoraMesher::broadcastHelloModeChange(HelloMode targetMode, uint32_t durationMs) {
+    ESP_LOGI(LM_TAG, "Broadcasting hello mode change: mode=%d, duration=%dms", targetMode, durationMs);
+    
+    // Create control packet
+    ControlPacket* controlPacket = PacketFactory::createControlPacket(
+        getLocalAddress(),
+        BROADCAST_ADDR,
+        HELLO_MODE_CONTROL_P,
+        sizeof(HelloModeControlPayload)
+    );
+    
+    if (!controlPacket) {
+        ESP_LOGE(LM_TAG, "Failed to create hello mode control packet");
+        return;
+    }
+    
+    // Prepare payload
+    HelloModeControlPayload* payload = (HelloModeControlPayload*)controlPacket->payload;
+    payload->targetMode = targetMode;
+    payload->durationMs = durationMs;
+    payload->timestamp = millis();
+    
+    // Send packet directly (broadcast)
+    bool sent = sendPacket(reinterpret_cast<Packet<uint8_t>*>(controlPacket));
+    
+    // Clean up
+    vPortFree(controlPacket);
+    
+    if (sent) {
+        ESP_LOGI(LM_TAG, "Hello mode control packet broadcasted successfully");
     } else {
-        ESP_LOGI(LM_TAG, "No quality routes - using transition mode");
-        // Set local mode with grace period
-        setHelloMode(HELLO_MODE_TRANSITION, HELLO_GRACE_PERIOD * 1000);
-        // Broadcast to other nodes
-        broadcastHelloModeChange(HELLO_MODE_NORMAL, 0);
+        ESP_LOGE(LM_TAG, "Failed to broadcast hello mode control packet");
     }
 }
 
 // ======================
-// Phase 2: Route Quality Implementation
+// REMOVED: Route Quality Implementation
 // ======================
-
-bool LoraMesher::hasQualityRoutes() {
-    return getQualityRouteCount() >= MIN_ROUTE_COUNT;
-}
-
-uint8_t LoraMesher::getQualityRouteCount() {
-    uint8_t qualityRoutes = 0;
-    
-    // Get routing table copy to iterate through
-    LM_LinkedList<RouteNode>* routingTable = routingTableListCopy();
-    if (!routingTable) {
-        return 0;
-    }
-    
-    // Count routes that meet quality criteria
-    for (int i = 0; i < routingTable->getLength(); i++) {
-        RouteNode* route = (*routingTable)[i];
-        if (route && route->networkNode.address != getLocalAddress()) {
-            // Check hop count quality (prefer routes with fewer hops)
-            if (route->networkNode.metric <= 3) { // Max 3 hops for quality routes
-                // Check route freshness (timeout indicates when route expires)
-                uint32_t currentTime = millis();
-                if (route->timeout > currentTime) { // Route is still valid
-                    // Check RSSI if it's a direct neighbor (1 hop)
-                    if (route->networkNode.metric == 1) {
-                        // For 1-hop routes, check received SNR (proxy for quality)
-                        if (route->receivedSNR >= -10) { // Good SNR threshold
-                            qualityRoutes++;
-                            ESP_LOGD(LM_TAG, "Quality route found: 0x%04X (hops: %d, SNR: %d)", 
-                                     route->networkNode.address, route->networkNode.metric, route->receivedSNR);
-                        }
-                    } else {
-                        // For multi-hop routes, accept based on hop count only
-                        qualityRoutes++;
-                        ESP_LOGD(LM_TAG, "Quality route found: 0x%04X (hops: %d)", 
-                                 route->networkNode.address, route->networkNode.metric);
-                    }
-                }
-            }
-        }
-    }
-    
-    delete routingTable;
-    ESP_LOGD(LM_TAG, "Quality route count: %d (minimum: %d)", qualityRoutes, MIN_ROUTE_COUNT);
-    return qualityRoutes;
-}
-
-bool LoraMesher::areRoutesStable() {
-    if (!routesWereStableLastCheck) {
-        ESP_LOGD(LM_TAG, "Routes not currently stable");
-        return false;
-    }
-    
-    // Check if routes have been stable for the required duration
-    uint32_t stableDuration = millis() - stabilizationStartTime;
-    bool stable = stableDuration >= (STABLE_ROUTE_DURATION * 1000);
-    
-    ESP_LOGD(LM_TAG, "Route stability check: %s (stable for: %dms, required: %dms)",
-             stable ? "STABLE" : "NOT_STABLE", stableDuration, STABLE_ROUTE_DURATION * 1000);
-    
-    return stable;
-}
+// Removed hasQualityRoutes(), getQualityRouteCount(), areRoutesStable()
+// Reasoning: Timeout mechanism is sufficient for route management
+//            Complex quality checks add overhead without significant benefit
+//            Simple timeout-based pruning works reliably for mesh networks
 
 #ifdef ENABLE_MESH_SECURITY
 bool LoraMesher::isSecurityResyncPacket(uint8_t type) {

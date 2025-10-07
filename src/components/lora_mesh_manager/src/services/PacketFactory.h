@@ -2,6 +2,7 @@
 #define _LORAMESHER_PACKET_FACTORY_H
 
 #include "../network/entities/packets/Packet.h"
+#include "../network/entities/packets/ControlPacket.h"
 
 class PacketFactory {
 public:
@@ -74,6 +75,36 @@ public:
         ESP_LOGI(LM_TAG, "Packet created with %u bytes", actualPacketSize);
         return packet;
     };
+    
+    /**
+     * @brief Create a control packet with the specified parameters
+     * 
+     * @param src Source address
+     * @param dst Destination address
+     * @param type Control packet type (e.g., HELLO_MODE_CONTROL_P)
+     * @param payloadSize Size of the control payload
+     * @return ControlPacket* Pointer to the created control packet, or nullptr if failed
+     */
+    static ControlPacket* createControlPacket(uint16_t src, uint16_t dst, uint8_t type, uint8_t payloadSize) {
+        // Calculate total packet size (header + payload)
+        size_t totalSize = sizeof(ControlPacket) + payloadSize;
+        
+        // Allocate memory
+        ControlPacket* packet = static_cast<ControlPacket*>(pvPortMalloc(totalSize));
+        if (packet == nullptr) {
+            ESP_LOGE(LM_TAG, "Failed to allocate control packet memory");
+            return nullptr;
+        }
+        
+        // Initialize packet header
+        packet->src = src;
+        packet->dst = dst;
+        packet->type = type;
+        packet->packetSize = totalSize;
+        
+        ESP_LOGV(LM_TAG, "Control packet created: type=0x%02X, size=%u", type, totalSize);
+        return packet;
+    }
 
 private:
     static size_t* maxPacketSize;

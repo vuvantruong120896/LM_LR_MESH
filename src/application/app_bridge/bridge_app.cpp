@@ -73,16 +73,16 @@ void BridgeApp::setup() {
     // Log security status
     logSecurityStatus();
 
-    // Register callback for routing table changes (when nodes are removed due to timeout)
-    // This ensures routing table is saved to NVS when nodes become inactive
-    RoutingTableService::setRoutingTableChangedCallback(saveRoutingTableToNVS);
-    ESP_LOGI(TAG, "Routing table change callback registered for automatic NVS save");
-
+    // REMOVED: Routing table NVS persistence callback
+    // Network will rebuild routing table naturally via HELLO protocol after reboot
+    // Benefits: Zero flash wear, no stale routes, simpler code
+    
     setupLoRaMesher();
     setupUART();
     
-    // Load persistent routing table from NVS (if available)
-    loadRoutingTableFromNVS();
+    // REMOVED: loadRoutingTableFromNVS() - routing table no longer persisted
+    // Network starts fresh and builds routes via HELLO packets (120s normal, 30s fast discovery)
+    ESP_LOGI(TAG, "Routing table will be built from scratch via HELLO protocol");
 
     ESP_LOGI(TAG, "Bridge setup complete");
     led_pattern_connected();
@@ -426,12 +426,16 @@ void BridgeApp::onProvisioningControl(const UartProvisioningControl& control) {
             
             // Stop fast discovery mode and return to normal hello mode
             if (BridgeApp::instance) {
+                // STEP 1: Stop fast discovery mode on Bridge itself
                 BridgeApp::instance->radio.stopFastDiscoveryMode();
-                ESP_LOGI(TAG, "Fast discovery mode stopped - Bridge returning to normal operation");
-                ESP_LOGI(TAG, "Network will automatically stabilize and return to normal hello intervals");
+                ESP_LOGI(TAG, "Fast discovery mode stopped - Bridge returning to normal operation (120s)");
+                
+                // STEP 2: Broadcast command to all nodes to return to normal mode
+                BridgeApp::instance->radio.broadcastHelloModeChange(HELLO_MODE_NORMAL, 0);
+                ESP_LOGI(TAG, "Broadcasted normal mode command to all nodes in network");
             }
             
-            ESP_LOGI(TAG, "*** Bridge and all nodes will transition to normal operation mode ***");
+            ESP_LOGI(TAG, "*** Bridge and all nodes transitioning to normal operation mode (120s intervals) ***");
             break;
         }
 
@@ -442,11 +446,17 @@ void BridgeApp::onProvisioningControl(const UartProvisioningControl& control) {
             // Phase 1: Start fast discovery mode for specified duration
             if (BridgeApp::instance) {
                 uint32_t duration = (control.durationMs > 0) ? control.durationMs : (HELLO_DISCOVERY_DURATION * 1000);
+                
+                // STEP 1: Activate fast discovery mode on Bridge itself
                 BridgeApp::instance->radio.startFastDiscoveryMode(duration);
-                ESP_LOGI(TAG, "Fast discovery mode activated for %dms", duration);
+                ESP_LOGI(TAG, "Fast discovery mode activated on Bridge for %dms", duration);
+                
+                // STEP 2: Broadcast command to all nodes to enter fast discovery mode
+                BridgeApp::instance->radio.broadcastHelloModeChange(HELLO_MODE_FAST_DISCOVERY, duration);
+                ESP_LOGI(TAG, "Broadcasted fast discovery mode command to all nodes in network");
             }
             
-            ESP_LOGI(TAG, "*** NOTE: Fast hello mode enables quick routing table building for new nodes ***");
+            ESP_LOGI(TAG, "*** NOTE: Fast hello mode (30s) enables quick routing table building for new nodes ***");
             break;
         }
 
@@ -491,7 +501,10 @@ void BridgeApp::getProvisioningStatus(UartProvisioningStatus& status) const {
     ESP_LOGI(TAG, "Simplified Provisioning Status - Always inactive, using netkey distribution");
 }
 
-// Helper function to save current routing table to NVS for persistence
+// REMOVED: saveRoutingTableToNVS() - routing table no longer persisted
+// Network rebuilds routes naturally via HELLO protocol
+// Benefits: Zero flash wear, no stale routes, simpler code
+/*
 void BridgeApp::saveRoutingTableToNVS() {
     ESP_LOGI(TAG, "Saving routing table to NVS...");
     
@@ -500,11 +513,9 @@ void BridgeApp::saveRoutingTableToNVS() {
         ESP_LOGW(TAG, "Routing table is null");
         return;
     }
-    
+
     routingTable->setInUse();
-    size_t totalNodes = routingTable->getLength();
-    
-    if (totalNodes == 0) {
+    size_t totalNodes = routingTable->getLength();    if (totalNodes == 0) {
         ESP_LOGI(TAG, "Routing table is empty, clearing NVS entries");
         routingTable->releaseInUse();
         NVSStorageService::saveRoutingTable(nullptr, 0);
@@ -574,46 +585,29 @@ void BridgeApp::saveRoutingTableToNVS() {
     
     delete[] entries;
 }
+*/
 
-// Helper function to load routing table from NVS on startup
+// REMOVED: loadRoutingTableFromNVS() - routing table no longer persisted
+// Network rebuilds routes naturally via HELLO protocol after reboot
+// Benefits:
+//   - Zero flash wear (no NVS writes)
+//   - No stale routes (always fresh after reboot)
+//   - Simpler code (no suspend/resume logic)
+//   - Faster convergence with 120s HELLO_NORMAL_INTERVAL
+//
+// Old implementation commented out for reference:
+/*
 void BridgeApp::loadRoutingTableFromNVS() {
     ESP_LOGI(TAG, "Loading routing table from NVS...");
-    
-    RouteEntry entries[50]; // Max 50 entries
-    
-    // loadRoutingTable returns number of entries loaded
+    RouteEntry entries[50];
     uint16_t count = NVSStorageService::loadRoutingTable(entries, 50);
+    if (count == 0) return;
     
-    if (count == 0) {
-        ESP_LOGI(TAG, "No routing table found in NVS or table is empty");
-        return;
-    }
-    
-    ESP_LOGI(TAG, "Loaded %d routing entries from NVS", count);
-    
-    // CRITICAL FIX: Suspend callbacks during bulk restore to prevent premature NVS saves
-    // Problem: Each processRoute() triggers save → overwrites remaining entries in NVS!
     RoutingTableService::suspendCallback();
-    
-    // Restore entries to routing table
     for (uint16_t i = 0; i < count; i++) {
-        NetworkNode netNode;
-        netNode.address = entries[i].address;
-        netNode.metric = entries[i].metric;
-        netNode.role = entries[i].role;
-        netNode.networkId = entries[i].networkId;  // CRITICAL FIX: Restore networkId
-        
-        // Add to routing table via RoutingTableService
+        NetworkNode netNode = {...};
         RoutingTableService::processRoute(entries[i].via, &netNode);
-        
-        ESP_LOGI(TAG, "Restored route: 0x%04X via 0x%04X hops:%d role:%d netId:0x%04X",
-                 entries[i].address, entries[i].via, entries[i].metric, 
-                 entries[i].role, entries[i].networkId);
     }
-    
-    // Resume callbacks after all entries restored
     RoutingTableService::resumeCallback();
-    
-    ESP_LOGI(TAG, "Routing table restoration complete");
-    RoutingTableService::printRoutingTable();
 }
+*/

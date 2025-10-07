@@ -199,10 +199,6 @@ void NodeApp::setup() {
     generateDeviceUUID();
     
     setupLoRaMesher();
-    
-    // Load persistent routing table and gateway info if available now that NVS is ready
-    ESP_LOGI(LM_TAG, "Loading routing table from NVS...");
-    loadRoutingTableFromNVS();
 
     ESP_LOGI(LM_TAG, "Node setup complete. Send interval: %d ms", SEND_INTERVAL_MS);
     ESP_LOGI(LM_TAG, "Node provisioning state: %s", 
@@ -244,7 +240,8 @@ void NodeApp::loop() {
             s.timestamp = currentTime;
             s.nodeId = assignedAddress ? assignedAddress : localAddr;
 
-            ESP_LOGI(LM_TAG, "Node==================>Sending sensor data #%d - Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV", 
+            // Log with a single icon for easy visual identification
+            ESP_LOGI(LM_TAG, "🌡️ Sending sensor data #%d - Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV",
                      s.counter, s.temperature, s.humidity, s.battery);
 
             // Send sensorData struct to Bridge (use createPacketAndSend so secure wrapping is applied when enabled)

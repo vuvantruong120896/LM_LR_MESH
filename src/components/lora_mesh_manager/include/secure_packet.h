@@ -18,6 +18,10 @@ struct SecurePacketHeader {
     // Original packet header
     PacketHeader originalHeader;
     
+    // CRITICAL FIX: Add via field for multi-hop routing support
+    // Without this, encrypted packets cannot be forwarded (via = 0x0000)
+    uint16_t via;                       // Next hop address for routing
+    
     // Security extensions
     SecurityPacketHeader securityHeader;
     
@@ -26,7 +30,7 @@ struct SecurePacketHeader {
     uint16_t originalPayloadSize;       // Size before encryption/padding
     uint8_t encryptionFlags;            // Encryption algorithm and mode flags
     
-    SecurePacketHeader() : securityLevel(0), originalPayloadSize(0), encryptionFlags(0) {
+    SecurePacketHeader() : via(0), securityLevel(0), originalPayloadSize(0), encryptionFlags(0) {
         memset(&securityHeader, 0, sizeof(securityHeader));
     }
 };

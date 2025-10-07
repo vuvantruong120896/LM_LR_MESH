@@ -42,6 +42,10 @@ SecureDataPacket* SecurePacketService::wrapPacket(const DataPacket* originalPack
     // Copy original header
     copyPacketHeader(originalPacket, &securePacket->header.originalHeader);
     
+    // CRITICAL FIX: Copy via field for multi-hop routing
+    // originalPacket is DataPacket which inherits from RouteDataPacket (has via field)
+    securePacket->header.via = originalPacket->via;
+    
     // Set up security header
     securePacket->header.securityLevel = securityLevel;
     securePacket->header.originalPayloadSize = originalSize - sizeof(PacketHeader);
@@ -137,6 +141,10 @@ DataPacket* SecurePacketService::unwrapPacket(const SecureDataPacket* securePack
     copyPacketHeader(&securePacket->header.originalHeader, originalPacket);
     originalPacket->type = getOriginalType(originalPacket->type);
     originalPacket->packetSize = *originalSize;
+    
+    // CRITICAL FIX: Restore via field for multi-hop routing
+    // originalPacket is DataPacket which inherits from RouteDataPacket (has via field)
+    originalPacket->via = securePacket->header.via;
     
     // Verify authentication if enabled
     if (IS_PACKET_AUTHENTICATED(securityLevel)) {
