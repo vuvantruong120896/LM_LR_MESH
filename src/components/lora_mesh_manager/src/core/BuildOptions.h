@@ -69,6 +69,12 @@ extern const char* LM_VERSION;
 // Routing table max size
 #define RTMAXSIZE 256
 
+// Maximum hop count for routes
+// Routes with more than MAX_HOP_COUNT hops will be rejected
+// Benefits: Lower latency, higher reliability, reduced zombie routes, less network congestion
+// Recommended: 3 hops maximum for LoRa mesh networks (industry best practice)
+#define MAX_HOP_COUNT 3
+
 //MAX packet size per packet in bytes. It could be changed between 13 and 255 bytes. 
 //Recommended 150 or less bytes (tested with SF7/BW250, max PHY layer: 222 bytes).
 //If exceed it will be automatically separated through multiple packets 

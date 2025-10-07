@@ -126,6 +126,15 @@ void RoutingTableService::processRoute(uint16_t via, NetworkNode* node) {
         return;  // Critical: Don't process routes to ourselves!
     }
 
+    // FIX #4: Maximum hop count filter
+    // Reject routes that exceed MAX_HOP_COUNT hops
+    // Benefits: Lower latency, higher reliability, reduced zombie routes, less congestion
+    if (node->metric > MAX_HOP_COUNT) {
+        ESP_LOGD(LM_TAG, "FIX #4: Rejected route exceeding max hops: 0x%04X via 0x%04X (hops: %d > %d)", 
+                 node->address, via, node->metric, MAX_HOP_COUNT);
+        return;  // Don't add or update routes beyond MAX_HOP_COUNT hops
+    }
+
     RouteNode* rNode = findNode(node->address);
     
     //If nullptr the node is not inside the routing table, then add it
@@ -134,22 +143,54 @@ void RoutingTableService::processRoute(uint16_t via, NetworkNode* node) {
         return;
     }
 
+    // FIX #3: Zombie multi-hop route prevention - AGGRESSIVE VERSION
+    // CRITICAL INSIGHT: Indirect routes (via != address) should NEVER refresh timeout
+    // Only the direct neighbor that originally advertised the route should keep it alive
+    //
+    // Example zombie scenario WITHOUT this fix:
+    //   Node 0x09F8 → 0xCC64 → Bridge
+    //   When 0x09F8 dies:
+    //     - 0xCC64 times out 0x09F8 after 360s (direct neighbor) ✅
+    //     - BUT other nodes (0x4F70, 0xE764) learned 0x09F8 via 0xCC64's HELLO
+    //     - They continue advertising 0x09F8 in their HELLOs
+    //     - Bridge sees 0x09F8 from 0x4F70 → would reset timeout → zombie lives forever ❌
+    //
+    // Solution: Only reset timeout for DIRECT routes (via == address)
+    // Indirect routes can only be added or updated to better metric, never refreshed
+    bool isDirect = (via == node->address);
+    
     //Update the metric and restart timeout if needed
     if (node->metric < rNode->networkNode.metric) {
-        // Better route found - update and reset timeout
+        // Better route found - update metric and via
         uint8_t oldMetric = rNode->networkNode.metric;
+        uint16_t oldVia = rNode->via;
         rNode->networkNode.metric = node->metric;
         rNode->via = via;
-        resetTimeoutRoutingNode(rNode);
-        ESP_LOGI(LM_TAG, "Found better route for %X via %X metric %d (was %d)", 
-                 node->address, via, node->metric, oldMetric);
+        
+        // Only reset timeout for direct routes OR if we're switching to a direct route
+        if (isDirect) {
+            resetTimeoutRoutingNode(rNode);
+            ESP_LOGI(LM_TAG, "Better DIRECT route for %X: metric %d (was %d via %X)", 
+                     node->address, node->metric, oldMetric, oldVia);
+        } else {
+            // Better indirect route - update path but DON'T reset timeout
+            // Route will expire unless we hear directly from the node
+            ESP_LOGI(LM_TAG, "Better INDIRECT route for %X via %X: metric %d (was %d) - NO timeout reset", 
+                     node->address, via, node->metric, oldMetric);
+        }
         
         // REMOVED: NVS Write-Through Cache - routing table no longer persisted
         // Network will rebuild routes naturally via HELLO protocol after reboot
     }
-    else if (node->metric == rNode->networkNode.metric) {
-        // Same route - reset timeout to keep it alive
-        resetTimeoutRoutingNode(rNode);
+    else if (node->metric == rNode->networkNode.metric && via == rNode->via) {
+        // Same route from same via - only reset timeout if it's a direct route
+        if (isDirect) {
+            resetTimeoutRoutingNode(rNode);
+            ESP_LOGD(LM_TAG, "Refreshing DIRECT route for %X (metric=%d)", node->address, node->metric);
+        } else {
+            ESP_LOGD(LM_TAG, "Same INDIRECT route for %X via %X (metric=%d) - NO timeout reset", 
+                     node->address, via, node->metric);
+        }
     }
     // FIX #2 (Part 3): Worse route (node->metric > rNode->metric)
     // Intentionally do NOT reset timeout - let it expire naturally

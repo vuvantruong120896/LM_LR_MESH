@@ -210,7 +210,7 @@ void BridgeApp::forwardToUART(AppPacket<sensorData>* packet) {
         sensorData* s = reinterpret_cast<sensorData*>(packet->payload);
         uint16_t sourceNode = packet->src;
 
-        ESP_LOGI(TAG, "🔄 Forwarding sensor data from node 0x%04X to UART", sourceNode);
+        ESP_LOGI(TAG, "📤 Forwarding sensor data from node 0x%04X to UART", sourceNode);
         ESP_LOGI(TAG, "🔢 Counter: %u, 🌡️ Temp: %.1f°C, 💧 Hum: %.1f%%, 🔋 Batt: %.2fV, 🕒 Ts: %u", 
              s->counter, s->temperature, s->humidity, s->battery, s->timestamp);
 

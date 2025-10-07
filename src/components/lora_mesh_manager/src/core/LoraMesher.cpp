@@ -443,7 +443,7 @@ void LoraMesher::receivingRoutine() {
                         startReceiving();
                     }
                     else {
-                        ESP_LOGI(LM_TAG, "📨🟨 Receiving LoRa packet: Size: %d bytes RSSI: %d SNR: %d", packetSize, rssi, snr);
+                        ESP_LOGI(LM_TAG, "📧 Receiving LoRa packet: Size: %d bytes RSSI: %d SNR: %d", packetSize, rssi, snr);
 
                         state = radio->readData(reinterpret_cast<uint8_t*>(rx), packetSize);
 
@@ -975,8 +975,7 @@ void LoraMesher::routingTableManager() {
         recordState(LM_StateType::STATE_TYPE_MANAGER);
 
         // CRITICAL DEBUG: Verify task is still healthy before delay
-        ESP_LOGV(LM_TAG, "RoutingTableManager iteration complete, stack free: %u", 
-                 uxTaskGetStackHighWaterMark(NULL));
+        ESP_LOGV(LM_TAG, "Stack free: %u", uxTaskGetStackHighWaterMark(NULL));
 
         // Use shorter delay to allow more frequent checks (1 second)
         vTaskDelay(1000 / portTICK_PERIOD_MS);
