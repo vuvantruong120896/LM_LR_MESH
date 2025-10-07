@@ -752,52 +752,70 @@ void LoraMesher::processPackets() {
 #ifdef ENABLE_MESH_SECURITY
                     // Check if this is a secure packet
                     if (PacketService::isSecurePacket(type)) {
-                        ESP_LOGD(LM_TAG, "Secure packet received, decrypting...");
+                        // CRITICAL SECURITY FIX: End-to-End Encryption
+                        // Only decrypt if this node is the destination
+                        // Intermediate nodes must forward encrypted packets unchanged
                         
-                        // Convert to secure packet and unwrap
-                        SecureDataPacket* securePacket = reinterpret_cast<SecureDataPacket*>(rx->packet);
-                        size_t originalSize;
+                        uint16_t dst = rx->packet->dst;
+                        uint16_t localAddr = getLocalAddress();
                         
-                        DataPacket* decryptedPacket = SecurePacketService::unwrapPacket(securePacket, &originalSize);
-                        if (decryptedPacket) {
-                            ESP_LOGI(LM_TAG, "Packet decrypted successfully");
+                        if (dst == localAddr || dst == BROADCAST_ADDR) {
+                            // This packet is for me - decrypt it
+                            ESP_LOGD(LM_TAG, "Secure packet for me (dst=0x%04X), decrypting...", dst);
                             
-                            // CRITICAL FIX: Log heap status before queue packet creation
-                            ESP_LOGD(LM_TAG, "Free heap before createQueuePacket: %d bytes", esp_get_free_heap_size());
+                            // Convert to secure packet and unwrap
+                            SecureDataPacket* securePacket = reinterpret_cast<SecureDataPacket*>(rx->packet);
+                            size_t originalSize;
                             
-                            // CRITICAL FIX: Pass RSSI and SNR when creating queue packet
-                            // This avoids NULL pointer issues later when accessing these fields
-                            QueuePacket<DataPacket>* decryptedQueue = PacketQueueService::createQueuePacket(
-                                decryptedPacket,    // No need for reinterpret_cast, it's already DataPacket*
-                                rx->priority,       // Priority
-                                0,                  // Number (not used for single packets)
-                                rx->rssi,           // RSSI from original packet
-                                rx->snr             // SNR from original packet
-                            );
-                            
-                            // CRITICAL FIX: Check if createQueuePacket failed
-                            if (decryptedQueue == nullptr) {
-                                ESP_LOGE(LM_TAG, "Failed to create queue packet for decrypted data (free heap: %d)",
-                                         esp_get_free_heap_size());
-                                // Clean up decrypted packet to avoid memory leak
-                                vPortFree(decryptedPacket);
-                                // Clean up original secure packet
-                                PacketQueueService::deleteQueuePacketAndPacket(rx);
+                            DataPacket* decryptedPacket = SecurePacketService::unwrapPacket(securePacket, &originalSize);
+                            if (decryptedPacket) {
+                                ESP_LOGI(LM_TAG, "Packet decrypted successfully");
+                                
+                                // CRITICAL FIX: Log heap status before queue packet creation
+                                ESP_LOGD(LM_TAG, "Free heap before createQueuePacket: %d bytes", esp_get_free_heap_size());
+                                
+                                // CRITICAL FIX: Pass RSSI and SNR when creating queue packet
+                                // This avoids NULL pointer issues later when accessing these fields
+                                QueuePacket<DataPacket>* decryptedQueue = PacketQueueService::createQueuePacket(
+                                    decryptedPacket,    // No need for reinterpret_cast, it's already DataPacket*
+                                    rx->priority,       // Priority
+                                    0,                  // Number (not used for single packets)
+                                    rx->rssi,           // RSSI from original packet
+                                    rx->snr             // SNR from original packet
+                                );
+                                
+                                // CRITICAL FIX: Check if createQueuePacket failed
+                                if (decryptedQueue == nullptr) {
+                                    ESP_LOGE(LM_TAG, "Failed to create queue packet for decrypted data (free heap: %d)",
+                                             esp_get_free_heap_size());
+                                    // Clean up decrypted packet to avoid memory leak
+                                    vPortFree(decryptedPacket);
+                                    // Clean up original secure packet
+                                    PacketQueueService::deleteQueuePacketAndPacket(rx);
+                                } else {
+                                    // Log to debug
+                                    ESP_LOGD(LM_TAG, "Decrypted packet queued successfully (free heap: %d)",
+                                             esp_get_free_heap_size());
+                                    // No need to set SNR again - already set in createQueuePacket
+                                    
+                                    // Process decrypted packet
+                                    processDataPacket(decryptedQueue);
+                                    
+                                    // Clean up original secure packet
+                                    PacketQueueService::deleteQueuePacketAndPacket(rx);
+                                }
                             } else {
-                                // Log to debug
-                                ESP_LOGD(LM_TAG, "Decrypted packet queued successfully (free heap: %d)",
-                                         esp_get_free_heap_size());
-                                // No need to set SNR again - already set in createQueuePacket
-                                
-                                // Process decrypted packet
-                                processDataPacket(decryptedQueue);
-                                
-                                // Clean up original secure packet
+                                ESP_LOGW(LM_TAG, "Failed to decrypt packet, dropping");
                                 PacketQueueService::deleteQueuePacketAndPacket(rx);
                             }
                         } else {
-                            ESP_LOGW(LM_TAG, "Failed to decrypt packet, dropping");
-                            PacketQueueService::deleteQueuePacketAndPacket(rx);
+                            // This packet is NOT for me - forward encrypted unchanged
+                            // CRITICAL: Do NOT decrypt! This ensures end-to-end encryption
+                            ESP_LOGI(LM_TAG, "🔒 Secure packet for 0x%04X (not for me), forwarding ENCRYPTED", dst);
+                            
+                            // Forward encrypted packet directly using processDataPacket
+                            // The packet will be routed based on via field (set during wrapPacket)
+                            processDataPacket(dataPacketQueue);
                         }
                     } else {
                         // Regular unencrypted packet

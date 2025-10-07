@@ -112,7 +112,7 @@ extern const char* LM_VERSION;
 // SIMPLIFIED: 2-Phase Hello Mode System
 // Removed: STABILIZING, TRANSITION modes (unnecessary complexity)
 // Reasoning: Routes converge fast with Bellman-Ford, no need for intermediate phases
-
+    
 // Timeout Configuration - Dynamic based on Hello Mode
 #define TIMEOUT_MULTIPLIER 3             // Timeout = Hello Interval × 3 (miss 3 hellos before removal)
 
@@ -139,18 +139,6 @@ struct HelloModeControlPayload {
     uint32_t durationMs;     // Duration for the mode (0 = permanent)
     uint32_t timestamp;      // Timestamp when command was sent
 } __attribute__((packed));
-
-// REMOVED: Obsolete modes and configurations
-// #define HELLO_MODE_STABILIZING 2      // ❌ Removed - unnecessary intermediate phase
-// #define HELLO_MODE_TRANSITION 3       // ❌ Removed - direct transition is sufficient
-// #define HELLO_STABILIZING_INTERVAL 60 // ❌ Removed - no stabilizing phase
-// #define HELLO_STABILIZATION_DURATION  // ❌ Removed - no stabilizing phase
-// #define HELLO_GRACE_PERIOD            // ❌ Removed - not used
-// #define MIN_ROUTE_COUNT               // ❌ Removed - complex quality checks removed
-// #define MIN_ROUTE_QUALITY_RSSI        // ❌ Removed - simple timeout-based pruning sufficient
-// #define ROUTE_QUALITY_CHECK_INTERVAL  // ❌ Removed - no quality checks
-// #define STABLE_ROUTE_DURATION         // ❌ Removed - no stability tracking
-// #define HELLO_MODE_CONTROL_P          // ❌ Removed - no broadcast mode changes
 
 //Maximum times that a sequence of packets reach the timeout
 #define MAX_TIMEOUTS 10
