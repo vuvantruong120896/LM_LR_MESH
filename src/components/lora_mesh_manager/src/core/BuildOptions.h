@@ -85,6 +85,27 @@ extern const char* LM_VERSION;
 // RSSI: > -80 dBm (Excellent), -80 to -100 dBm (Good), -100 to -120 dBm (Poor), < -120 dBm (Very Poor)
 // SNR:  > 5 dB (Excellent), 0 to 5 dB (Good), -5 to 0 dB (Fair), -10 to -5 dB (Poor), < -10 dB (Very Poor)
 
+// ============================================================================
+// LINK QUALITY ROUTING - Composite Metric Weights
+// ============================================================================
+// Route selection uses a weighted composite metric combining hop count + signal quality
+// This improves reliability by avoiding routes with few hops but poor signal quality
+
+// Reference values for "good" signal quality (used for normalization)
+#define RSSI_REFERENCE_GOOD -80    // Reference RSSI for excellent link quality
+#define SNR_REFERENCE_GOOD 5       // Reference SNR for excellent link quality
+
+// Metric weights (must sum to 1.0)
+// Conservative profile: Favor reliability over hop count
+#define LINK_QUALITY_RSSI_WEIGHT 0.3f   // Weight for RSSI component (30%)
+#define LINK_QUALITY_SNR_WEIGHT 0.2f    // Weight for SNR component (20%)
+#define LINK_QUALITY_HOP_WEIGHT 0.5f    // Weight for hop count component (50%)
+
+// Tuning profiles:
+// Balanced (Default):   RSSI=0.3, SNR=0.2, HOP=0.5 - Balance between quality and hops
+// Conservative:         RSSI=0.4, SNR=0.3, HOP=0.3 - Favor high quality links
+// Aggressive:           RSSI=0.2, SNR=0.1, HOP=0.7 - Favor shortest path
+
 //MAX packet size per packet in bytes. It could be changed between 13 and 255 bytes. 
 //Recommended 150 or less bytes (tested with SF7/BW250, max PHY layer: 222 bytes).
 //If exceed it will be automatically separated through multiple packets 

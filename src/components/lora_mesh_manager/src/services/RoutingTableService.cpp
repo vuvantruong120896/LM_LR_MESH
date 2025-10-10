@@ -28,6 +28,7 @@ RouteNode* RoutingTableService::findNode(uint16_t address) {
 
 RouteNode* RoutingTableService::getBestNodeByRole(uint8_t role) {
     RouteNode* bestNode = nullptr;
+    float bestQuality = -1.0f;
 
     routingTableList->setInUse();
 
@@ -35,15 +36,28 @@ RouteNode* RoutingTableService::getBestNodeByRole(uint8_t role) {
         do {
             RouteNode* node = routingTableList->getCurrent();
 
-            if ((node->networkNode.role & role) == role &&
-                (bestNode == nullptr || node->networkNode.metric < bestNode->networkNode.metric)) {
-                bestNode = node;
+            if ((node->networkNode.role & role) == role) {
+                // Recalculate link quality to ensure it's up-to-date
+                float quality = node->calculateLinkQuality();
+                
+                // Select node with highest quality score
+                if (bestNode == nullptr || quality > bestQuality) {
+                    bestNode = node;
+                    bestQuality = quality;
+                }
             }
 
         } while (routingTableList->next());
     }
 
     routingTableList->releaseInUse();
+    
+    if (bestNode != nullptr) {
+        ESP_LOGI(LM_TAG, "Best node by role 0x%02X: Addr=0x%04X, Quality=%.3f (hops=%d, RSSI=%d, SNR=%d)", 
+                 role, bestNode->networkNode.address, bestQuality, 
+                 bestNode->networkNode.metric, bestNode->receivedRSSI, bestNode->receivedSNR);
+    }
+    
     return bestNode;
 }
 
@@ -104,7 +118,9 @@ void RoutingTableService::processRoute(RoutePacket* p, int8_t receivedSNR, int8_
     processRoute(p->src, receivedNode);
     delete receivedNode;
 
+    // Update signal quality for direct neighbor
     resetReceiveSNRRoutePacket(p->src, receivedSNR);
+    resetReceiveRSSIRoutePacket(p->src, receivedRSSI);
 
     for (size_t i = 0; i < numNodes; i++) {
         NetworkNode* node = &p->networkNodes[i];
@@ -123,6 +139,22 @@ void RoutingTableService::resetReceiveSNRRoutePacket(uint16_t src, int8_t receiv
     ESP_LOGI(LM_TAG, "Reset Receive SNR from %X: %d", src, receivedSNR);
 
     rNode->receivedSNR = receivedSNR;
+    
+    // Recalculate link quality after SNR update
+    rNode->linkQuality = rNode->calculateLinkQuality();
+}
+
+void RoutingTableService::resetReceiveRSSIRoutePacket(uint16_t src, int8_t receivedRSSI) {
+    RouteNode* rNode = findNode(src);
+    if (rNode == nullptr)
+        return;
+
+    ESP_LOGD(LM_TAG, "Reset Receive RSSI from %X: %d", src, receivedRSSI);
+
+    rNode->receivedRSSI = receivedRSSI;
+    
+    // Recalculate link quality after RSSI update
+    rNode->linkQuality = rNode->calculateLinkQuality();
 }
 
 void RoutingTableService::processRoute(uint16_t via, NetworkNode* node) {
@@ -174,19 +206,24 @@ void RoutingTableService::processRoute(uint16_t via, NetworkNode* node) {
         // Better route found - update metric and via
         uint8_t oldMetric = rNode->networkNode.metric;
         uint16_t oldVia = rNode->via;
+        float oldQuality = rNode->linkQuality;
+        
         rNode->networkNode.metric = node->metric;
         rNode->via = via;
+        
+        // Recalculate link quality after metric change
+        rNode->linkQuality = rNode->calculateLinkQuality();
         
         // Only reset timeout for direct routes OR if we're switching to a direct route
         if (isDirect) {
             resetTimeoutRoutingNode(rNode);
-            ESP_LOGI(LM_TAG, "Better DIRECT route for %X: metric %d (was %d via %X)", 
-                     node->address, node->metric, oldMetric, oldVia);
+            ESP_LOGI(LM_TAG, "Better DIRECT route for %X: metric %d (was %d via %X), quality %.3f (was %.3f)", 
+                     node->address, node->metric, oldMetric, oldVia, rNode->linkQuality, oldQuality);
         } else {
             // Better indirect route - update path but DON'T reset timeout
             // Route will expire unless we hear directly from the node
-            ESP_LOGI(LM_TAG, "Better INDIRECT route for %X via %X: metric %d (was %d) - NO timeout reset", 
-                     node->address, via, node->metric, oldMetric);
+            ESP_LOGI(LM_TAG, "Better INDIRECT route for %X via %X: metric %d (was %d), quality %.3f (was %.3f) - NO timeout reset", 
+                     node->address, via, node->metric, oldMetric, rNode->linkQuality, oldQuality);
         }
         
         // REMOVED: NVS Write-Through Cache - routing table no longer persisted
@@ -228,6 +265,9 @@ void RoutingTableService::addNodeToRoutingTable(NetworkNode* node, uint16_t via)
 
     //Reset the timeout of the node
     resetTimeoutRoutingNode(rNode);
+    
+    // Calculate initial link quality
+    rNode->linkQuality = rNode->calculateLinkQuality();
 
     routingTableList->setInUse();
 
@@ -235,7 +275,8 @@ void RoutingTableService::addNodeToRoutingTable(NetworkNode* node, uint16_t via)
 
     routingTableList->releaseInUse();
 
-    ESP_LOGI(LM_TAG, "New route added: %X via %X metric %d, role %d", node->address, via, node->metric, node->role);
+    ESP_LOGI(LM_TAG, "New route added: %X via %X metric %d, role %d, quality %.2f", 
+             node->address, via, node->metric, node->role, rNode->linkQuality);
     
     // REMOVED: NVS Write-Through Cache - routing table no longer persisted
     // Benefits:
@@ -325,15 +366,20 @@ void RoutingTableService::printRoutingTable() {
             // Calculate time to live (time remaining before timeout)
             unsigned long timeLeft = (node->timeout > currentTime) ? 
                                       (node->timeout - currentTime) / 1000 : 0;
+            
+            // Recalculate link quality for display
+            float quality = node->calculateLinkQuality();
 
-            ESP_LOGI(LM_TAG, "%d - Addr:0x%04X via:0x%04X hops:%d role:%d TTL:%lus SNR:%ddB", 
+            ESP_LOGI(LM_TAG, "%d - Addr:0x%04X via:0x%04X hops:%d role:%d TTL:%lus SNR:%ddB RSSI:%ddBm Q:%.3f", 
                 position,
                 node->networkNode.address,
                 node->via,
                 node->networkNode.metric,
                 node->networkNode.role,
                 timeLeft,
-                node->receivedSNR);
+                node->receivedSNR,
+                node->receivedRSSI,
+                quality);
 
             position++;
         } while (routingTableList->next());

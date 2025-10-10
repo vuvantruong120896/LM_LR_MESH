@@ -113,6 +113,14 @@ public:
 	static void resetReceiveSNRRoutePacket(uint16_t src, int8_t receivedSNR);
 
 	/**
+	 * @brief Reset the RSSI from the Route Node received
+	 *
+	 * @param src Source address
+	 * @param receivedRSSI Received RSSI
+	 */
+	static void resetReceiveRSSIRoutePacket(uint16_t src, int8_t receivedRSSI);
+
+	/**
 	 * @brief Reset the SNR from the Route Node Sent
 	 *
 	 * @param src Source address

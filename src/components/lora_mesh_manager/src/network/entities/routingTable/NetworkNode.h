@@ -1,6 +1,8 @@
 #ifndef _LORAMESHER_NETWORK_NODE_H
 #define _LORAMESHER_NETWORK_NODE_H
 
+#include <cstdint>
+
 #pragma pack(1)
 
 /**
