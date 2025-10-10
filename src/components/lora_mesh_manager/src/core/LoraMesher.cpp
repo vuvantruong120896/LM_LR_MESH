@@ -742,7 +742,7 @@ void LoraMesher::processPackets() {
                 if (PacketService::isHelloPacket(type)) {
                     incRecHelloPackets();
 
-                    RoutingTableService::processRoute(reinterpret_cast<RoutePacket*>(rx->packet), rx->snr);
+                    RoutingTableService::processRoute(reinterpret_cast<RoutePacket*>(rx->packet), rx->snr, rx->rssi);
                     PacketQueueService::deleteQueuePacketAndPacket(rx);
                 }
                 else if (PacketService::isDataPacket(type)) {

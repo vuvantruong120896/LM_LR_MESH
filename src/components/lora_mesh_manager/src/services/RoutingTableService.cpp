@@ -70,7 +70,7 @@ uint8_t RoutingTableService::getNumberOfHops(uint16_t address) {
     return node->networkNode.metric;
 }
 
-void RoutingTableService::processRoute(RoutePacket* p, int8_t receivedSNR) {
+void RoutingTableService::processRoute(RoutePacket* p, int8_t receivedSNR, int8_t receivedRSSI) {
     if ((p->packetSize - sizeof(RoutePacket)) % sizeof(NetworkNode) != 0) {
         ESP_LOGE(LM_TAG, "Invalid route packet size");
         return;
@@ -88,7 +88,17 @@ void RoutingTableService::processRoute(RoutePacket* p, int8_t receivedSNR) {
     }
 
     size_t numNodes = p->getNetworkNodesSize();
-    ESP_LOGI(LM_TAG, "Route packet from %X with size %d, Network ID: 0x%04X", p->src, numNodes, p->networkId);
+    ESP_LOGI(LM_TAG, "Route packet from %X with size %d, Network ID: 0x%04X, RSSI: %d, SNR: %d", 
+             p->src, numNodes, p->networkId, receivedRSSI, receivedSNR);
+
+    // **SIGNAL QUALITY FILTERING for DIRECT routes (1-hop)**
+    // Direct neighbor (sender) always has metric = 1
+    // Only add direct neighbors with good signal quality to prevent unstable routes
+    if (receivedRSSI < RSSI_MIN_THRESHOLD || receivedSNR < SNR_MIN_THRESHOLD) {
+        ESP_LOGW(LM_TAG, "Rejected direct route to 0x%04X due to poor signal quality - RSSI: %d < %d, SNR: %d < %d", 
+                 p->src, receivedRSSI, RSSI_MIN_THRESHOLD, receivedSNR, SNR_MIN_THRESHOLD);
+        return;  // Don't process any routes from this packet
+    }
 
     NetworkNode* receivedNode = new NetworkNode(p->src, 1, p->nodeRole);
     processRoute(p->src, receivedNode);

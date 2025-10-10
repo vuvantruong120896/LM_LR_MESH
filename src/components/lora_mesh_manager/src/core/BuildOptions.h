@@ -75,6 +75,16 @@ extern const char* LM_VERSION;
 // Recommended: 3 hops maximum for LoRa mesh networks (industry best practice)
 #define MAX_HOP_COUNT 3
 
+// Signal quality thresholds for routing table
+// Only direct neighbors (1-hop) with signal quality above these thresholds will be added to routing table
+// This prevents weak links that cause packet loss and network instability
+#define RSSI_MIN_THRESHOLD -100  // Minimum RSSI in dBm (typical range: -30 to -120 dBm)
+#define SNR_MIN_THRESHOLD -5     // Minimum SNR in dB (typical range: -20 to +15 dB)
+// 
+// Quality Guidelines:
+// RSSI: > -80 dBm (Excellent), -80 to -100 dBm (Good), -100 to -120 dBm (Poor), < -120 dBm (Very Poor)
+// SNR:  > 5 dB (Excellent), 0 to 5 dB (Good), -5 to 0 dB (Fair), -10 to -5 dB (Poor), < -10 dB (Very Poor)
+
 //MAX packet size per packet in bytes. It could be changed between 13 and 255 bytes. 
 //Recommended 150 or less bytes (tested with SF7/BW250, max PHY layer: 222 bytes).
 //If exceed it will be automatically separated through multiple packets 

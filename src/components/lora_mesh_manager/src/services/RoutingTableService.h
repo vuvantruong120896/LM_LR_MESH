@@ -100,8 +100,9 @@ public:
 	  *
 	  * @param p Route Packet
 	  * @param receivedSNR Received SNR
+	  * @param receivedRSSI Received RSSI
 	  */
-	static void processRoute(RoutePacket* p, int8_t receivedSNR);
+	static void processRoute(RoutePacket* p, int8_t receivedSNR, int8_t receivedRSSI = 0);
 
 	/**
 	 * @brief Reset the SNR from the Route Node received
