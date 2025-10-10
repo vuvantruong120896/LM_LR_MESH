@@ -39,7 +39,7 @@
 // ENABLE_MESH_SECURITY is now defined in platformio.ini
 #define BRIDGE_SECURITY_LEVEL   2       // Security level: 0=none, 1=auth, 2=encrypt+auth
 #define BRIDGE_IS_GATEWAY       true    // Bridge can accept join requests
-#define MAX_AUTHENTICATED_NODES 32      // Maximum authenticated nodes to track
+#define MAX_AUTHENTICATED_NODES 64      // Maximum authenticated nodes to track (increased from 32 for better security)
 
 // Network security keys - now centralized in mesh_security_keys.h
 // All devices MUST use the same keys for authentication to work!

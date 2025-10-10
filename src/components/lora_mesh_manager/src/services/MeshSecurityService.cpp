@@ -14,10 +14,10 @@ MeshSecurityConfig MeshSecurityService::config;
 mbedtls_aes_context MeshSecurityService::aes_ctx;
 bool MeshSecurityService::initialized = false;
 uint32_t MeshSecurityService::sequenceCounter = 0;
-uint16_t MeshSecurityService::authenticatedNodes[32] = {0};
+uint16_t MeshSecurityService::authenticatedNodes[64] = {0};
 uint8_t MeshSecurityService::authenticatedCount = 0;
-uint32_t MeshSecurityService::lastSequenceNumbers[32] = {0};
-uint32_t MeshSecurityService::recentReceiveBitmap[32] = {0};
+uint32_t MeshSecurityService::lastSequenceNumbers[64] = {0};
+uint32_t MeshSecurityService::recentReceiveBitmap[64] = {0};
 
 // Per-peer persistence tracking
 uint32_t peerUpdatesSinceLastSave = 0;
@@ -328,14 +328,12 @@ void MeshSecurityService::generateNonce(uint8_t* nonce) {
 }
 
 bool MeshSecurityService::isValidSequenceNumber(uint16_t nodeId, uint32_t sequenceNumber) {
-    if (!config.enableReplayProtection) {
-        return true;
-    }
+    // Replay protection is always enabled (hardcoded for security)
     // Sliding window size (allow small out-of-order packets)
-    const uint32_t WINDOW = 32; // Accept sequences up to last + WINDOW
+    const uint32_t WINDOW = 64; // Accept sequences up to last + WINDOW
 
     // Find node in tracking array
-    for (int i = 0; i < 32 && i < authenticatedCount; i++) {
+    for (int i = 0; i < 64 && i < authenticatedCount; i++) {
         if (authenticatedNodes[i] == nodeId) {
             uint32_t last = lastSequenceNumbers[i];
             if (sequenceNumber > last) {
@@ -397,7 +395,7 @@ bool MeshSecurityService::isValidSequenceNumber(uint16_t nodeId, uint32_t sequen
     }
 
     // New node, add to tracking
-    if (authenticatedCount < 32) {
+    if (authenticatedCount < 64) {
         authenticatedNodes[authenticatedCount] = nodeId;
         lastSequenceNumbers[authenticatedCount] = sequenceNumber;
         recentReceiveBitmap[authenticatedCount] = 1u; // mark present
@@ -507,7 +505,7 @@ bool MeshSecurityService::loadPeerTableFromNVS() {
 
     uint8_t* p = blob;
     uint8_t count = *p++;
-    if (count > 32) count = 32;
+    if (count > 64) count = 64;
     authenticatedCount = count;
     for (int i = 0; i < authenticatedCount; i++) {
         uint16_t nid; memcpy(&nid, p, sizeof(nid)); p += sizeof(nid);

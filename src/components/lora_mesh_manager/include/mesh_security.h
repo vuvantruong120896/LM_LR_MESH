@@ -192,14 +192,14 @@ private:
     static bool initialized;
     static uint32_t sequenceCounter;
     
-    // Authenticated nodes tracking
-    static uint16_t authenticatedNodes[32];
+    // Authenticated nodes tracking (increased from 32 to 64)
+    static uint16_t authenticatedNodes[64];
     static uint8_t authenticatedCount;
     
-    // Replay protection
-    static uint32_t lastSequenceNumbers[32];
+    // Replay protection (increased window from 32 to 64)
+    static uint32_t lastSequenceNumbers[64];
     // Recent receive bitmaps per-peer to allow small out-of-order packets
-    static uint32_t recentReceiveBitmap[32];
+    static uint32_t recentReceiveBitmap[64];
     
     // NVS persistence for sequence counter
     static uint32_t sequencesSinceLastSave;

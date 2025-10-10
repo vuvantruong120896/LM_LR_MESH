@@ -169,8 +169,8 @@ DataPacket* SecurePacketService::unwrapPacket(const SecureDataPacket* securePack
         }
     }
     
-    // Check sequence number for replay protection
-    if (MeshSecurityService::getConfig().enableReplayProtection) {
+    // Check sequence number for replay protection (always enabled for security)
+    {
         uint16_t sender = securePacket->header.originalHeader.src;
         uint32_t seq = securePacket->header.securityHeader.sequenceNumber;
         // Add debug info: if replay protection fails, log the incoming sequence and last seen value
