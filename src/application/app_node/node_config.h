@@ -6,24 +6,24 @@
 #define LED_ON      LOW
 #define LED_OFF     HIGH
 
-// SPI pin configuration for Node (ESP32-C3)
+// SPI pin configuration for Node (ESP32 - same as Gateway)
 #ifndef SPI_SCK
-#define SPI_SCK     9
+#define SPI_SCK     18
 #endif
 #ifndef SPI_MISO
-#define SPI_MISO    8
+#define SPI_MISO    16
 #endif
 #ifndef SPI_MOSI
-#define SPI_MOSI    7
+#define SPI_MOSI    19
 #endif
 #ifndef SPI_CS
-#define SPI_CS      6
+#define SPI_CS      5
 #endif
 
-// LoRa configuration for node
-#define LORA_CS     6
+// LoRa configuration for node (ESP32 - same as Gateway)
+#define LORA_CS     5
 #define LORA_RST    4
-#define LORA_IRQ    3
+#define LORA_IRQ    15
 #define LORA_IO1    -1
 
 // Node behavior settings

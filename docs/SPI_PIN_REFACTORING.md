@@ -136,16 +136,20 @@ This allows:
 
 ### Pin Mapping
 
-| Device | SPI_SCK | SPI_MISO | SPI_MOSI | SPI_CS | Hardware |
-|--------|---------|----------|----------|--------|----------|
-| Node (ESP32-C3) | 9 | 8 | 7 | 6 | ESP32-C3-DevKitM-1 |
-| Bridge (ESP32) | 18 | 16 | 19 | 5 | ESP32 DOIT DevKit V1 |
+| Device | SPI_SCK | SPI_MISO | SPI_MOSI | SPI_CS | LORA_CS | LORA_IRQ | Hardware |
+|--------|---------|----------|----------|--------|---------|----------|----------|
+| Node (ESP32) | 18 | 16 | 19 | 5 | 5 | 15 | ESP32 DOIT DevKit V1 |
+| Gateway (ESP32) | 18 | 16 | 19 | 5 | 5 | 15 | ESP32 DOIT DevKit V1 |
+
+**Note**: Both Node and Gateway now use the same ESP32 board with identical pinout configuration.
 
 ### Build Results
 
 All environments build successfully:
-- **esp32c3-node**: ✓ Success (RAM 5.6%, Flash 34.2%)
+- **esp32-node**: ✓ Success (RAM 7.9%, Flash 34.8%)
 - **esp32-gateway**: ✓ Success (RAM 7.7%, Flash 35.9%)
+
+Both use ESP32 DOIT DevKit V1 with identical pinout configuration.
 
 ## Migration Guide
 
