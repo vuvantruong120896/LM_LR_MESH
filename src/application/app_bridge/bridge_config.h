@@ -6,10 +6,24 @@
 #define LED_ON      LOW
 #define LED_OFF     HIGH
 
+// SPI pin configuration for Bridge (ESP32 Gateway/Node)
+#ifndef SPI_SCK
+#define SPI_SCK     18
+#endif
+#ifndef SPI_MISO
+#define SPI_MISO    16
+#endif
+#ifndef SPI_MOSI
+#define SPI_MOSI    19
+#endif
+#ifndef SPI_CS
+#define SPI_CS      5
+#endif
+
 // LoRa configuration for Bridge
-#define LORA_CS     6
+#define LORA_CS     5
 #define LORA_RST    4
-#define LORA_IRQ    3
+#define LORA_IRQ    15
 #define LORA_IO1    -1
 
 // Bridge-specific settings

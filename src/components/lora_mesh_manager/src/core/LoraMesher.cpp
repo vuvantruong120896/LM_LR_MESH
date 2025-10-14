@@ -5,6 +5,17 @@
 #include "EspHal.h"
 #endif
 
+// Include device-specific config for SPI pin definitions
+#ifndef DEVICE_MODE
+#define DEVICE_MODE 1 // Default to Node mode
+#endif
+
+#if DEVICE_MODE == 2
+#include "../../../../application/app_bridge/bridge_config.h"
+#else
+#include "../../../../application/app_node/node_config.h"
+#endif
+
 LoraMesher::LoraMesher() {}
 
 void LoraMesher::begin(LoraMesherConfig config) {
@@ -138,15 +149,13 @@ void LoraMesher::initializeLoRa() {
             // lilygo_t3_s3_sx127x howwever defines LORA_MISO etc but defines SCK, MISO etc as the same as SD_SCK instead so LoraMesher fails trying to talk to the SD
                 SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
         #else 
-                #if DEVICE_MODE == 1
-                    SPI.begin(9, 8, 7, 6);
-                    ESP_LOGI(LM_TAG, "SPI.begin(%d, %d, %d, %d);", 9, 8, 7, 6); 
-                #elif DEVICE_MODE == 2
-                    SPI.begin(9, 8, 7, 6);
-                    ESP_LOGI(LM_TAG, "SPI.begin(%d, %d, %d, %d);", 9, 8, 7, 6);
-                #elif DEVICE_MODE == 3
-                    SPI.begin(18, 16, 19, 5);
-                    ESP_LOGI(LM_TAG, "SPI.begin(%d, %d, %d, %d);", 18, 16, 19, 5);
+                // Use SPI pin definitions from config files (bridge_config.h or node_config.h)
+                // SPI_SCK, SPI_MISO, SPI_MOSI, SPI_CS are defined in the respective config headers
+                #ifdef SPI_SCK
+                    SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SPI_CS);
+                    ESP_LOGI(LM_TAG, "SPI.begin(SCK:%d, MISO:%d, MOSI:%d, CS:%d);", SPI_SCK, SPI_MISO, SPI_MOSI, SPI_CS);
+                #else
+                    #error "SPI pins not defined! Please define SPI_SCK, SPI_MISO, SPI_MOSI, SPI_CS in config file"
                 #endif
         #endif
                 config.spi = &SPI;

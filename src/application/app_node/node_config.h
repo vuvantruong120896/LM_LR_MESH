@@ -6,6 +6,20 @@
 #define LED_ON      LOW
 #define LED_OFF     HIGH
 
+// SPI pin configuration for Node (ESP32-C3)
+#ifndef SPI_SCK
+#define SPI_SCK     9
+#endif
+#ifndef SPI_MISO
+#define SPI_MISO    8
+#endif
+#ifndef SPI_MOSI
+#define SPI_MOSI    7
+#endif
+#ifndef SPI_CS
+#define SPI_CS      6
+#endif
+
 // LoRa configuration for node
 #define LORA_CS     6
 #define LORA_RST    4
