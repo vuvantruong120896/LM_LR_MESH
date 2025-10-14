@@ -1,29 +1,29 @@
-#include "bridge_app.h"
+#include "gateway_app.h"
 #include "components/lora_mesh_manager/src/services/RoutingTableService.h"
 #include "mesh_security_config.h"
 #include <esp_log.h>
 
-static const char* TAG = "BRIDGE";
+static const char* TAG = "GATEWAY";
 
 // Static member initialization
-BridgeApp* BridgeApp::instance = nullptr;
+GatewayApp* GatewayApp::instance = nullptr;
 
-BridgeApp::BridgeApp()
+GatewayApp::GatewayApp()
     : radio(LoraMesher::getInstance()),
       uartProtocol(nullptr),
       statusCounter(0),
-      statusPacket(new bridgeStatus) {
+      statusPacket(new gatewayStatus) {
     instance = this;
 }
 
-BridgeApp::~BridgeApp() {
+GatewayApp::~GatewayApp() {
     delete statusPacket;
     delete uartProtocol;
 }
 
-void BridgeApp::setup() {
-    ESP_LOGI(TAG, "=== LoRaMesh Bridge/Gateway Application ===");
-    ESP_LOGI(TAG, "Bridge ID: 0x%X", BRIDGE_ID);
+void GatewayApp::setup() {
+    ESP_LOGI(TAG, "=== LoRaMesh Gateway Application ===");
+    ESP_LOGI(TAG, "Gateway ID: 0x%X", GATEWAY_ID);
 
     led_init();
     led_pattern_startup();
@@ -84,11 +84,11 @@ void BridgeApp::setup() {
     // Network starts fresh and builds routes via HELLO packets (120s normal, 30s fast discovery)
     ESP_LOGI(TAG, "Routing table will be built from scratch via HELLO protocol");
 
-    ESP_LOGI(TAG, "Bridge setup complete");
+    ESP_LOGI(TAG, "Gateway setup complete");
     led_pattern_connected();
 }
 
-void BridgeApp::initializeServices() {
+void GatewayApp::initializeServices() {
     const int maxRetries = 3;
     const uint32_t baseDelayMs = 200; // exponential backoff base
 
@@ -117,7 +117,7 @@ void BridgeApp::initializeServices() {
     ESP_LOGI(TAG, "Simplified provisioning via netkey distribution - no ProvisioningService needed");
 }
 
-void BridgeApp::loop() {
+void GatewayApp::loop() {
     uint32_t currentTime = millis();
 
     // Handle UART communication
@@ -132,7 +132,7 @@ void BridgeApp::loop() {
 
     // Simple status LED indication
     if (statusCounter++ % 100 == 0) {
-        if (bridgeState.uartConnected) {
+        if (gatewayState.uartConnected) {
             led_pattern_message(); // Quick flash for active
         } else {
             led_pattern_error();   // Error pattern for disconnected
@@ -142,7 +142,7 @@ void BridgeApp::loop() {
     delay(100); // Main loop delay
 }
 
-void BridgeApp::setupLoRaMesher() {
+void GatewayApp::setupLoRaMesher() {
     ESP_LOGI(TAG, "Setting up LoRaMesher...");
 
     LoraMesher::LoraMesherConfig config;
@@ -153,7 +153,7 @@ void BridgeApp::setupLoRaMesher() {
         config.loraIrq = LORA_IRQ;
         config.loraIo1 = LORA_IO1;
         config.module = LORA_MODULE;
-    #elif DEVICE_MODE == 2 // Esp32 Bridge mode
+    #elif DEVICE_MODE == 2 // Esp32 Gateway mode
         config.loraCs = LORA_CS;
         config.loraRst = LORA_RST;
         config.loraIrq = LORA_IRQ;
@@ -169,23 +169,23 @@ void BridgeApp::setupLoRaMesher() {
 
     radio.begin(config);
     
-    // Set Bridge as Gateway so nodes can discover it via getClosestGateway()
+    // Set Gateway role so nodes can discover it via getClosestGateway()
     radio.addGatewayRole();
-    ESP_LOGI(TAG, "Bridge configured as Gateway role");
+    ESP_LOGI(TAG, "Gateway configured as Gateway role");
 
-    TaskHandle_t receiveHandle = createBridgeReceiveTask();
+    TaskHandle_t receiveHandle = createGatewayReceiveTask();
     if (receiveHandle) {
-        ESP_LOGI(TAG, "Setting task handle %p for bridge data", receiveHandle);
+        ESP_LOGI(TAG, "Setting task handle %p for gateway data", receiveHandle);
         radio.setReceiveAppDataTaskHandle(receiveHandle);
         radio.start();
-        ESP_LOGI(TAG, "LoRaMesher initialized for Bridge");
+        ESP_LOGI(TAG, "LoRaMesher initialized for Gateway");
     } else {
-        ESP_LOGE(TAG, "Failed to create bridge receive task");
+        ESP_LOGE(TAG, "Failed to create gateway receive task");
         led_pattern_error();
     }
 }
 
-void BridgeApp::setupUART() {
+void GatewayApp::setupUART() {
     ESP_LOGI(TAG, "Setting up UART communication...");
 
     // Create UART protocol instance
@@ -196,15 +196,15 @@ void BridgeApp::setupUART() {
     uartProtocol->setNetkeyCallback(onNetkeyReceived);
     uartProtocol->setProvisioningCallback(onProvisioningControl);
 
-    bridgeState.uartConnected = true;
+    gatewayState.uartConnected = true;
 
     ESP_LOGI(TAG, "UART initialized on Serial1, baud: %d", UART_BAUD_RATE);
     ESP_LOGI(TAG, "RX pin: %d, TX pin: %d", UART_RX_PIN, UART_TX_PIN);
     ESP_LOGI(TAG, "Netkey and provisioning callbacks registered");
 }
 
-void BridgeApp::forwardToUART(AppPacket<sensorData>* packet) {
-    if (!uartProtocol || !bridgeState.uartConnected) {
+void GatewayApp::forwardToUART(AppPacket<sensorData>* packet) {
+    if (!uartProtocol || !gatewayState.uartConnected) {
         ESP_LOGW(TAG, "UART not available for forwarding");
         return;
     }
@@ -218,7 +218,7 @@ void BridgeApp::forwardToUART(AppPacket<sensorData>* packet) {
         return;
     }
 
-    bridgeState.totalMeshPackets++;
+    gatewayState.totalMeshPackets++;
 
     // Extract data from packet - payload contains the actual dataPacket
     if (packet->payloadSize >= sizeof(sensorData)) {
@@ -237,10 +237,10 @@ void BridgeApp::forwardToUART(AppPacket<sensorData>* packet) {
 
         // Send via UART
         if (uartProtocol->sendDataPacket(dp, sourceNode)) {
-            bridgeState.packetsForwarded++;
+            gatewayState.packetsForwarded++;
             led_pattern_message(); // Flash LED on successful forward
         } else {
-            bridgeState.uartErrors++;
+            gatewayState.uartErrors++;
             ESP_LOGW(TAG, "Failed to send packet via UART");
         }
     } else {
@@ -248,18 +248,18 @@ void BridgeApp::forwardToUART(AppPacket<sensorData>* packet) {
     }
 }
 
-void BridgeApp::sendBridgeStatus() {
-    if (!uartProtocol || !bridgeState.uartConnected) {
+void GatewayApp::sendGatewayStatus() {
+    if (!uartProtocol || !gatewayState.uartConnected) {
         return;
     }
 
     // Prepare status packet
-    UartBridgeStatus status;
-    status.bridgeId = BRIDGE_ID;
+    UartGatewayStatus status;
+    status.gatewayId = GATEWAY_ID;
     status.uptime = millis() / 1000; // Convert to seconds
     status.connectedNodes = radio.routingTableSize();
-    status.totalPacketsReceived = bridgeState.totalMeshPackets;
-    status.totalPacketsSent = bridgeState.packetsForwarded;
+    status.totalPacketsReceived = gatewayState.totalMeshPackets;
+    status.totalPacketsSent = gatewayState.packetsForwarded;
     status.freeHeap = ESP.getFreeHeap() / 1024; // Convert to KB
     status.lastRSSI = -99; // TODO: Get from last received packet
     status.lastSNR = 10;   // TODO: Get from last received packet
@@ -271,16 +271,16 @@ void BridgeApp::sendBridgeStatus() {
     uartProtocol->sendStatusPacket(status);
 }
 
-void BridgeApp::updateUARTConnection() {
+void GatewayApp::updateUARTConnection() {
     static uint32_t lastCheck = 0;
     uint32_t currentTime = millis();
 
     if (currentTime - lastCheck >= 5000) { // Check every 5 seconds
-        bool wasConnected = bridgeState.uartConnected;
-        bridgeState.uartConnected = uartProtocol && uartProtocol->isConnected();
+        bool wasConnected = gatewayState.uartConnected;
+        gatewayState.uartConnected = uartProtocol && uartProtocol->isConnected();
 
-        if (wasConnected != bridgeState.uartConnected) {
-            if (bridgeState.uartConnected) {
+        if (wasConnected != gatewayState.uartConnected) {
+            if (gatewayState.uartConnected) {
                 ESP_LOGI(TAG, "UART connection established");
                 led_pattern_connected();
             } else {
@@ -293,59 +293,59 @@ void BridgeApp::updateUARTConnection() {
     }
 }
 
-// Static callback for processing bridge packets
-void BridgeApp::processBridgePackets(void* parameter) {
-    ESP_LOGI(TAG, "[BRIDGE-TASK] Bridge packet processing task started");
+// Static callback for processing gateway packets
+void GatewayApp::processGatewayPackets(void* parameter) {
+    ESP_LOGI(TAG, "[GATEWAY-TASK] Gateway packet processing task started");
 
     for (;;) {
-        // ESP_LOGI(TAG, "[BRIDGE-TASK] Waiting for mesh packet notification...");
+        // ESP_LOGI(TAG, "[GATEWAY-TASK] Waiting for mesh packet notification...");
         ulTaskNotifyTake(pdPASS, portMAX_DELAY);
 
-        ESP_LOGI(TAG, "[BRIDGE-TASK] GOT NOTIFICATION! Processing bridge packets...");
+        ESP_LOGI(TAG, "[GATEWAY-TASK] GOT NOTIFICATION! Processing gateway packets...");
         led_pattern_message();
 
-        while (BridgeApp::instance->radio.getReceivedQueueSize() > 0) {
-            ESP_LOGD(TAG, "[BRIDGE-TASK] Processing received mesh packet for bridge");
-            ESP_LOGD(TAG, "[BRIDGE-TASK] Queue size: %d", BridgeApp::instance->radio.getReceivedQueueSize());
+        while (GatewayApp::instance->radio.getReceivedQueueSize() > 0) {
+            ESP_LOGD(TAG, "[GATEWAY-TASK] Processing received mesh packet for gateway");
+            ESP_LOGD(TAG, "[GATEWAY-TASK] Queue size: %d", GatewayApp::instance->radio.getReceivedQueueSize());
 
-            AppPacket<uint8_t>* packet = BridgeApp::instance->radio.getNextAppPacket<uint8_t>();
+            AppPacket<uint8_t>* packet = GatewayApp::instance->radio.getNextAppPacket<uint8_t>();
 
             // Cast to the correct structure - AppPacket with sensorData payload
             AppPacket<sensorData>* sensorPacket = reinterpret_cast<AppPacket<sensorData>*>(packet);
 
             // Forward to UART instead of MQTT
-            BridgeApp::instance->forwardToUART(sensorPacket);
+            GatewayApp::instance->forwardToUART(sensorPacket);
 
-            BridgeApp::instance->radio.deletePacket(packet);
+            GatewayApp::instance->radio.deletePacket(packet);
         }
     }
 }
 
-TaskHandle_t BridgeApp::createBridgeReceiveTask() {
+TaskHandle_t GatewayApp::createGatewayReceiveTask() {
     TaskHandle_t taskHandle = NULL;
 
-    ESP_LOGI(TAG, "Creating bridge receive task...");
+    ESP_LOGI(TAG, "Creating gateway receive task...");
 
     int res = xTaskCreate(
-        processBridgePackets,
-        "Bridge Receive Task",
+        processGatewayPackets,
+        "Gateway Receive Task",
         4096,
         (void*) 1,
         2,
         &taskHandle);
 
     if (res != pdPASS) {
-        ESP_LOGE(TAG, "Error: Bridge task creation failed: %d", res);
+        ESP_LOGE(TAG, "Error: Gateway task creation failed: %d", res);
         led_pattern_error();
         return NULL;
     }
 
-    ESP_LOGI(TAG, "Bridge task created successfully, handle: %p", taskHandle);
+    ESP_LOGI(TAG, "Gateway task created successfully, handle: %p", taskHandle);
     return taskHandle;
 }
 
 // Static callback for receiving netkey from UART
-void BridgeApp::onNetkeyReceived(const UartNetworkKey& netkey) {
+void GatewayApp::onNetkeyReceived(const UartNetworkKey& netkey) {
     ESP_LOGI(TAG, "*** NETKEY RECEIVED FROM UART ***");
     ESP_LOGI(TAG, "Key version: %d, Network ID: 0x%04X", netkey.keyVersion, netkey.networkId);
     
@@ -373,13 +373,13 @@ void BridgeApp::onNetkeyReceived(const UartNetworkKey& netkey) {
         ESP_LOGE(TAG, "Failed to save network config to NVS");
     }
 
-    // Update Bridge's local network key (for bridge operation)
+    // Update Gateway's local network key (for gateway operation)
     bool localUpdateSuccess = false;
     if (NetkeyDistributionService::updateLocalNetworkKey(netkey.networkKey, netkey.authToken, netkey.networkId, netkey.keyVersion)) {
-        ESP_LOGI(TAG, "Bridge local network key updated successfully");
+        ESP_LOGI(TAG, "Gateway local network key updated successfully");
         localUpdateSuccess = true;
     } else {
-        ESP_LOGE(TAG, "Failed to update Bridge local network key");
+        ESP_LOGE(TAG, "Failed to update Gateway local network key");
     }
 
     // **SIMPLIFIED APPROACH**: Automatically distribute netkey to ALL nodes in routing table
@@ -417,8 +417,8 @@ void BridgeApp::onNetkeyReceived(const UartNetworkKey& netkey) {
 
     // Send confirmation back via UART
     bool overallSuccess = nvsSaveSuccess && localUpdateSuccess && distributionSuccess;
-    if (BridgeApp::instance && BridgeApp::instance->uartProtocol) {
-        BridgeApp::instance->uartProtocol->sendNetkeyUpdateConfirm(overallSuccess);
+    if (GatewayApp::instance && GatewayApp::instance->uartProtocol) {
+        GatewayApp::instance->uartProtocol->sendNetkeyUpdateConfirm(overallSuccess);
     }
 
     ESP_LOGI(TAG, "Netkey processing completed - NVS: %s, Local: %s, Distribution: %s", 
@@ -428,7 +428,7 @@ void BridgeApp::onNetkeyReceived(const UartNetworkKey& netkey) {
 }
 
 // Static callback for provisioning control from UART
-void BridgeApp::onProvisioningControl(const UartProvisioningControl& control) {
+void GatewayApp::onProvisioningControl(const UartProvisioningControl& control) {
     ESP_LOGI(TAG, "*** SIMPLIFIED PROVISIONING CONTROL RECEIVED FROM UART ***");
     ESP_LOGI(TAG, "Action: %d (0=stop, 1=start, 2=get_status)", control.action);
     
@@ -440,17 +440,17 @@ void BridgeApp::onProvisioningControl(const UartProvisioningControl& control) {
             ESP_LOGI(TAG, "*** STOP PROVISIONING - Returning to normal operation mode ***");
             
             // Stop fast discovery mode and return to normal hello mode
-            if (BridgeApp::instance) {
-                // STEP 1: Stop fast discovery mode on Bridge itself
-                BridgeApp::instance->radio.stopFastDiscoveryMode();
-                ESP_LOGI(TAG, "Fast discovery mode stopped - Bridge returning to normal operation (120s)");
+            if (GatewayApp::instance) {
+                // STEP 1: Stop fast discovery mode on Gateway itself
+                GatewayApp::instance->radio.stopFastDiscoveryMode();
+                ESP_LOGI(TAG, "Fast discovery mode stopped - Gateway returning to normal operation (120s)");
                 
                 // STEP 2: Broadcast command to all nodes to return to normal mode
-                BridgeApp::instance->radio.broadcastHelloModeChange(HELLO_MODE_NORMAL, 0);
+                GatewayApp::instance->radio.broadcastHelloModeChange(HELLO_MODE_NORMAL, 0);
                 ESP_LOGI(TAG, "Broadcasted normal mode command to all nodes in network");
             }
             
-            ESP_LOGI(TAG, "*** Bridge and all nodes transitioning to normal operation mode (120s intervals) ***");
+            ESP_LOGI(TAG, "*** Gateway and all nodes transitioning to normal operation mode (120s intervals) ***");
             break;
         }
 
@@ -459,15 +459,15 @@ void BridgeApp::onProvisioningControl(const UartProvisioningControl& control) {
             ESP_LOGI(TAG, "Duration: %dms, MaxSessions: %d", control.durationMs, control.maxSessions);
             
             // Phase 1: Start fast discovery mode for specified duration
-            if (BridgeApp::instance) {
+            if (GatewayApp::instance) {
                 uint32_t duration = (control.durationMs > 0) ? control.durationMs : (HELLO_DISCOVERY_DURATION * 1000);
                 
-                // STEP 1: Activate fast discovery mode on Bridge itself
-                BridgeApp::instance->radio.startFastDiscoveryMode(duration);
-                ESP_LOGI(TAG, "Fast discovery mode activated on Bridge for %dms", duration);
+                // STEP 1: Activate fast discovery mode on Gateway itself
+                GatewayApp::instance->radio.startFastDiscoveryMode(duration);
+                ESP_LOGI(TAG, "Fast discovery mode activated on Gateway for %dms", duration);
                 
                 // STEP 2: Broadcast command to all nodes to enter fast discovery mode
-                BridgeApp::instance->radio.broadcastHelloModeChange(HELLO_MODE_FAST_DISCOVERY, duration);
+                GatewayApp::instance->radio.broadcastHelloModeChange(HELLO_MODE_FAST_DISCOVERY, duration);
                 ESP_LOGI(TAG, "Broadcasted fast discovery mode command to all nodes in network");
             }
             
@@ -479,7 +479,7 @@ void BridgeApp::onProvisioningControl(const UartProvisioningControl& control) {
             ESP_LOGI(TAG, "Provisioning status requested");
             
             // Send simplified status
-            if (BridgeApp::instance && BridgeApp::instance->uartProtocol) {
+            if (GatewayApp::instance && GatewayApp::instance->uartProtocol) {
                 UartProvisioningStatus status;
                 memset(&status, 0, sizeof(status));
                 status.active = false; // Always inactive in simplified mode
@@ -490,7 +490,7 @@ void BridgeApp::onProvisioningControl(const UartProvisioningControl& control) {
                 status.successfulProvisions = 0; 
                 status.rejectedRequests = 0;
                 
-                BridgeApp::instance->uartProtocol->sendProvisioningStatus(status);
+                GatewayApp::instance->uartProtocol->sendProvisioningStatus(status);
                 ESP_LOGI(TAG, "Sent simplified provisioning status (always inactive)");
             }
             break;
@@ -502,7 +502,7 @@ void BridgeApp::onProvisioningControl(const UartProvisioningControl& control) {
     }
 }
 
-void BridgeApp::getProvisioningStatus(UartProvisioningStatus& status) const {
+void GatewayApp::getProvisioningStatus(UartProvisioningStatus& status) const {
     // SIMPLIFIED: Always return inactive status since provisioning is replaced by netkey distribution
     memset(&status, 0, sizeof(status));
     status.active = false;

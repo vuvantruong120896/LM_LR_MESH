@@ -1,8 +1,8 @@
-#ifndef BRIDGE_APP_H
-#define BRIDGE_APP_H
+#ifndef GATEWAY_APP_H
+#define GATEWAY_APP_H
 
 #include <Arduino.h>
-#include "bridge_config.h"
+#include "gateway_config.h"
 #include "uart_protocol.h"
 #include "led_control.h"
 #include "../common/mesh_utils.h"
@@ -13,8 +13,8 @@
 #include "components/lora_mesh_manager/src/services/ProvisioningService.h"
 #include "components/lora_mesh_manager/src/services/ProvisioningProtocol.h"
 
-// Bridge state structure
-struct BridgeState {
+// Gateway state structure
+struct GatewayState {
     bool uartConnected = false;
     uint32_t packetsForwarded = 0;
     uint32_t lastHeartbeat = 0;
@@ -23,10 +23,10 @@ struct BridgeState {
     uint32_t uartErrors = 0;
 };
 
-class BridgeApp {
+class GatewayApp {
 public:
-    BridgeApp();
-    ~BridgeApp();
+    GatewayApp();
+    ~GatewayApp();
     
     void setup();
     void loop();
@@ -43,9 +43,9 @@ public:
 private:
     LoraMesher& radio;
     UartProtocol* uartProtocol;
-    BridgeState bridgeState;
+    GatewayState gatewayState;
     uint32_t statusCounter;
-    bridgeStatus* statusPacket;
+    gatewayStatus* statusPacket;
     ProvisioningService* provisioningService;
     
     // Private methods
@@ -56,7 +56,7 @@ private:
     void loadNetworkConfiguration();
     void printSystemStatus();
     void forwardToUART(AppPacket<sensorData>* packet);
-    void sendBridgeStatus();
+    void sendGatewayStatus();
     void updateUARTConnection();
     
     // REMOVED: Routing table persistence functions
@@ -70,9 +70,9 @@ private:
     static void onProvisioningControl(const UartProvisioningControl& control);
     
     // Static callback methods
-    static void processBridgePackets(void* parameter);
+    static void processGatewayPackets(void* parameter);
     static void processProvisioningPackets(void* parameter);
-    TaskHandle_t createBridgeReceiveTask();
+    TaskHandle_t createGatewayReceiveTask();
     
     // Provisioning packet handlers
     void handleProvisioningPacket(AppPacket<DataPacket>* packet);
@@ -80,7 +80,7 @@ private:
     static void handleProvisionComplete(const uint8_t* packetData, size_t packetSize, uint16_t senderAddress);
     
     // Pointer to instance for static callbacks
-    static BridgeApp* instance;
+    static GatewayApp* instance;
 };
 
-#endif // BRIDGE_APP_H
+#endif // GATEWAY_APP_H

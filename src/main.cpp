@@ -18,10 +18,10 @@
 LoraMesher &radio = LoraMesher::getInstance();
 
 #if DEVICE_MODE == 2
-// Bridge mode
-#include "application/app_bridge/bridge_app.h"
-static BridgeApp app;
-#define LM_TAG "BridgeMAIN"
+// Gateway mode
+#include "application/app_gateway/gateway_app.h"
+static GatewayApp app;
+#define LM_TAG "GatewayMAIN"
 #else
 // Node mode (default)
 #include "application/app_node/node_app.h"
@@ -37,7 +37,7 @@ void setup()
     delay(2000);
 
 #if DEVICE_MODE == 2
-    ESP_LOGI(LM_TAG, "Starting in BRIDGE MODE");
+    ESP_LOGI(LM_TAG, "Starting in GATEWAY MODE");
 #else
     ESP_LOGI(LM_TAG, "Starting in NODE MODE");
 #endif

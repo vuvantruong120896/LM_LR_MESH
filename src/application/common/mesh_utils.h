@@ -19,7 +19,7 @@ struct sensorData {
     uint16_t nodeId = 0;         // origin node id
 };
 
-struct bridgeStatus {
+struct gatewayStatus {
     uint16_t connectedNodes = 0;
     uint32_t totalPackets = 0;
     bool wifiConnected = false;

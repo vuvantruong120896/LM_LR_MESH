@@ -11,7 +11,7 @@
 #endif
 
 #if DEVICE_MODE == 2
-#include "../../../../application/app_bridge/bridge_config.h"
+#include "../../../../application/app_gateway/gateway_config.h"
 #else
 #include "../../../../application/app_node/node_config.h"
 #endif

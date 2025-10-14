@@ -8,7 +8,7 @@
 // UART packet types
 enum UartPacketType : uint8_t {
     UART_PACKET_DATA = 0x01,        // Mesh data packet
-    UART_PACKET_STATUS = 0x02,      // Bridge status
+    UART_PACKET_STATUS = 0x02,      // Gateway status
     UART_PACKET_HEARTBEAT = 0x03,   // Heartbeat/keepalive
     UART_PACKET_COMMAND = 0x04,     // Command from external ESP32
     UART_PACKET_ACK = 0x05,         // Acknowledgment
@@ -17,9 +17,9 @@ enum UartPacketType : uint8_t {
 
 // UART command types
 enum UartCommand : uint8_t {
-    UART_CMD_GET_STATUS = 0x10,     // Request bridge status
+    UART_CMD_GET_STATUS = 0x10,     // Request gateway status
     UART_CMD_GET_NODES = 0x11,      // Request connected nodes list
-    UART_CMD_RESET = 0x12,          // Reset bridge
+    UART_CMD_RESET = 0x12,          // Reset gateway
     UART_CMD_SET_CONFIG = 0x13,     // Update configuration
     UART_CMD_SET_NETKEY = 0x14,     // Set network key for mesh
     UART_CMD_START_PROVISIONING = 0x15,  // Start provisioning mode
@@ -41,10 +41,10 @@ struct UartPacket {
 };
 #pragma pack()
 
-// Bridge status structure for UART (packed for on-wire layout)
+// Gateway status structure for UART (packed for on-wire layout)
 #pragma pack(1)
-struct UartBridgeStatus {
-    uint16_t bridgeId;
+struct UartGatewayStatus {
+    uint16_t gatewayId;
     uint32_t uptime;                // Seconds since boot
     uint16_t connectedNodes;        // Number of nodes in routing table
     uint32_t totalPacketsReceived;  // Total packets from mesh
@@ -143,7 +143,7 @@ public:
     
     // Send functions
     bool sendDataPacket(const dataPacket& data, uint16_t sourceNode);
-    bool sendStatusPacket(const UartBridgeStatus& status);
+    bool sendStatusPacket(const UartGatewayStatus& status);
     bool sendHeartbeat();
     bool sendAck(uint8_t sequenceNum);
     bool sendError(uint8_t errorCode);

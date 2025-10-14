@@ -1,5 +1,5 @@
 #include "uart_protocol.h"
-#include "bridge_config.h"
+#include "gateway_config.h"
 #include "components/lora_mesh_manager/src/services/RoutingTableService.h"
 #include <esp_log.h>
 
@@ -99,9 +99,9 @@ bool UartProtocol::sendDataPacket(const dataPacket& data, uint16_t sourceNode) {
     return ok;
 }
 
-bool UartProtocol::sendStatusPacket(const UartBridgeStatus& status) {
+bool UartProtocol::sendStatusPacket(const UartGatewayStatus& status) {
     const uint8_t* payload = reinterpret_cast<const uint8_t*>(&status);
-    bool ok = sendRawPacket(UART_PACKET_STATUS, payload, sizeof(UartBridgeStatus));
+    bool ok = sendRawPacket(UART_PACKET_STATUS, payload, sizeof(UartGatewayStatus));
     // ESP_LOGI(TAG, "Sent status packet, nodes=%d, uptime=%ds, seq=%d", status.connectedNodes, status.uptime, sequenceNumber);
     return ok;
 }
