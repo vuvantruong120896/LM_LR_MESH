@@ -146,11 +146,26 @@ void BridgeApp::setupLoRaMesher() {
     ESP_LOGI(TAG, "Setting up LoRaMesher...");
 
     LoraMesher::LoraMesherConfig config;
-    config.loraCs = LORA_CS;
-    config.loraRst = LORA_RST;
-    config.loraIrq = LORA_IRQ;
-    config.loraIo1 = LORA_IO1;
-    config.module = LORA_MODULE;
+
+    #if DEVICE_MODE == 1  // Esp32c3 Node mode
+        config.loraCs = LORA_CS;
+        config.loraRst = LORA_RST;
+        config.loraIrq = LORA_IRQ;
+        config.loraIo1 = LORA_IO1;
+        config.module = LORA_MODULE;
+    #elif DEVICE_MODE == 2 // Esp32 Bridge mode
+        config.loraCs = LORA_CS;
+        config.loraRst = LORA_RST;
+        config.loraIrq = LORA_IRQ;
+        config.loraIo1 = LORA_IO1;
+        config.module = LORA_MODULE;
+    #elif DEVICE_MODE == 3 // Esp32 Node mode
+        config.loraCs = LORA_CS;
+        config.loraRst = LORA_RST;
+        config.loraIrq = LORA_IRQ;
+        config.loraIo1 = LORA_IO1;
+        config.module = LORA_MODULE;
+    #endif 
 
     radio.begin(config);
     
