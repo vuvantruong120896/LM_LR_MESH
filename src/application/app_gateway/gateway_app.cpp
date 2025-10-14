@@ -10,15 +10,18 @@ GatewayApp* GatewayApp::instance = nullptr;
 
 GatewayApp::GatewayApp()
     : radio(LoraMesher::getInstance()),
-      uartProtocol(nullptr),
+      wifiService(nullptr),
+      firebaseClient(nullptr),
       statusCounter(0),
       statusPacket(new gatewayStatus) {
     instance = this;
+    gatewayState.bootTime = millis();
 }
 
 GatewayApp::~GatewayApp() {
     delete statusPacket;
-    delete uartProtocol;
+    delete firebaseClient;
+    delete wifiService;
 }
 
 void GatewayApp::setup() {
@@ -72,16 +75,16 @@ void GatewayApp::setup() {
 
     // Log security status
     logSecurityStatus();
-
-    // REMOVED: Routing table NVS persistence callback
-    // Network will rebuild routing table naturally via HELLO protocol after reboot
-    // Benefits: Zero flash wear, no stale routes, simpler code
     
     setupLoRaMesher();
-    setupUART();
+    setupWiFi();
+    setupFirebase();
     
-    // REMOVED: loadRoutingTableFromNVS() - routing table no longer persisted
-    // Network starts fresh and builds routes via HELLO packets (120s normal, 30s fast discovery)
+    // Register callback to upload routing table when it changes
+    RoutingTableService::setRoutingTableChangedCallback(onRoutingTableChanged);
+    ESP_LOGI(TAG, "Registered routing table change callback for real-time Firebase upload");
+    
+    // Routing table will be built from scratch via HELLO packets
     ESP_LOGI(TAG, "Routing table will be built from scratch via HELLO protocol");
 
     ESP_LOGI(TAG, "Gateway setup complete");
@@ -119,21 +122,60 @@ void GatewayApp::initializeServices() {
 
 void GatewayApp::loop() {
     uint32_t currentTime = millis();
-
-    // Handle UART communication
-    if (uartProtocol) {
-        uartProtocol->update();
-        updateUARTConnection();
-    }
     
-    // NOTE: Routing table is now saved to NVS ONLY when changes occur (node added/removed)
-    // via callback mechanism. Periodic save removed to reduce flash wear.
-    // See: RoutingTableService::setRoutingTableChangedCallback() in setup()
+    // Memory leak detection - log heap status every 30 seconds
+    static uint32_t lastHeapCheck = 0;
+    static uint32_t minFreeHeapGlobal = ESP.getFreeHeap();
+    if (currentTime - lastHeapCheck >= 30000) {
+        uint32_t freeHeap = ESP.getFreeHeap();
+        uint32_t largestFreeBlock = ESP.getMaxAllocHeap();
+        
+        if (freeHeap < minFreeHeapGlobal) {
+            minFreeHeapGlobal = freeHeap;
+        }
+        
+        ESP_LOGI(TAG, "[MEMORY] Free heap: %u bytes (min: %u), Largest block: %u bytes, Uptime: %u min",
+                 freeHeap, minFreeHeapGlobal, largestFreeBlock, currentTime / 60000);
+        
+        // Warn if heap fragmentation detected (large gap between free and largest block)
+        if (freeHeap > 50000 && largestFreeBlock < (freeHeap / 2)) {
+            ESP_LOGW(TAG, "⚠️ [FRAGMENTATION] Heap fragmented: %u bytes free but largest block only %u bytes",
+                     freeHeap, largestFreeBlock);
+        }
+        
+        // Critical low heap warning
+        if (freeHeap < 30000) {
+            ESP_LOGE(TAG, "🚨 [CRITICAL] Low heap in main loop! Only %u bytes free!", freeHeap);
+        }
+        
+        lastHeapCheck = currentTime;
+    }
+
+    // Update WiFi service (handles auto-reconnect)
+    if (wifiService) {
+        wifiService->update();
+    }
+
+    // Backup periodic upload (every 5 minutes)
+    // Primary upload happens immediately via onRoutingTableChanged() callback
+    // This periodic upload serves as:
+    // - Backup mechanism in case callback fails
+    // - Ensures Firebase data stays fresh even if no changes occur
+    // - Re-syncs routing table after Firebase reconnection
+    if (gatewayState.firebaseConnected &&
+        (currentTime - gatewayState.lastRoutingTableUpload >= GATEWAY_ROUTING_TABLE_INTERVAL)) {
+        ESP_LOGI(TAG, "⏰ Periodic backup routing table upload");
+        uploadRoutingTable();
+        // Always update timestamp even if upload fails to prevent rapid retries
+        gatewayState.lastRoutingTableUpload = currentTime;
+    }
 
     // Simple status LED indication
     if (statusCounter++ % 100 == 0) {
-        if (gatewayState.uartConnected) {
+        if (gatewayState.wifiConnected && gatewayState.firebaseConnected) {
             led_pattern_message(); // Quick flash for active
+        } else if (gatewayState.wifiConnected) {
+            led_flash(1, 500);     // Single slow flash for WiFi only
         } else {
             led_pattern_error();   // Error pattern for disconnected
         }
@@ -185,32 +227,104 @@ void GatewayApp::setupLoRaMesher() {
     }
 }
 
-void GatewayApp::setupUART() {
-    ESP_LOGI(TAG, "Setting up UART communication...");
+void GatewayApp::setupWiFi() {
+    ESP_LOGI(TAG, "Setting up WiFi connection...");
 
-    // Create UART protocol instance
-    uartProtocol = new UartProtocol(&Serial1);
-    uartProtocol->begin(UART_BAUD_RATE);
+    // Create WiFi service instance
+    wifiService = new WiFiConnectionService(
+        WIFI_SSID,
+        WIFI_PASSWORD,
+        true,   // auto-reconnect enabled
+        1000    // initial reconnect interval: 1 second
+    );
 
-    // Set callbacks for UART protocol
-    uartProtocol->setNetkeyCallback(onNetkeyReceived);
-    uartProtocol->setProvisioningCallback(onProvisioningControl);
+    // Register WiFi event callback
+    wifiService->onEvent([this](WiFiConnectionService::WiFiEvent event, int8_t rssi) {
+        this->handleWiFiEvent(event, rssi);
+    });
 
-    gatewayState.uartConnected = true;
+    // Set RSSI threshold for low signal warning
+    wifiService->setRSSIThreshold(-80);  // Warn if RSSI < -80 dBm
 
-    ESP_LOGI(TAG, "UART initialized on Serial1, baud: %d", UART_BAUD_RATE);
-    ESP_LOGI(TAG, "RX pin: %d, TX pin: %d", UART_RX_PIN, UART_TX_PIN);
-    ESP_LOGI(TAG, "Netkey and provisioning callbacks registered");
+    // Initialize WiFi service
+    if (!wifiService->initialize()) {
+        ESP_LOGE(TAG, "Failed to initialize WiFi service");
+        led_pattern_error();
+        return;
+    }
+
+    // Connect to WiFi (with 15-second timeout)
+    ESP_LOGI(TAG, "Connecting to WiFi: %s", WIFI_SSID);
+    if (wifiService->connect(15000)) {
+        gatewayState.wifiConnected = true;
+        ESP_LOGI(TAG, "WiFi connected! IP: %s, MAC: %s, RSSI: %d dBm",
+                 wifiService->getLocalIP().c_str(),
+                 wifiService->getMACAddress().c_str(),
+                 wifiService->getRSSI());
+    } else {
+        ESP_LOGW(TAG, "WiFi connection failed, but auto-reconnect is enabled");
+        gatewayState.wifiConnected = false;
+    }
 }
 
-void GatewayApp::forwardToUART(AppPacket<sensorData>* packet) {
-    if (!uartProtocol || !gatewayState.uartConnected) {
-        ESP_LOGW(TAG, "UART not available for forwarding");
+void GatewayApp::setupFirebase() {
+    ESP_LOGI(TAG, "Setting up Firebase connection...");
+
+    // Create Gateway ID from MAC address
+    String macAddr = WiFi.macAddress();
+    macAddr.replace(":", "");
+    String gatewayId = String(FIREBASE_GATEWAY_ID_PREFIX);
+    gatewayId += macAddr;
+
+    // Create Firebase client instance
+    firebaseClient = new FirebaseClient(
+        FIREBASE_HOST,
+        FIREBASE_AUTH,
+        gatewayId.c_str()
+    );
+
+    // Configure retry behavior
+    firebaseClient->setRetryConfig(3, 1000);  // 3 retries, 1 second delay
+
+    // Initialize Firebase client
+    if (!firebaseClient->initialize()) {
+        ESP_LOGE(TAG, "Failed to initialize Firebase client");
+        led_pattern_error();
+        return;
+    }
+
+    // Connect to Firebase
+    if (firebaseClient->connect()) {
+        gatewayState.firebaseConnected = true;
+        ESP_LOGI(TAG, "🔥 Firebase connected! Gateway ID: %s", gatewayId.c_str());
+
+        // Upload initial gateway info
+        auto result = firebaseClient->updateGatewayInfo(
+            WiFi.macAddress(),
+            wifiService->getLocalIP(),
+            "1.0.0"  // Firmware version
+        );
+
+        if (result.success) {
+            ESP_LOGI(TAG, "Gateway info uploaded to Firebase");
+        }
+
+        // Log gateway started event
+        firebaseClient->logEvent("gateway_started", "", "");
+    } else {
+        ESP_LOGW(TAG, "Firebase connection failed: %s", firebaseClient->getLastError().c_str());
+        gatewayState.firebaseConnected = false;
+    }
+}
+
+void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
+    if (!firebaseClient || !gatewayState.firebaseConnected) {
+        ESP_LOGW(TAG, "Firebase not available for upload");
         return;
     }
 
     // Check if we're in provisioning mode (Fast Discovery)
-    // Don't process/forward sensor data during provisioning - only Hello packets
+    // Don't process/upload sensor data during provisioning - only Hello packets
     uint8_t currentMode = radio.getCurrentHelloMode();
     if (currentMode == HELLO_MODE_FAST_DISCOVERY) {
         ESP_LOGD(TAG, "Dropping sensor data packet - in Fast Discovery Mode (provisioning)");
@@ -220,103 +334,212 @@ void GatewayApp::forwardToUART(AppPacket<sensorData>* packet) {
 
     gatewayState.totalMeshPackets++;
 
-    // Extract data from packet - payload contains the actual dataPacket
+    // Extract data from packet - payload contains the actual sensorData
     if (packet->payloadSize >= sizeof(sensorData)) {
         sensorData* s = reinterpret_cast<sensorData*>(packet->payload);
         uint16_t sourceNode = packet->src;
 
-        ESP_LOGI(TAG, "📤 Forwarding sensor data from node 0x%04X to UART", sourceNode);
-        ESP_LOGI(TAG, "🔢 Counter: %u, 🌡️ Temp: %.1f°C, 💧 Hum: %.1f%%, 🔋 Batt: %.2fV, 🕒 Ts: %u", 
-             s->counter, s->temperature, s->humidity, s->battery, s->timestamp);
+        // Ensure nodeId is set correctly
+        if (s->nodeId == 0) {
+            s->nodeId = sourceNode;
+        }
 
-        // Convert sensorData into the UART dataPacket format expected by external ESP32
-        dataPacket dp;
-        dp.counter = s->counter;
-        dp.timestamp = s->timestamp;
-        dp.nodeId = s->nodeId ? s->nodeId : sourceNode;
+        ESP_LOGI(TAG, "☁️ Uploading sensor data from node 0x%04X to Firebase", sourceNode);
+        ESP_LOGI(TAG, "🔢 Counter: %u, 🌡️ Temp: %.1f°C, 💧 Hum: %.1f%%, 🔋 Batt: %.2fV, 📡 NodeID: 0x%04X",
+             s->counter, s->temperature, s->humidity, s->battery, s->nodeId);
 
-        // Send via UART
-        if (uartProtocol->sendDataPacket(dp, sourceNode)) {
-            gatewayState.packetsForwarded++;
-            led_pattern_message(); // Flash LED on successful forward
+        // Upload to Firebase (RSSI/SNR not available in AppPacket - stored in routing table)
+        auto result = firebaseClient->uploadSensorData(*s, 0, 0);
+
+        if (result.success) {
+            gatewayState.packetsUploaded++;
+            led_pattern_message(); // Flash LED on successful upload
+            ESP_LOGI(TAG, "✅ Upload successful (%d bytes)", result.payloadSize);
         } else {
-            gatewayState.uartErrors++;
-            ESP_LOGW(TAG, "Failed to send packet via UART");
+            gatewayState.uploadErrors++;
+            ESP_LOGW(TAG, "❌ Firebase upload failed: %s", result.errorMessage.c_str());
         }
     } else {
         ESP_LOGW(TAG, "Packet too small to contain sensorData structure");
     }
 }
 
-void GatewayApp::sendGatewayStatus() {
-    if (!uartProtocol || !gatewayState.uartConnected) {
+void GatewayApp::uploadRoutingTable() {
+    if (!firebaseClient || !gatewayState.firebaseConnected) {
         return;
     }
 
-    // Prepare status packet
-    UartGatewayStatus status;
-    status.gatewayId = GATEWAY_ID;
-    status.uptime = millis() / 1000; // Convert to seconds
-    status.connectedNodes = radio.routingTableSize();
-    status.totalPacketsReceived = gatewayState.totalMeshPackets;
-    status.totalPacketsSent = gatewayState.packetsForwarded;
-    status.freeHeap = ESP.getFreeHeap() / 1024; // Convert to KB
-    status.lastRSSI = -99; // TODO: Get from last received packet
-    status.lastSNR = 10;   // TODO: Get from last received packet
-    status.meshHealth = (status.connectedNodes > 0) ? 100 : 0; // Simple health metric
+    // Access routing table from RoutingTableService
+    LM_LinkedList<RouteNode>* rtList = RoutingTableService::routingTableList;
+    if (!rtList) {
+        ESP_LOGW(TAG, "Routing table is null");
+        return;
+    }
 
-    ESP_LOGI(TAG, "Sending status - Nodes: %d, Packets: %d/%d, Heap: %dKB",
-             status.connectedNodes, status.totalPacketsReceived, status.totalPacketsSent, status.freeHeap);
+    rtList->setInUse();
+    size_t tableSize = rtList->getLength();
 
-    uartProtocol->sendStatusPacket(status);
+    if (tableSize == 0) {
+        ESP_LOGD(TAG, "Routing table is empty, skipping upload");
+        rtList->releaseInUse();
+        return;
+    }
+
+    // Convert LinkedList to vector for Firebase upload
+    std::vector<RouteNode> routingTable;
+    routingTable.reserve(tableSize);
+
+    if (rtList->moveToStart()) {
+        do {
+            RouteNode* node = rtList->getCurrent();
+            if (node) {
+                routingTable.push_back(*node);
+            }
+        } while (rtList->next());
+    }
+
+    rtList->releaseInUse();
+
+    ESP_LOGI(TAG, "📡 Uploading routing table (%d nodes)", routingTable.size());
+
+    auto result = firebaseClient->uploadRoutingTable(routingTable);
+
+    if (result.success) {
+        gatewayState.lastRoutingTableUpload = millis();
+        ESP_LOGI(TAG, "✅ Routing table uploaded (%d bytes)", result.payloadSize);
+    } else {
+        ESP_LOGW(TAG, "❌ Failed to upload routing table: %s", result.errorMessage.c_str());
+    }
 }
 
-void GatewayApp::updateUARTConnection() {
-    static uint32_t lastCheck = 0;
-    uint32_t currentTime = millis();
+void GatewayApp::handleWiFiEvent(WiFiConnectionService::WiFiEvent event, int8_t rssi) {
+    switch (event) {
+        case WiFiConnectionService::WiFiEvent::CONNECTED:
+            ESP_LOGI(TAG, "✅ WiFi CONNECTED! IP: %s, RSSI: %d dBm",
+                     wifiService->getLocalIP().c_str(), rssi);
+            gatewayState.wifiConnected = true;
+            led_pattern_connected();
 
-    if (currentTime - lastCheck >= 5000) { // Check every 5 seconds
-        bool wasConnected = gatewayState.uartConnected;
-        gatewayState.uartConnected = uartProtocol && uartProtocol->isConnected();
-
-        if (wasConnected != gatewayState.uartConnected) {
-            if (gatewayState.uartConnected) {
-                ESP_LOGI(TAG, "UART connection established");
-                led_pattern_connected();
-            } else {
-                ESP_LOGW(TAG, "UART connection lost");
-                led_pattern_error();
+            // Try to reconnect Firebase if it was disconnected
+            if (firebaseClient && !gatewayState.firebaseConnected) {
+                if (firebaseClient->connect()) {
+                    gatewayState.firebaseConnected = true;
+                    firebaseClient->logEvent("firebase_reconnected", "", "");
+                }
             }
-        }
+            break;
 
-        lastCheck = currentTime;
+        case WiFiConnectionService::WiFiEvent::DISCONNECTED:
+            ESP_LOGW(TAG, "❌ WiFi DISCONNECTED!");
+            gatewayState.wifiConnected = false;
+            gatewayState.firebaseConnected = false;
+            led_pattern_error();
+
+            if (firebaseClient) {
+                firebaseClient->logEvent("wifi_disconnected", "", "");
+            }
+            break;
+
+        case WiFiConnectionService::WiFiEvent::RECONNECTING:
+            ESP_LOGI(TAG, "⏳ WiFi RECONNECTING...");
+            led_flash(2, 250);  // Double flash pattern for reconnecting
+            break;
+
+        case WiFiConnectionService::WiFiEvent::CONNECTION_FAILED:
+            ESP_LOGE(TAG, "❌ WiFi CONNECTION FAILED!");
+            gatewayState.wifiConnected = false;
+            led_pattern_error();
+            break;
+
+        case WiFiConnectionService::WiFiEvent::RSSI_LOW:
+            ESP_LOGW(TAG, "⚠️ WiFi signal LOW! RSSI: %d dBm", rssi);
+            break;
     }
 }
 
 // Static callback for processing gateway packets
 void GatewayApp::processGatewayPackets(void* parameter) {
     ESP_LOGI(TAG, "[GATEWAY-TASK] Gateway packet processing task started");
+    
+    // Stack monitoring - check initial stack
+    UBaseType_t stackHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
+    ESP_LOGI(TAG, "[GATEWAY-TASK] Initial stack high water mark: %d bytes free", stackHighWaterMark);
+    
+    // Memory leak detection - track heap usage
+    uint32_t initialFreeHeap = ESP.getFreeHeap();
+    uint32_t minFreeHeap = initialFreeHeap;
+    uint32_t packetCount = 0;
+    ESP_LOGI(TAG, "[GATEWAY-TASK] Initial free heap: %u bytes", initialFreeHeap);
 
     for (;;) {
-        // ESP_LOGI(TAG, "[GATEWAY-TASK] Waiting for mesh packet notification...");
+        // Wait for notification from mesh receiver
         ulTaskNotifyTake(pdPASS, portMAX_DELAY);
 
-        ESP_LOGI(TAG, "[GATEWAY-TASK] GOT NOTIFICATION! Processing gateway packets...");
+        ESP_LOGI(TAG, "[GATEWAY-TASK] Processing gateway packets...");
         led_pattern_message();
 
+        // Memory leak detection - check heap before processing
+        uint32_t freeHeapBefore = ESP.getFreeHeap();
+
+        // Stack monitoring - check before processing packets
+        stackHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
+        if (stackHighWaterMark < 1024) {
+            ESP_LOGW(TAG, "⚠️ [GATEWAY-TASK] Low stack warning! Only %d bytes free", stackHighWaterMark);
+        }
+
         while (GatewayApp::instance->radio.getReceivedQueueSize() > 0) {
-            ESP_LOGD(TAG, "[GATEWAY-TASK] Processing received mesh packet for gateway");
+            ESP_LOGD(TAG, "[GATEWAY-TASK] Processing received mesh packet");
             ESP_LOGD(TAG, "[GATEWAY-TASK] Queue size: %d", GatewayApp::instance->radio.getReceivedQueueSize());
 
             AppPacket<uint8_t>* packet = GatewayApp::instance->radio.getNextAppPacket<uint8_t>();
+            
+            if (!packet) {
+                ESP_LOGW(TAG, "⚠️ [GATEWAY-TASK] Null packet received!");
+                continue;
+            }
 
             // Cast to the correct structure - AppPacket with sensorData payload
             AppPacket<sensorData>* sensorPacket = reinterpret_cast<AppPacket<sensorData>*>(packet);
 
-            // Forward to UART instead of MQTT
-            GatewayApp::instance->forwardToUART(sensorPacket);
+            // Upload to Firebase (includes RSSI and SNR from packet)
+            GatewayApp::instance->uploadToFirebase(sensorPacket);
 
+            // CRITICAL: Delete packet to free memory
             GatewayApp::instance->radio.deletePacket(packet);
+            packetCount++;
+            
+            // Stack monitoring - check after Firebase upload (most stack-intensive operation)
+            stackHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
+            ESP_LOGD(TAG, "[GATEWAY-TASK] Stack high water mark after upload: %d bytes free", stackHighWaterMark);
+            if (stackHighWaterMark < 1024) {
+                ESP_LOGW(TAG, "⚠️ [GATEWAY-TASK] Low stack after upload! Only %d bytes free", stackHighWaterMark);
+            }
+        }
+        
+        // Memory leak detection - check heap after processing
+        uint32_t freeHeapAfter = ESP.getFreeHeap();
+        int32_t heapDelta = (int32_t)freeHeapAfter - (int32_t)freeHeapBefore;
+        
+        // Track minimum free heap
+        if (freeHeapAfter < minFreeHeap) {
+            minFreeHeap = freeHeapAfter;
+        }
+        
+        // Log memory status periodically (every 10 packets) or if leak detected
+        if (packetCount % 10 == 0 || heapDelta < -1000) {
+            ESP_LOGI(TAG, "[MEMORY] Packets: %u, Free heap: %u bytes (min: %u), Delta: %d bytes",
+                     packetCount, freeHeapAfter, minFreeHeap, heapDelta);
+            
+            // Warn if heap is decreasing significantly
+            if ((int32_t)(initialFreeHeap - freeHeapAfter) > 10000) {
+                ESP_LOGW(TAG, "⚠️ [MEMORY LEAK?] Heap decreased by %d bytes since start!",
+                         (int32_t)(initialFreeHeap - freeHeapAfter));
+            }
+        }
+        
+        // Critical heap warning
+        if (freeHeapAfter < 30000) {
+            ESP_LOGE(TAG, "🚨 [CRITICAL] Low heap memory! Only %u bytes free!", freeHeapAfter);
         }
     }
 }
@@ -326,10 +549,16 @@ TaskHandle_t GatewayApp::createGatewayReceiveTask() {
 
     ESP_LOGI(TAG, "Creating gateway receive task...");
 
+    // CRITICAL FIX: Increased stack size from 4096 to 8192 bytes
+    // Reason: Stack overflow when uploading to Firebase via WiFi TCP
+    // - WiFi TCP connection stack usage: ~2KB
+    // - Firebase client operations: ~2KB
+    // - Nested function calls: ~1KB
+    // - Safety margin: ~3KB
     int res = xTaskCreate(
         processGatewayPackets,
         "Gateway Receive Task",
-        4096,
+        8192,  // Increased from 4096 to prevent stack overflow
         (void*) 1,
         2,
         &taskHandle);
@@ -340,10 +569,28 @@ TaskHandle_t GatewayApp::createGatewayReceiveTask() {
         return NULL;
     }
 
-    ESP_LOGI(TAG, "Gateway task created successfully, handle: %p", taskHandle);
+    ESP_LOGI(TAG, "Gateway task created successfully, handle: %p, stack: 8192 bytes", taskHandle);
     return taskHandle;
 }
 
+// Static callback for routing table changes
+void GatewayApp::onRoutingTableChanged() {
+    if (!instance) {
+        return;
+    }
+
+    // Only upload if Firebase is connected
+    if (!instance->gatewayState.firebaseConnected) {
+        ESP_LOGD(TAG, "Routing table changed but Firebase not connected, skipping upload");
+        return;
+    }
+
+    ESP_LOGI(TAG, "🔄 Routing table changed - triggering immediate Firebase upload");
+    instance->uploadRoutingTable();
+}
+
+// REMOVED: Old UART callback functions - no longer used in WiFi+Firebase architecture
+/*
 // Static callback for receiving netkey from UART
 void GatewayApp::onNetkeyReceived(const UartNetworkKey& netkey) {
     ESP_LOGI(TAG, "*** NETKEY RECEIVED FROM UART ***");

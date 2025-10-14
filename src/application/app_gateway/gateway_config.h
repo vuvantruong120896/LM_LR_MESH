@@ -29,22 +29,32 @@
 // Gateway-specific settings
 #define GATEWAY_ID              0x01    // Unique gateway identifier
 
-// UART configuration for communication with external ESP32
-#define UART_NUM                1       // Use UART1 for external communication
-#define UART_BAUD_RATE          115200  // Baud rate for UART communication
-#define UART_TX_PIN             21      // GPIO pin for UART TX
-#define UART_RX_PIN             20      // GPIO pin for UART RX
-#define UART_BUFFER_SIZE        1024    // UART buffer size in bytes
+// WiFi configuration (store in NVS for production)
+// WARNING: These are default values for testing only!
+// In production, use NVS storage or environment variables
+#ifndef WIFI_SSID
+#define WIFI_SSID               "OXII"      // Change this!
+#endif
+#ifndef WIFI_PASSWORD
+#define WIFI_PASSWORD           "sharitek-nerd-2019"  // Change this!
+#endif
 
-#define UART_PACKET_START_BYTE1 0x4C    // Start delimiter byte 1 for UART packets ('L')
-#define UART_PACKET_START_BYTE2 0x4D    // Start delimiter byte 2 for UART packets ('M')
-#define UART_PACKET_END_BYTE    0x55    // End delimiter for UART packets
-#define UART_MAX_PAYLOAD_SIZE   200     // Maximum payload size for UART packets
-#define UART_TIMEOUT_MS         1000    // Timeout for UART operations
+// Firebase configuration (store in NVS for production)
+// Get these from Firebase Console: https://console.firebase.google.com/
+#ifndef FIREBASE_HOST
+#define FIREBASE_HOST           "https://kagri-iot-default-rtdb.asia-southeast1.firebasedatabase.app/:null"  // Change this!
+#endif
+#ifndef FIREBASE_AUTH
+#define FIREBASE_AUTH           "0kMDkyCxejcJB350HrFlgBmb3Y5PsOiR90ZXf1MV"    // Change this!
+#endif
+
+// Gateway ID for Firebase (based on MAC address)
+// Format: GW_<MAC> (e.g., "GW_240AC4123456")
+#define FIREBASE_GATEWAY_ID_PREFIX "GW_"
 
 // Gateway operation settings
-#define GATEWAY_STATUS_INTERVAL  30000   // Send gateway status every 30 seconds
-#define GATEWAY_HEARTBEAT_INTERVAL 5000  // Send heartbeat every 5 seconds
+#define GATEWAY_ROUTING_TABLE_INTERVAL 300000  // Backup upload every 5 minutes (real-time upload on changes)
+#define GATEWAY_SENSOR_UPLOAD_TIMEOUT  5000    // Timeout for sensor data upload
 
 // LoRa module type
 #define LORA_MODULE     LoraMesher::LoraModules::SX1276_MOD

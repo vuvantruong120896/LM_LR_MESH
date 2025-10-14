@@ -3,7 +3,8 @@
 
 #include <Arduino.h>
 #include "gateway_config.h"
-#include "uart_protocol.h"
+#include "firebase_client.h"
+#include "wifi_connection_service.h"
 #include "led_control.h"
 #include "../common/mesh_utils.h"
 #include "components/lora_mesh_manager/include/LoraMesher.h"
@@ -15,12 +16,13 @@
 
 // Gateway state structure
 struct GatewayState {
-    bool uartConnected = false;
-    uint32_t packetsForwarded = 0;
-    uint32_t lastHeartbeat = 0;
-    uint32_t lastStatusSent = 0;
+    bool wifiConnected = false;
+    bool firebaseConnected = false;
+    uint32_t packetsUploaded = 0;
+    uint32_t lastRoutingTableUpload = 0;
     uint32_t totalMeshPackets = 0;
-    uint32_t uartErrors = 0;
+    uint32_t uploadErrors = 0;
+    uint32_t bootTime = 0;
 };
 
 class GatewayApp {
@@ -38,11 +40,11 @@ public:
     bool isNodeProvisioned(uint16_t address) const;
     uint8_t getActiveProvisioningSessions() const;
     bool isProvisioningReady() const;
-    void getProvisioningStatus(UartProvisioningStatus& status) const;
 
 private:
     LoraMesher& radio;
-    UartProtocol* uartProtocol;
+    WiFiConnectionService* wifiService;
+    FirebaseClient* firebaseClient;
     GatewayState gatewayState;
     uint32_t statusCounter;
     gatewayStatus* statusPacket;
@@ -50,24 +52,19 @@ private:
     
     // Private methods
     void setupLoRaMesher();
-    void setupUART();
+    void setupWiFi();
+    void setupFirebase();
     void initializeServices();
     void initializeNVSStorage();
     void loadNetworkConfiguration();
     void printSystemStatus();
-    void forwardToUART(AppPacket<sensorData>* packet);
-    void sendGatewayStatus();
-    void updateUARTConnection();
-    
-    // REMOVED: Routing table persistence functions
-    // Routing table no longer saved to NVS - rebuilds naturally via HELLO protocol
-    // static void saveRoutingTableToNVS();
-    // static void loadRoutingTableFromNVS();
+    void uploadToFirebase(AppPacket<sensorData>* packet);
+    void uploadRoutingTable();
+    void handleWiFiEvent(WiFiConnectionService::WiFiEvent event, int8_t rssi);
     
     // Static callbacks
-    static void onNetkeyReceived(const UartNetworkKey& netkey);
     static void onNetkeyUpdated(const uint8_t* newKey, uint8_t version);
-    static void onProvisioningControl(const UartProvisioningControl& control);
+    static void onRoutingTableChanged();  // Called when routing table changes (add/remove nodes)
     
     // Static callback methods
     static void processGatewayPackets(void* parameter);
