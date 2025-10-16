@@ -60,7 +60,7 @@ bool FirebaseClient::connect() {
     m_status = ConnectionStatus::CONNECTING;
     
     // Test connection with a simple read
-    String testPath = String("gateways/") + m_gatewayId + "/info/last_seen";
+    String testPath = String("gateways/") + m_gatewayId + "/info";
     
     if (Firebase.setTimestamp(m_firebaseData, testPath.c_str())) {
         m_status = ConnectionStatus::CONNECTED;
@@ -286,8 +286,13 @@ FirebaseClient::UploadResult FirebaseClient::updateGatewayInfo(
     doc["mac"] = macAddress;
     doc["ip"] = ipAddress;
     doc["firmware_version"] = firmwareVersion;
-    doc["created_at"] = result.timestamp;
-    doc["last_seen"] = result.timestamp;
+    
+    // Extract address from last 2 bytes of MAC (e.g., "AA:BB:CC:DD:EE:FF" -> 0xEEFF)
+    String cleanMac = macAddress;
+    cleanMac.replace(":", "");
+    String last4Chars = cleanMac.substring(cleanMac.length() - 4);
+    uint16_t addr = (uint16_t)strtol(last4Chars.c_str(), NULL, 16);
+    doc["addr"] = addr;
     
     String jsonData;
     serializeJson(doc, jsonData);
@@ -301,8 +306,8 @@ FirebaseClient::UploadResult FirebaseClient::updateGatewayInfo(
     uint32_t uploadTime = millis() - startTime;
     
     if (result.success) {
-        Serial.printf("[Firebase] Gateway info updated (MAC: %s, IP: %s)\n", 
-                     macAddress.c_str(), ipAddress.c_str());
+        Serial.printf("[Firebase] Gateway info updated (MAC: %s, IP: %s, Addr: 0x%04X)\n", 
+                     macAddress.c_str(), ipAddress.c_str(), addr);
     } else {
         result.errorMessage = m_lastError;
     }
