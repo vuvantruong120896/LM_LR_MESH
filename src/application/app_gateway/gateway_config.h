@@ -55,6 +55,8 @@
 // Gateway operation settings
 #define GATEWAY_ROUTING_TABLE_INTERVAL 300000  // Backup upload every 5 minutes (real-time upload on changes)
 #define GATEWAY_SENSOR_UPLOAD_TIMEOUT  5000    // Timeout for sensor data upload
+#define GATEWAY_SENSOR_INTERVAL        60000   // Gateway sensor reading interval: 60 seconds
+#define GATEWAY_STATUS_INTERVAL        60000   // Gateway status upload interval: 60 seconds
 
 // LoRa module type
 #define LORA_MODULE     LoraMesher::LoraModules::SX1276_MOD

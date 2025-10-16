@@ -50,6 +50,7 @@ private:
     FirebaseClient* firebaseClient;
     GatewayState gatewayState;
     uint32_t statusCounter;
+    uint32_t sensorCounter;              // Counter for gateway sensor data
     gatewayStatus* statusPacket;
     ProvisioningService* provisioningService;
     
@@ -64,7 +65,9 @@ private:
     void loadNetworkConfiguration();
     void printSystemStatus();
     void uploadToFirebase(AppPacket<sensorData>* packet);
+    void uploadGatewaySensorData();     // Upload gateway's own sensor data
     void uploadRoutingTable();
+    sensorData simulateGatewaySensorData(); // Generate gateway sensor data
     void handleWiFiEvent(WiFiConnectionService::WiFiEvent event, int8_t rssi);
     
     // Static callbacks

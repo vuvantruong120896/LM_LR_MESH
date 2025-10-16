@@ -13,6 +13,7 @@ GatewayApp::GatewayApp()
       wifiService(nullptr),
       firebaseClient(nullptr),
       statusCounter(0),
+      sensorCounter(0),
       statusPacket(new gatewayStatus) {
     instance = this;
     gatewayState.bootTime = millis();
@@ -191,6 +192,15 @@ void GatewayApp::loop() {
         uploadRoutingTable();
         // Always update timestamp even if upload fails to prevent rapid retries
         gatewayState.lastRoutingTableUpload = currentTime;
+    }
+
+    // Gateway sensor data collection and upload
+    static uint32_t lastSensorUpload = 0;
+    if (gatewayState.firebaseConnected &&
+        (currentTime - lastSensorUpload >= GATEWAY_SENSOR_INTERVAL)) {
+        ESP_LOGI(TAG, "📊 Gateway sensor data collection");
+        uploadGatewaySensorData();
+        lastSensorUpload = currentTime;
     }
 
     // Simple status LED indication
@@ -964,4 +974,57 @@ void GatewayApp::broadcastTimeSync() {
     radio.createPacketAndSend(broadcastAddr, &timeSyncPacket, 1);
     
     gatewayState.lastTimeSyncBroadcast = millis();
+}
+
+sensorData GatewayApp::simulateGatewaySensorData() {
+    sensorData data;
+    
+    // Simulate environmental sensor data for Gateway location
+    // Gateway typically in a controlled environment (indoors)
+    data.temperature = 22.0 + (random(0, 100) / 10.0); // 22-32°C (indoor range)
+    data.humidity = 30.0 + (random(0, 400) / 10.0);    // 30-70% (indoor humidity)
+    data.battery = 5.0;  // Gateway powered by mains, indicate 5V supply
+    
+    // Increment sensor counter
+    data.counter = ++sensorCounter;
+    
+    // Use gateway's own node ID (0x01)
+    data.nodeId = GATEWAY_ID;
+    
+    // Use NTP synchronized timestamp if available
+    if (TimeSyncService::isTimeSynced()) {
+        data.timestamp = TimeSyncService::getCurrentTimestamp();
+        ESP_LOGI(TAG, "✅ Gateway sensor using synced timestamp: %u (Unix time)", data.timestamp);
+    } else {
+        data.timestamp = millis() / 1000;  // Fallback to boot time
+        ESP_LOGW(TAG, "⚠️ Gateway sensor using fallback timestamp: %u seconds", data.timestamp);
+    }
+    
+    return data;
+}
+
+void GatewayApp::uploadGatewaySensorData() {
+    if (!firebaseClient || !gatewayState.firebaseConnected) {
+        ESP_LOGW(TAG, "Firebase not available for gateway sensor upload");
+        return;
+    }
+    
+    // Generate gateway sensor data
+    sensorData gatewaySensor = simulateGatewaySensorData();
+    
+    ESP_LOGI(TAG, "🏠 Uploading Gateway sensor data to Firebase");
+    ESP_LOGI(TAG, "🔢 Counter: %u, 🌡️ Temp: %.1f°C, 💧 Hum: %.1f%%, ⚡ Power: %.1fV, 📡 GatewayID: 0x%04X",
+             gatewaySensor.counter, gatewaySensor.temperature, gatewaySensor.humidity, 
+             gatewaySensor.battery, gatewaySensor.nodeId);
+    
+    // Upload to Firebase with no RSSI/SNR (gateway is the source, not received)
+    auto result = firebaseClient->uploadSensorData(gatewaySensor, 0, 0.0f);
+    
+    if (result.success) {
+        gatewayState.packetsUploaded++;
+        ESP_LOGI(TAG, "✅ Gateway sensor upload successful (%d bytes)", result.payloadSize);
+    } else {
+        gatewayState.uploadErrors++;
+        ESP_LOGE(TAG, "❌ Gateway sensor upload failed: %s", result.errorMessage.c_str());
+    }
 }
