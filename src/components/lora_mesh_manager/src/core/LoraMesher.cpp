@@ -355,7 +355,7 @@ void LoraMesher::initializeSchedulers() {
     res = xTaskCreate(
         [](void* o) { static_cast<LoraMesher*>(o)->routingTableManager(); },
         "Routing Table Manager routine",
-        6144,
+        3*4096,
         this,
         2,
         &RoutingTableManager_TaskHandle);
