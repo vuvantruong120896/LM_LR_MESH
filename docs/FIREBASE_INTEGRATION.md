@@ -2,9 +2,9 @@
 
 ## 📋 Tổng Quan
 
-Gateway ESP32 kết nối trực tiếp với Firebase Realtime Database để upload dữ liệu từ mạng LoRa Mesh. Không cần Bridge PC - ESP32 tự xử lý WiFi và Firebase.
+Gateway ESP32 kết nối trực tiếp với Firebase Realtime Database để upload dữ liệu từ mạng LoRa Mesh. ESP32 gateway hoạt động như một bridge giữa mạng LoRa offline và Firebase cloud.
 
-### Kiến Trúc
+### Kiến Trúc Hệ Thống
 
 ```
 ┌─────────────┐      LoRa       ┌──────────────┐      WiFi      ┌──────────────┐
@@ -14,17 +14,19 @@ Gateway ESP32 kết nối trực tiếp với Firebase Realtime Database để u
                                  │  - WiFi      │                └──────────────┘
 ┌─────────────┐      LoRa       │  - Firebase  │
 │  Node 0x02  │ ────────────────▶│  - LoRa      │
-│  (Sensor)   │                  └──────────────┘
-└─────────────┘
+│  (Sensor)   │                  │  - NTP Sync  │
+└─────────────┘                  └──────────────┘
 
 ```
 
 **Đặc điểm**:
-- ✅ Kết nối WiFi tự động với retry
+- ✅ Kết nối WiFi tự động với retry mechanism
 - ✅ Upload Firebase real-time khi có dữ liệu
-- ✅ 3 loại dữ liệu: Sensor, Gateway Status, Routing Table
+- ✅ NTP time synchronization cho accurate timestamps
+- ✅ 4 loại dữ liệu: Sensor Data, Gateway Status, Routing Table, Events
 - ✅ Memory leak protection (TCP cleanup, String management)
 - ✅ Retry mechanism với exponential backoff
+- ✅ Real-time routing table updates
 
 ---
 
@@ -32,40 +34,59 @@ Gateway ESP32 kết nối trực tiếp với Firebase Realtime Database để u
 
 ### WiFiConnectionService
 
-Service quản lý kết nối WiFi với auto-reconnect:
+Service quản lý kết nối WiFi với auto-reconnect và event handling:
 
 ```cpp
 // src/components/lora_mesh_manager/include/wifi_connection_service.h
 class WiFiConnectionService {
 public:
-    static bool connect(const char* ssid, const char* password);
-    static bool isConnected();
-    static int8_t getRSSI();  // Signal strength
+    WiFiConnectionService(const char* ssid, const char* password, 
+                         bool autoReconnect = true, 
+                         uint32_t reconnectIntervalMs = 1000);
+    
+    bool initialize();
+    bool connect(uint32_t timeoutMs = 10000);
+    void disconnect();
+    bool isConnected() const;
+    void update();  // Call in main loop!
+    
+    int8_t getRSSI() const;
+    String getLocalIP() const;
+    WiFiStats getStats() const;
+    
+    void onEvent(EventCallback callback);
 };
 ```
+
+**Event Types**:
+- `CONNECTED`: Successfully connected to WiFi  
+- `DISCONNECTED`: Disconnected from WiFi
+- `RECONNECTING`: Attempting to reconnect
+- `CONNECTION_FAILED`: Connection attempt failed
+- `RSSI_LOW`: Signal dropped below threshold
 
 **Luồng kết nối**:
 
 ```
-1. Setup() → WiFiConnectionService::connect(SSID, PASSWORD)
-2. Thử kết nối WiFi (timeout 10s)
-3. Nếu thất bại → Retry với backoff (2s, 4s, 8s...)
-4. Kết nối thành công → Log IP address & RSSI
-5. Loop() → Auto-reconnect nếu mất kết nối
+1. Setup() → new WiFiConnectionService(SSID, PASSWORD)
+2. initialize() → Setup WiFi service
+3. connect(10000) → Try connection with 10s timeout
+4. If failed → Auto-retry with exponential backoff (1s, 2s, 4s, 8s...)
+5. Connected → Trigger CONNECTED event, log IP & RSSI
+6. Loop() → update() for auto-reconnect monitoring
 ```
 
 **Cấu hình** (`gateway_config.h`):
 ```cpp
-#define WIFI_SSID "YourNetworkName"
-#define WIFI_PASSWORD "YourPassword"
-#define WIFI_CONNECTION_TIMEOUT 10000  // 10 seconds
+#define WIFI_SSID "OXII"
+#define WIFI_PASSWORD "sharitek-nerd-2019"
 ```
 
 **Log example**:
 ```
-[WiFi] Connecting to YourNetwork...
-[WiFi] Connected! IP: 192.168.1.100
-[WiFi] Signal strength: -45 dBm (Excellent)
+[WiFi] Connecting to OXII...
+✅ Connected! RSSI: -45 dBm
+[WiFi] IP: 192.168.1.100
 ```
 
 ---
@@ -80,45 +101,68 @@ Wrapper class cho Firebase ESP32 Client với memory leak protection:
 // src/application/app_gateway/firebase_client.h
 class FirebaseClient {
 public:
-    bool connect(const char* apiKey, const char* databaseURL, 
-                 const char* authToken, const char* gatewayId);
+    // Constructor
+    FirebaseClient(const char* firebaseHost, 
+                   const char* firebaseAuth, 
+                   const char* gatewayId);
     
-    UploadResult uploadSensorData(const SensorData& data, int8_t rssi, float snr);
-    UploadResult uploadGatewayStatus(...);
-    UploadResult uploadRoutingTable(const std::vector<RouteNode>& table);
+    // Lifecycle
+    bool initialize();
+    bool connect();
+    void disconnect();
+    bool isConnected() const;
     
-    bool isConnected();
-    FirebaseStats getStats();
+    // Upload methods
+    UploadResult uploadSensorData(const sensorData& data, int8_t rssi, float snr);
+    UploadResult uploadGatewayStatus(uint16_t nodes, uint32_t pktsRx, uint32_t pktsTx,
+                                    int8_t wifiRssi, uint32_t freeHeap, uint32_t uptime);
+    UploadResult uploadRoutingTable(const std::vector<RouteNode>& routingTable);
+    UploadResult logEvent(const String& eventType, const String& nodeId, const String& details);
+    
+    // Information
+    FirebaseStats getStats() const;
+    String getLastError() const;
+    
+    // Configuration
+    void setRetryConfig(uint8_t maxRetries, uint32_t retryDelayMs);
+    void setAutoTimestamp(bool enabled);
 };
+```
+
+### Cấu Hình Firebase
+
+**Trong `gateway_config.h`**:
+```cpp
+// Firebase Database URL (from Firebase Console)
+#define FIREBASE_HOST "https://kagri-iot-default-rtdb.asia-southeast1.firebasedatabase.app/:null"
+
+// Database Secret (from Firebase Console → Settings → Service Accounts → Database Secrets)
+#define FIREBASE_AUTH "0kMDkyCxejcJB350HrFlgBmb3Y5PsOiR90ZXf1MV"
+
+// Gateway ID prefix (auto-generated from MAC)
+#define FIREBASE_GATEWAY_ID_PREFIX "GW_"
 ```
 
 ### Khởi Tạo Firebase
 
-**Cấu hình** (`gateway_config.h`):
+**Setup sequence trong gateway_app.cpp**:
 ```cpp
-#define FIREBASE_API_KEY "AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-#define FIREBASE_DATABASE_URL "https://your-project.firebaseio.com"
-#define FIREBASE_AUTH_TOKEN "your-legacy-database-secret"
-#define GATEWAY_ID "gateway_001"
-```
-
-**Setup sequence**:
-```cpp
-void setup() {
-    // 1. Kết nối WiFi
-    WiFiConnectionService::connect(WIFI_SSID, WIFI_PASSWORD);
+void GatewayApp::setupFirebase() {
+    // Create Gateway ID from MAC address
+    String macAddr = WiFi.macAddress();
+    macAddr.replace(":", "");
+    String gatewayId = String(FIREBASE_GATEWAY_ID_PREFIX) + macAddr.substring(macAddr.length() - 4);
     
-    // 2. Khởi tạo Firebase Client
-    firebaseClient.connect(
-        FIREBASE_API_KEY,
-        FIREBASE_DATABASE_URL,
-        FIREBASE_AUTH_TOKEN,
-        GATEWAY_ID
-    );
+    // Create Firebase client instance  
+    firebaseClient = new FirebaseClient(FIREBASE_HOST, FIREBASE_AUTH, gatewayId.c_str());
     
-    // 3. Verify connection
-    if (firebaseClient.isConnected()) {
+    // Configure retry behavior
+    firebaseClient->setRetryConfig(3, 1000);  // 3 retries, 1 second delay
+    
+    // Initialize and connect
+    if (firebaseClient->initialize() && firebaseClient->connect()) {
         Serial.println("[Firebase] Ready to upload data");
+        gatewayState.firebaseConnected = true;
     }
 }
 ```
@@ -129,7 +173,9 @@ void setup() {
 
 ### 1. Sensor Data (Dữ liệu cảm biến từ Nodes)
 
-**Path**: `sensor_data/{nodeId}/{timestamp}` và `nodes/{nodeId}/latest_data`
+**Paths**: 
+- `nodes/{nodeId}/latest_data` (realtime dashboard)
+- `sensor_data/{nodeId}/{timestamp}` (historical charts)
 
 **JSON Structure**:
 ```json
@@ -138,81 +184,34 @@ void setup() {
   "temperature": 25.5,
   "humidity": 65.0,
   "battery": 3.7,
-  "timestamp": 1729008000,
+  "timestamp": 1760607651,
   "rssi": -45,
   "snr": 10.5
 }
 ```
 
-**Giải thích fields**:
-- `counter`: Số thứ tự packet từ node (tăng dần)
-- `temperature`: Nhiệt độ (°C)
-- `humidity`: Độ ẩm (%)
-- `battery`: Điện áp pin (V)
-- `timestamp`: Unix timestamp (seconds since 1970)
-- `rssi`: Signal strength từ gateway nhận được (-dBm, càng gần 0 càng tốt)
-- `snr`: Signal-to-Noise Ratio (dB, càng cao càng tốt)
+**Field Descriptions**:
+- `counter`: Packet sequence number từ node (incrementing)
+- `temperature`: Temperature in Celsius
+- `humidity`: Humidity percentage (0-100%)  
+- `battery`: Battery voltage in Volts
+- `timestamp`: **Unix timestamp** (seconds since 1970-01-01) - **NTP synchronized**
+- `rssi`: Signal strength khi gateway nhận (-dBm, closer to 0 = better)
+- `snr`: Signal-to-Noise Ratio (dB, higher = better)
 
-**Code tạo JSON**:
-```cpp
-String FirebaseClient::createSensorDataJson(
-    const SensorData& data, 
-    int8_t rssi, 
-    float snr
-) {
-    StaticJsonDocument<256> doc;
-    
-    doc["counter"] = data.counter;
-    doc["temperature"] = data.temperature;
-    doc["humidity"] = data.humidity;
-    doc["battery"] = data.battery;
-    doc["timestamp"] = data.timestamp;
-    
-    // Chỉ thêm nếu có giá trị (node trong phạm vi)
-    if (rssi != 0) doc["rssi"] = rssi;
-    if (snr != 0.0f) doc["snr"] = snr;
-    
-    String output;
-    serializeJson(doc, output);
-    return output;
-}
-```
+**Important Notes**:
+- Timestamp được đồng bộ từ NTP server (pool.ntp.org) timezone GMT+7 (Vietnam)
+- RSSI/SNR chỉ có với direct connections (metric=1)
+- Upload đồng thời 2 locations: latest_data + historical timeseries
 
-**Upload flow**:
+**Example Upload Flow**:
 ```
-Node gửi packet → Gateway decrypt → Parse sensor data
+Node 0xCC64 → Gateway decrypt → Parse sensor data
     ↓
-    Upload đến 2 locations:
-    1. nodes/{nodeId}/latest_data    (realtime dashboard)
-    2. sensor_data/{nodeId}/{timestamp}    (historical charts)
-    ↓
-    100ms delay (prevent TCP buildup)
+    Upload to Firebase:
+    1. nodes/0xCC64/latest_data           (dashboard)
+    2. sensor_data/0xCC64/1760607651      (charts)
 ```
-
-**Firebase Database structure**:
-```
-firebase-project/
-├── nodes/
-│   ├── 0xCC64/
-│   │   └── latest_data/
-│   │       ├── counter: 1234
-│   │       ├── temperature: 25.5
-│   │       ├── humidity: 65.0
-│   │       └── timestamp: 1729008000
-│   └── 0x4F70/
-│       └── latest_data/ ...
-│
-└── sensor_data/
-    ├── 0xCC64/
-    │   ├── 1729008000/
-    │   │   ├── counter: 1234
-    │   │   ├── temperature: 25.5
-    │   │   └── ...
-    │   └── 1729008060/ ...
-    └── 0x4F70/ ...
-```
-
----
 
 ### 2. Gateway Status (Trạng thái Gateway)
 
@@ -222,54 +221,29 @@ firebase-project/
 ```json
 {
   "connected_nodes": 3,
-  "packets_received": 1523,
-  "packets_sent": 45,
+  "total_packets_received": 1523,
+  "total_packets_sent": 45,
+  "wifi_connected": true,
   "wifi_rssi": -52,
+  "firebase_connected": true,
+  "uptime_seconds": 3600,
   "free_heap": 189456,
-  "uptime": 3600,
-  "timestamp": 1729008000
+  "timestamp": 1760607651
 }
 ```
 
-**Giải thích fields**:
-- `connected_nodes`: Số lượng nodes trong routing table (đang kết nối)
-- `packets_received`: Tổng số packets nhận được từ mạng LoRa
-- `packets_sent`: Tổng số packets gửi đi (broadcast, unicast)
+**Field Descriptions**:
+- `connected_nodes`: Number of nodes in routing table
+- `total_packets_received`: Total LoRa packets received since boot
+- `total_packets_sent`: Total LoRa packets sent since boot
+- `wifi_connected`: WiFi connection status
 - `wifi_rssi`: WiFi signal strength (-dBm)
-- `free_heap`: Bộ nhớ RAM còn trống (bytes)
-- `uptime`: Thời gian chạy liên tục (seconds)
-- `timestamp`: Thời điểm upload
+- `firebase_connected`: Firebase connection status
+- `uptime_seconds`: Gateway uptime in seconds
+- `free_heap`: Available RAM in bytes
+- `timestamp`: Upload timestamp (NTP synchronized)
 
-**Upload interval**: Mỗi 60 giây (định kỳ)
-
-**Code**:
-```cpp
-// gateway_app.cpp - loop()
-if (millis() - lastStatusUploadTime >= GATEWAY_STATUS_INTERVAL) {
-    firebaseClient.uploadGatewayStatus(
-        connectedNodes,        // Từ routing table
-        totalPacketsReceived,  // Counter toàn cục
-        totalPacketsSent,      // Counter toàn cục
-        WiFiConnectionService::getRSSI(),
-        ESP.getFreeHeap(),
-        millis() / 1000        // Uptime
-    );
-    lastStatusUploadTime = millis();
-}
-```
-
-**Firebase structure**:
-```
-gateways/
-└── gateway_001/
-    └── status/
-        ├── connected_nodes: 3
-        ├── packets_received: 1523
-        ├── wifi_rssi: -52
-        └── timestamp: 1729008000
-```
-
----
+**Upload interval**: Every 60 seconds
 
 ### 3. Routing Table (Bảng định tuyến mạng)
 
@@ -279,230 +253,257 @@ gateways/
 ```json
 {
   "node_count": 3,
-  "updated_at": 1729008000,
+  "timestamp": 1760607651,
   "nodes": {
     "0xCC64": {
-      "via": "0xCC64",
+      "address": "0xCC64",
+      "via": "0xCC64", 
       "metric": 1,
+      "role": 1,
       "rssi": -45,
       "snr": 10.5
     },
     "0x4F70": {
+      "address": "0x4F70",
       "via": "0x4F70",
       "metric": 1,
+      "role": 1,
       "rssi": -52,
       "snr": 9.2
     },
     "0x09F8": {
+      "address": "0x09F8", 
       "via": "0x4F70",
-      "metric": 2
+      "metric": 2,
+      "role": 1
     }
   }
 }
 ```
 
-**Giải thích fields**:
-- `node_count`: Tổng số nodes trong mạng
-- `updated_at`: Timestamp của lần update cuối
-- `nodes`: Object chứa thông tin từng node
-  - `via`: Node trung gian để đến đích (nếu metric=1 thì direct)
-  - `metric`: Số hop (1=direct, 2=qua 1 node, ...)
-  - `rssi`, `snr`: Chỉ có nếu `metric=1` (direct connection)
+**Field Descriptions**:
+- `node_count`: Total nodes in mesh network
+- `timestamp`: Last update timestamp
+- `address`: Node address (hex format)
+- `via`: Route to node via this address (same as address if direct)
+- `metric`: Hop count (1=direct, 2=via 1 hop, etc.)
+- `role`: Node role (1=node, other values reserved)
+- `rssi`, `snr`: Only present for direct connections (metric=1)
 
 **Upload triggers**:
-1. **Real-time**: Khi routing table thay đổi (node join/leave)
-2. **Backup**: Mỗi 5 phút (phòng trường hợp miss event)
+1. **Real-time**: When routing table changes (node join/leave)
+2. **Backup**: Every 5 minutes
 
-**Code callback**:
-```cpp
-// gateway_app.cpp - setup()
-void setup() {
-    // Đăng ký callback cho routing table changes
-    RoutingTableService::setRoutingTableChangedCallback(
-        onRoutingTableChanged
-    );
-}
+### 4. System Events (Log hệ thống)
 
-// Callback function
-void onRoutingTableChanged() {
-    if (firebaseClient.isConnected()) {
-        auto routingTable = RoutingTableService::getRoutingTable();
-        firebaseClient.uploadRoutingTable(routingTable);
-        Serial.println("[Gateway] Real-time routing table upload triggered");
-    }
+**Path**: `gateways/{gatewayId}/events/{timestamp}`
+
+**JSON Structure**:
+```json
+{
+  "type": "node_joined",
+  "gateway_id": "GW_1234", 
+  "node_id": "0xCC64",
+  "details": {
+    "rssi": -45,
+    "snr": 10.5,
+    "metric": 1
+  },
+  "timestamp": 1760607651
 }
 ```
 
-**Firebase structure**:
-```
-gateways/
-└── gateway_001/
-    └── routing_table/
-        ├── node_count: 3
-        ├── updated_at: 1729008000
-        └── nodes/
-            ├── 0xCC64/
-            │   ├── via: "0xCC64"
-            │   ├── metric: 1
-            │   ├── rssi: -45
-            │   └── snr: 10.5
-            ├── 0x4F70/ ...
-            └── 0x09F8/ ...
+**Event Types**:
+- `node_joined`: New node joined network
+- `node_left`: Node left network (timeout)
+- `gateway_boot`: Gateway started
+- `wifi_connected`: WiFi connection established
+- `firebase_connected`: Firebase connection established
+- `time_sync`: NTP time synchronization completed
 ```
 
 ---
 
 ## 🔄 Luồng Hoạt Động Chính
 
-### A. Sensor Data Flow
+### A. Sensor Data Upload Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ 1. Node gửi LoRa packet                                    │
-│    - Encrypted với AES-128                                  │
-│    - Chứa: counter, temp, humidity, battery                 │
+│    - AES-128 encrypted                                      │
+│    - Payload: counter, temp, humidity, battery             │
+│    - Timestamp: NTP-synchronized Unix time                  │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ 2. Gateway nhận và xử lý                                    │
-│    - Decrypt packet                                          │
-│    - Parse sensor data                                       │
-│    - Lấy RSSI, SNR từ radio                                 │
+│    - Decrypt AES packet                                      │
+│    - Parse sensorData structure                              │
+│    - Extract RSSI (-45 dBm), SNR (10.5 dB)                 │
+│    - Validate packet integrity                              │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 3. Upload to Firebase (2 locations)                         │
-│    a) nodes/{nodeId}/latest_data                            │
-│       → For real-time dashboard                             │
-│    b) sensor_data/{nodeId}/{timestamp}                      │
-│       → For historical data & charts                        │
+│ 3. Firebase Upload (dual location)                          │
+│    Location A: nodes/{nodeId}/latest_data                   │
+│    Purpose: Real-time dashboard, current status             │
+│                                                             │
+│    Location B: sensor_data/{nodeId}/{timestamp}             │
+│    Purpose: Historical charts, analytics                    │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 4. Memory cleanup                                            │
-│    - Wait 100ms between uploads                             │
-│    - Clear Firebase buffers                                  │
+│ 4. Memory & TCP cleanup                                      │
+│    - 100ms delay between uploads                            │
+│    - Clear Firebase TCP buffers                             │
 │    - Release String memory                                   │
+│    - Update upload statistics                               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Code implementation**:
+**Code Implementation**:
 ```cpp
-void processGatewayPackets(void* parameter) {
-    while (true) {
-        if (LoraMesher.dataQueueSize() > 0) {
-            // 1. Lấy packet từ queue
-            dataPacket* packet = LoraMesher.dataQueueReceive();
-            
-            // 2. Decrypt & parse
-            SensorData sensorData = parseSensorData(packet->payload);
-            int8_t rssi = packet->rssi;
-            float snr = packet->snr;
-            
-            // 3. Upload to Firebase
-            if (firebaseClient.isConnected()) {
-                auto result = firebaseClient.uploadSensorData(
-                    sensorData, rssi, snr
-                );
-                
-                if (result.success) {
-                    Serial.printf("[Firebase] Uploaded node 0x%04X data\n", 
-                                 sensorData.nodeId);
-                }
-            }
-            
-            // 4. Free packet memory
-            delete packet;
-        }
-        
-        vTaskDelay(pdMS_TO_TICKS(10));
+// gateway_app.cpp - processGatewayPackets()
+void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
+    if (!firebaseClient || !firebaseClient->isConnected()) {
+        return;
+    }
+    
+    // Extract sensor data and radio info
+    sensorData& data = packet->payload;
+    int8_t rssi = packet->packet->rssi;
+    float snr = packet->packet->snr;
+    
+    // Upload to Firebase with retry
+    auto result = firebaseClient->uploadSensorData(data, rssi, snr);
+    
+    if (result.success) {
+        gatewayState.packetsUploaded++;
+        Serial.printf("[Firebase] ✅ Node 0x%04X uploaded (RSSI: %d, SNR: %.1f)\n", 
+                     data.nodeId, rssi, snr);
+    } else {
+        gatewayState.uploadErrors++;
+        Serial.printf("[Firebase] ❌ Upload failed: %s\n", result.errorMessage.c_str());
     }
 }
 ```
-
----
 
 ### B. Routing Table Update Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. Routing table thay đổi                                   │
-│    - Node mới join network (HELLO packet)                   │
-│    - Node timeout (không phản hồi)                          │
-│    - Route quality thay đổi (RSSI/SNR)                      │
+│ Trigger Events:                                              │
+│ • Node join network (HELLO packet received)                 │
+│ • Node timeout (no response for 60s)                        │
+│ • Route quality change (RSSI/SNR threshold)                 │
+│ • Manual routing table refresh                              │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 2. RoutingTableService trigger callback                     │
-│    - Callback: onRoutingTableChanged()                      │
-│    - Lấy toàn bộ routing table hiện tại                     │
+│ RoutingTableService callback                                 │
+│ • onRoutingTableChanged() triggered                         │
+│ • Get current routing table snapshot                        │
+│ • Generate routing table JSON                               │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 3. Upload to Firebase (real-time)                           │
-│    - Path: gateways/{gatewayId}/routing_table               │
-│    - Format: JSON với node_count, nodes[]                   │
-│    - Bao gồm: via, metric, rssi, snr                        │
+│ Real-time Firebase upload                                    │
+│ • Path: gateways/{gatewayId}/routing_table                  │
+│ • Include: node_count, timestamp, nodes[]                   │
+│ • Node details: address, via, metric, role, rssi, snr       │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 4. Backup upload (every 5 minutes)                          │
-│    - Phòng trường hợp miss callback event                   │
-│    - Đảm bảo Firebase luôn sync với gateway                 │
+│ Backup mechanism (every 5 minutes)                          │
+│ • Periodic upload regardless of changes                     │
+│ • Ensures Firebase stays synchronized                       │
+│ • Handles missed callback events                            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Timeline example**:
+**Timeline Example**:
 ```
-00:00 - Gateway boot, routing table empty
-00:05 - Node 0xCC64 join → Callback → Upload (1 node)
-00:10 - Node 0x4F70 join → Callback → Upload (2 nodes)
-00:15 - Node 0x09F8 join → Callback → Upload (3 nodes)
-00:20 - Backup upload (3 nodes)
-00:25 - Backup upload (3 nodes)
-01:00 - Node 0xCC64 timeout → Callback → Upload (2 nodes)
+00:00:00 - Gateway boot, routing table empty
+00:00:15 - Node 0xCC64 join → Callback → Upload (1 node)
+00:01:30 - Node 0x4F70 join → Callback → Upload (2 nodes)  
+00:02:45 - Node 0x09F8 join via 0x4F70 → Callback → Upload (3 nodes)
+00:05:00 - Backup upload (3 nodes)
+00:10:00 - Backup upload (3 nodes)
+01:02:45 - Node 0xCC64 timeout → Callback → Upload (2 nodes)
 ```
-
----
 
 ### C. Gateway Status Monitoring
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Timer: Every 60 seconds                                      │
+│ Timer: Every 60 seconds (configurable)                      │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ Thu thập metrics:                                            │
-│ - Connected nodes (từ routing table size)                   │
-│ - Packets RX/TX (global counters)                           │
-│ - WiFi RSSI (from WiFiConnectionService)                    │
-│ - Free heap (ESP.getFreeHeap())                             │
-│ - Uptime (millis() / 1000)                                  │
+│ Collect system metrics:                                      │
+│ • connected_nodes (from routing table size)                 │
+│ • total_packets_received/sent (global counters)             │
+│ • wifi_connected, wifi_rssi (from WiFiConnectionService)    │
+│ • firebase_connected (from FirebaseClient status)           │
+│ • free_heap (ESP.getFreeHeap())                             │
+│ • uptime_seconds (millis() / 1000)                          │
+│ • timestamp (NTP synchronized time)                         │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ Upload to Firebase                                           │
-│ Path: gateways/{gatewayId}/status                           │
+│ • Path: gateways/{gatewayId}/status                         │
+│ • JSON with all collected metrics                           │
+│ • Update gateway health dashboard                           │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### D. Time Synchronization Flow (NEW)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Gateway NTP Sync (every 1 hour)                             │
+│ • Connect to pool.ntp.org                                   │
+│ • Get current Unix timestamp                                │
+│ • Apply GMT+7 timezone offset (Vietnam)                     │
+│ • Update local RTC                                          │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Time Broadcast (every 5 minutes)                            │
+│ • Create TimeSyncPacket (8 bytes)                           │
+│ • Include: timestamp, milliseconds, sync_flags              │
+│ • Broadcast to all nodes in mesh                            │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Node Time Reception                                          │
+│ • Receive time sync packet                                  │
+│ • Update local RTC with received time                       │
+│ • Use synchronized time for sensor data timestamps          │
+│ • Fallback to millis() if sync lost                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Important**: All timestamps in Firebase sẽ là actual Unix time (1760607651) thay vì boot time (306).
 
 ---
 
 ## 🛡️ Memory Leak Protection
 
-### Vấn đề gốc
+### Background
 
-Firebase ESP32 Client library không tự động cleanup TCP connections → Stack và heap exhaustion:
+Firebase ESP32 Client library có vấn đề memory leak với TCP connections. Qua testing, chúng tôi phát hiện:
 
 ```
 Evidence từ logs:
-- Stack: 4544 bytes → 2000 bytes (sau ~10 uploads)
-- Heap: 253KB → 188KB (mất 64KB trong 2 phút)
-- Pattern: tcpConnect() → Stack giảm
+- Stack usage: 4544 bytes → 2000 bytes (sau ~10 uploads)  
+- Heap memory: 253KB → 188KB (mất 64KB trong 2 phút)
+- Pattern: Mỗi lần tcpConnect() → Stack và heap giảm
 ```
 
-### Giải pháp implement
+### Solutions Implemented
 
 #### 1. TCP Connection Cleanup
 
@@ -510,24 +511,23 @@ Evidence từ logs:
 bool FirebaseClient::uploadToPath(const String& path, const String& json) {
     bool success = Firebase.updateNode(m_firebaseData, path.c_str(), json);
     
-    // CRITICAL FIX: Force cleanup TCP connection
-    // Observed leak: Stack 4544→2000 bytes, Heap -64KB in 2 min
-    m_firebaseData.clear();  // Clear internal buffers & close TCP
+    // CRITICAL FIX: Force cleanup TCP connection after each upload
+    m_firebaseData.clear();  // Clear internal buffers & close TCP socket
     
     return success;
 }
 ```
 
-#### 2. Upload Spacing
+#### 2. Upload Spacing & Retry Logic
 
 ```cpp
 bool FirebaseClient::uploadToPathWithRetry(const String& path, const String& jsonData) {
-    for (int attempt = 0; attempt < 3; attempt++) {
+    for (int attempt = 0; attempt < m_maxRetries; attempt++) {
         if (uploadToPath(path, jsonData)) {
             delay(50);  // Give WiFi stack time to cleanup
             return true;
         }
-        delay(500 * (attempt + 1));  // Exponential backoff
+        delay(m_retryDelayMs * (attempt + 1));  // Exponential backoff
     }
     return false;
 }
@@ -540,14 +540,14 @@ UploadResult FirebaseClient::uploadSensorData(...) {
     String nodeIdStr = nodeIdToString(data.nodeId);
     String jsonData = createSensorDataJson(data, rssi, snr);
     
-    // Upload location 1
+    // Upload location 1: Latest data
     String latestPath = String("nodes/") + nodeIdStr + "/latest_data";
     bool success1 = uploadToPathWithRetry(latestPath, jsonData);
     
-    delay(100);  // Prevent TCP buildup
+    delay(100);  // Prevent TCP connection buildup
     
-    // Upload location 2
-    String timeSeriesPath = String("sensor_data/") + nodeIdStr + "/" + String(timestamp);
+    // Upload location 2: Historical timeseries  
+    String timeSeriesPath = String("sensor_data/") + nodeIdStr + "/" + String(getCurrentTimestamp());
     bool success2 = uploadToPathWithRetry(timeSeriesPath, jsonData);
     
     // MEMORY FIX: Force String cleanup to prevent heap fragmentation
@@ -555,40 +555,42 @@ UploadResult FirebaseClient::uploadSensorData(...) {
     timeSeriesPath = String();
     jsonData = String();
     
-    return result;
+    return {success1 && success2, success1 && success2 ? "" : m_lastError, 
+            getCurrentTimestamp(), jsonData.length()};
 }
 ```
 
-#### 4. Stack Size Increase
+#### 4. Task Stack Size Increase
 
 ```cpp
-// gateway_app.cpp
-void createGatewayReceiveTask() {
+// gateway_app.cpp - Task creation
+void GatewayApp::createReceiveTask() {
     xTaskCreate(
         processGatewayPackets,
-        "GatewayReceive",
-        8192,  // Stack: 4KB → 8KB (WiFi TCP ~2KB, Firebase ~2KB, calls ~1KB)
+        "GatewayRx",
+        8192,  // Increased from 4KB to 8KB
+               // WiFi TCP: ~2KB, Firebase: ~2KB, Function calls: ~1KB
         NULL,
-        5,
+        5,     // High priority for real-time processing
         &gatewayReceiveTaskHandle
     );
 }
 ```
 
-### Monitoring
+### Memory Monitoring
 
+**Global heap monitoring** (every 30 seconds):
 ```cpp
-// Global heap monitoring (every 30s)
-void loop() {
+void GatewayApp::loop() {
     if (millis() - lastMemoryLogTime >= 30000) {
         uint32_t freeHeap = ESP.getFreeHeap();
         uint32_t minHeap = ESP.getMinFreeHeap();
         uint32_t largestBlock = ESP.getMaxAllocHeap();
         
-        Serial.printf("[MEMORY] Free heap: %u bytes, Min: %u, Largest block: %u\n",
+        Serial.printf("[MEMORY] Free: %u bytes, Min: %u, Largest: %u\n",
                      freeHeap, minHeap, largestBlock);
         
-        // Fragmentation warning
+        // Fragmentation warning (largest block < 50% of free heap)
         if (largestBlock < freeHeap / 2) {
             Serial.println("⚠️ [MEMORY] Heap fragmentation detected!");
         }
@@ -596,36 +598,44 @@ void loop() {
         lastMemoryLogTime = millis();
     }
 }
+```
 
-// Task-level monitoring
+**Task-level monitoring**:
+```cpp
 void processGatewayPackets(void* parameter) {
-    uint32_t initialHeap = ESP.getFreeHeap();
-    uint32_t packetCount = 0;
-    
     while (true) {
-        // Process packets...
+        // Process uploads...
         
-        // Log every 10 packets
+        // Check stack usage every 10 packets
         if (++packetCount % 10 == 0) {
-            uint32_t currentHeap = ESP.getFreeHeap();
-            int32_t heapDelta = currentHeap - initialHeap;
-            
-            Serial.printf("[MEMORY] Packets: %u, Heap delta: %d bytes\n",
-                         packetCount, heapDelta);
-            
-            if (heapDelta < -10000) {
-                Serial.println("⚠️ [MEMORY LEAK?] Heap decreased significantly!");
+            UBaseType_t stackFree = uxTaskGetStackHighWaterMark(NULL);
+            if (stackFree < 1024) {  // < 1KB stack remaining
+                Serial.printf("⚠️ [STACK] Low stack: %u bytes free\n", 
+                             stackFree * sizeof(StackType_t));
             }
         }
         
-        // Stack check
-        UBaseType_t stackHighWater = uxTaskGetStackHighWaterMark(NULL);
-        if (stackHighWater < 1024) {
-            Serial.printf("⚠️ [STACK] Low stack: %u bytes free\n", 
-                         stackHighWater * sizeof(StackType_t));
-        }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
+```
+
+### Expected Behavior After Fixes
+
+**Normal operation logs**:
+```
+[MEMORY] Free: 189456 bytes, Min: 175234, Largest: 110592
+[Firebase] ✅ Upload successful (156 bytes, 245 ms)
+[MEMORY] Packets: 50, Heap delta: +1200 bytes  # Positive = good
+[Gateway] Stack free: 4544 bytes
+```
+
+**Memory stability indicators**:
+- Heap delta oscillates around ±2000 bytes (normal allocation/deallocation)
+- Stack consistently stays ~4500+ bytes free
+- Largest block > 50% of free heap (low fragmentation)
+- No "Low stack" warnings
+- No heap decrease > 10KB over time
 ```
 
 ---
@@ -636,18 +646,18 @@ void processGatewayPackets(void* parameter) {
 
 ```cpp
 struct FirebaseStats {
-    uint32_t totalUploads;          // Tổng số lần upload
-    uint32_t successfulUploads;     // Số lần thành công
-    uint32_t failedUploads;         // Số lần thất bại
-    uint32_t totalBytesUploaded;    // Tổng bytes đã upload
-    uint32_t averageUploadTime;     // Thời gian upload trung bình (ms)
-    uint32_t lastUploadTime;        // Timestamp upload cuối
+    uint32_t totalUploads;          // Total upload attempts
+    uint32_t successfulUploads;     // Successful uploads  
+    uint32_t failedUploads;         // Failed uploads
+    uint32_t totalBytesUploaded;    // Total bytes uploaded
+    uint32_t lastUploadTime;        // Last upload timestamp (millis)
+    float averageUploadTime;        // Average upload time (ms)
 };
 ```
 
 **Usage**:
 ```cpp
-FirebaseStats stats = firebaseClient.getStats();
+FirebaseStats stats = firebaseClient->getStats();
 
 Serial.printf("[Firebase Stats]\n");
 Serial.printf("  Total uploads: %u\n", stats.totalUploads);
@@ -655,10 +665,10 @@ Serial.printf("  Success rate: %.1f%%\n",
              (float)stats.successfulUploads / stats.totalUploads * 100);
 Serial.printf("  Failed: %u\n", stats.failedUploads);
 Serial.printf("  Total bytes: %u\n", stats.totalBytesUploaded);
-Serial.printf("  Avg time: %u ms\n", stats.averageUploadTime);
+Serial.printf("  Avg time: %.0f ms\n", stats.averageUploadTime);
 ```
 
-**Output example**:
+**Console output example**:
 ```
 [Firebase Stats]
   Total uploads: 1523
@@ -668,20 +678,21 @@ Serial.printf("  Avg time: %u ms\n", stats.averageUploadTime);
   Avg time: 245 ms
 ```
 
----
+### Debug JSON Printing
 
-## 🐛 Debug & Troubleshooting
-
-### Pretty JSON Printing
-
-Tất cả uploads đều print JSON formatted để debug:
+Tất cả uploads đều print formatted JSON để debug:
 
 ```cpp
-String FirebaseClient::createSensorDataJson(...) {
-    StaticJsonDocument<256> doc;
+String FirebaseClient::createSensorDataJson(const sensorData& data, int8_t rssi, float snr) {
+    JsonDocument doc;
     doc["counter"] = data.counter;
     doc["temperature"] = data.temperature;
-    // ... other fields
+    doc["humidity"] = data.humidity;
+    doc["battery"] = data.battery;
+    doc["timestamp"] = m_autoTimestamp ? getCurrentTimestamp() : data.timestamp;
+    
+    if (rssi != 0) doc["rssi"] = rssi;
+    if (snr != 0.0f) doc["snr"] = snr;
     
     // Pretty print for debugging
     Serial.printf("[Firebase] Sensor data JSON (node 0x%04X):\n", data.nodeId);
@@ -702,92 +713,143 @@ String FirebaseClient::createSensorDataJson(...) {
   "temperature": 25.5,
   "humidity": 65.0,
   "battery": 3.7,
-  "timestamp": 1729008000,
+  "timestamp": 1760607651,
   "rssi": -45,
   "snr": 10.5
 }
 [Firebase] Uploading to: nodes/0xCC64/latest_data
-[Firebase] Upload successful (156 bytes, 245 ms)
+[Firebase] ✅ Upload successful (156 bytes, 245 ms)
 ```
 
-### Common Issues
+### Performance Metrics
 
-#### 1. WiFi Connection Failed
-```
-[WiFi] Connection failed, retrying...
-[WiFi] Retry 1/5 in 2 seconds...
-```
-**Solution**: 
-- Kiểm tra SSID/password trong `gateway_config.h`
-- Kiểm tra WiFi signal strength (RSSI > -70 dBm)
-- Reboot router nếu cần
-
-#### 2. Firebase Authentication Error
-```
-[Firebase] Authentication failed: Invalid token
-```
-**Solution**:
-- Verify `FIREBASE_AUTH_TOKEN` (Legacy database secret)
-- Check Firebase Rules (allow read/write for authenticated)
-- Regenerate token from Firebase Console
-
-#### 3. Memory Leak Warnings
-```
-⚠️ [MEMORY LEAK?] Heap decreased by 15000 bytes
-⚠️ [STACK] Low stack: 512 bytes free
-```
-**Solution**:
-- Đã fix với TCP cleanup + String management
-- Nếu vẫn xảy ra → tăng delay giữa uploads (100ms → 200ms)
-- Monitor logs để xác định leak source
-
-#### 4. Upload Failed (Retry exhausted)
-```
-[Firebase] Upload failed: Connection timeout
-[Firebase] Retry 3/3 failed
-```
-**Solution**:
-- Check internet connection
-- Verify Firebase Database URL
-- Check Firebase quotas (free tier limits)
-- Increase retry attempts hoặc timeout
-
----
-
-## 📊 Performance Metrics
-
-### Typical Values
+**Typical values trong production**:
 
 | Metric | Value | Notes |
 |--------|-------|-------|
 | Upload time (sensor) | 200-300 ms | 2 locations (latest + timeseries) |
-| Upload time (status) | 150-250 ms | 1 location |
+| Upload time (status) | 150-250 ms | Single location |
 | Upload time (routing) | 180-280 ms | Depends on node count |
 | Memory usage | ~48KB RAM | Stable after memory fixes |
 | Stack usage (task) | ~4KB free | From 8KB allocation |
 | Heap fragmentation | < 20% | With String cleanup |
 | Success rate | > 99% | With retry mechanism |
+| NTP sync accuracy | ±100ms | Vietnam timezone GMT+7 |
 
-### Expected Behavior
+### Expected Normal Operation
 
-**Normal operation**:
 ```
-[MEMORY] Free heap: 189456 bytes, Min: 175234, Largest block: 110592
-[Firebase] Upload successful (156 bytes, 245 ms)
-[MEMORY] Packets: 10, Heap delta: -1200 bytes
-[Gateway] Stack high water: 4544 bytes
+[WiFi] ✅ Connected! RSSI: -45 dBm, IP: 192.168.1.100
+[Firebase] ✅ Connected successfully!
+[TimSync] ✅ NTP synced: 1760607651 (GMT+7)
+[MEMORY] Free: 189456 bytes, Min: 175234, Largest: 110592
+[Firebase] ✅ Node 0xCC64 uploaded (RSSI: -45, SNR: 10.5)
+[Gateway] Stack free: 4544 bytes
+[Firebase] Stats: 1523 uploads, 99.8% success
 ```
 
-**Memory stable** → No leak:
-- Heap delta oscillates ±2000 bytes (normal allocation/deallocation)
-- Stack stays at ~4544 bytes free
-- Largest block > 50% of free heap (low fragmentation)
+**Stability indicators**:
+- Memory: Heap delta ±2000 bytes (normal)
+- Stack: Consistent ~4500+ bytes free  
+- Fragmentation: Largest block > 50% free heap
+- Upload success rate > 99%
+- No TCP connection leaks
+- NTP time sync every hour
 
----
+## � Debug & Troubleshooting
+
+### Common Issues & Solutions
+
+#### 1. WiFi Connection Failed
+```
+[WiFi] ❌ Connection failed, retrying...
+[WiFi] Retry 1/5 in 2 seconds...
+```
+**Solutions**: 
+- Check SSID/password in `gateway_config.h`
+- Verify WiFi signal strength (RSSI > -70 dBm for stability)
+- Check router settings (2.4GHz network, not 5GHz)
+- Reboot router if needed
+
+#### 2. Firebase Authentication Error
+```
+[Firebase] ❌ Authentication failed: Invalid token
+```
+**Solutions**:
+- Verify `FIREBASE_AUTH` token (Database Secret từ Firebase Console)
+- Check Firebase Database Rules (allow read/write for authenticated)
+- Ensure Database URL correct format: `https://project-id-default-rtdb.region.firebasedatabase.app/:null`
+- Regenerate Database Secret if needed
+
+#### 3. Memory Issues
+```
+⚠️ [MEMORY] Heap fragmentation detected!
+⚠️ [STACK] Low stack: 512 bytes free
+```
+**Solutions**:
+- Memory leak fixes đã implemented (TCP cleanup + String management)
+- If still occurs → increase delays between uploads (100ms → 200ms)
+- Monitor heap delta in logs
+- Check task stack allocation sufficient
+
+#### 4. Upload Failures
+```
+[Firebase] ❌ Upload failed: Connection timeout
+[Firebase] Retry 3/3 failed
+```
+**Solutions**:
+- Check internet connectivity
+- Verify Firebase Database URL và access permissions
+- Check Firebase quota limits (free tier: 100 simultaneous connections)
+- Increase retry attempts or timeout values
+- Temporary network issues → auto-retry will recover
+
+#### 5. Timestamp Issues
+```
+[Firebase] ⚠️ Timestamp: 306 (boot time instead of Unix time)
+```
+**Solutions**:
+- Ensure NTP sync working: Check for `[TimSync] ✅ NTP synced` logs
+- Verify internet connection for NTP access
+- Check timezone configuration (GMT+7 for Vietnam)
+- Fallback to millis() if NTP unavailable (offline operation)
+
+### Debug Tools
+
+#### JSON Pretty Printing
+All uploads print formatted JSON:
+```
+[Firebase] Sensor data JSON (node 0xCC64):
+{
+  "counter": 1234,
+  "temperature": 25.5,
+  "humidity": 65.0,
+  "battery": 3.7,
+  "timestamp": 1760607651,
+  "rssi": -45,
+  "snr": 10.5
+}
+```
+
+#### Memory Monitoring
+```
+[MEMORY] Free: 189456 bytes, Min: 175234, Largest: 110592
+[MEMORY] Packets: 50, Heap delta: +1200 bytes
+[Gateway] Stack free: 4544 bytes
+```
+
+#### Upload Statistics
+```
+[Firebase Stats]
+  Total uploads: 1523
+  Success rate: 99.8%
+  Failed: 3
+  Avg time: 245 ms
+```
 
 ## 🔐 Firebase Security Rules
 
-### Recommended Rules
+### Recommended Database Rules
 
 ```json
 {
@@ -800,7 +862,7 @@ String FirebaseClient::createSensorDataJson(...) {
     },
     "nodes": {
       "$nodeId": {
-        ".read": "auth != null",
+        ".read": "auth != null", 
         ".write": "auth != null"
       }
     },
@@ -815,77 +877,116 @@ String FirebaseClient::createSensorDataJson(...) {
 }
 ```
 
-**Giải thích**:
-- `auth != null`: Chỉ authenticated clients (sử dụng AUTH_TOKEN)
-- `.indexOn`: Optimize queries by timestamp cho historical data
-- Separate paths cho gateways/nodes để dễ quản lý permissions
+**Explanation**:
+- `auth != null`: Only authenticated clients (using Database Secret)
+- `.indexOn`: Optimize timestamp queries for historical data charts
+- Separate paths for gateways/nodes for granular permission control
+
+### Authentication Setup
+
+1. **Firebase Console** → Project Settings → Service Accounts
+2. **Database Secrets** tab → Generate new secret  
+3. Copy secret to `FIREBASE_AUTH` in `gateway_config.h`
+4. **Realtime Database** → Rules → Paste above rules → Publish
 
 ---
 
 ## 📝 Configuration Summary
 
-### gateway_config.h - All Settings
+### Complete gateway_config.h Settings
 
 ```cpp
-// WiFi Configuration
-#define WIFI_SSID "YourNetworkName"
-#define WIFI_PASSWORD "YourPassword"
-#define WIFI_CONNECTION_TIMEOUT 10000  // 10 seconds
+// WiFi Configuration  
+#define WIFI_SSID "OXII"
+#define WIFI_PASSWORD "sharitek-nerd-2019"
 
 // Firebase Configuration
-#define FIREBASE_API_KEY "AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-#define FIREBASE_DATABASE_URL "https://your-project.firebaseio.com"
-#define FIREBASE_AUTH_TOKEN "your-legacy-database-secret"
-#define GATEWAY_ID "gateway_001"
+#define FIREBASE_HOST "https://kagri-iot-default-rtdb.asia-southeast1.firebasedatabase.app/:null"  
+#define FIREBASE_AUTH "0kMDkyCxejcJB350HrFlgBmb3Y5PsOiR90ZXf1MV"
+#define FIREBASE_GATEWAY_ID_PREFIX "GW_"
 
-// Upload Intervals
-#define GATEWAY_STATUS_INTERVAL 60000          // 60 seconds
-#define GATEWAY_ROUTING_TABLE_INTERVAL 300000  // 5 minutes (backup)
+// Timing Configuration
+#define GATEWAY_STATUS_INTERVAL 60000          // Gateway status upload: 60 seconds
+#define GATEWAY_ROUTING_TABLE_INTERVAL 300000  // Routing table backup: 5 minutes
+#define GATEWAY_SENSOR_UPLOAD_TIMEOUT 5000     // Sensor upload timeout: 5 seconds
 
 // Memory Settings
-#define GATEWAY_RECEIVE_TASK_STACK_SIZE 8192   // 8KB stack
-#define MEMORY_LOG_INTERVAL 30000              // 30 seconds
+#define GATEWAY_RECEIVE_TASK_STACK_SIZE 8192   // Task stack: 8KB
+#define MEMORY_LOG_INTERVAL 30000              // Memory monitoring: 30 seconds
+
+// Hardware Configuration
+#define GATEWAY_ID 0x01
+#define LORA_MODULE LoraMesher::LoraModules::SX1276_MOD
+
+// SPI & LoRa Pins (ESP32 DOIT DevKit V1)
+#define SPI_SCK     18
+#define SPI_MISO    16  
+#define SPI_MOSI    19
+#define SPI_CS      5
+#define LORA_CS     5
+#define LORA_RST    4
+#define LORA_IRQ    15
+#define LORA_IO1    -1
 ```
 
 ---
 
 ## 🎯 Quick Start Checklist
 
-- [ ] **WiFi Setup**
-  - [ ] Update SSID/password in `gateway_config.h`
-  - [ ] Test connection (check serial for IP address)
-  
-- [ ] **Firebase Setup**
-  - [ ] Create Firebase project
-  - [ ] Get API Key from Project Settings
-  - [ ] Get Database URL from Realtime Database
-  - [ ] Generate Legacy Token from Database → Rules
-  - [ ] Update all credentials in `gateway_config.h`
-  - [ ] Configure Firebase Security Rules
-  
-- [ ] **Build & Upload**
-  - [ ] `pio run -e esp32-gateway`
-  - [ ] Upload firmware to ESP32
-  - [ ] Monitor serial output (115200 baud)
-  
-- [ ] **Verify Operation**
-  - [ ] Check WiFi connected (IP address logged)
-  - [ ] Check Firebase connected
-  - [ ] Wait for node packets
-  - [ ] Verify data appears in Firebase Console
-  - [ ] Monitor memory stability (no leak warnings)
+### 1. Firebase Setup
+- [ ] Create Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
+- [ ] Enable **Realtime Database** (not Firestore)
+- [ ] Get Database URL from Realtime Database settings
+- [ ] Generate **Database Secret** from Project Settings → Service Accounts → Database Secrets
+- [ ] Update `FIREBASE_HOST` and `FIREBASE_AUTH` in `gateway_config.h`
+- [ ] Configure Security Rules (copy from above)
+
+### 2. WiFi Setup  
+- [ ] Update `WIFI_SSID` and `WIFI_PASSWORD` in `gateway_config.h`
+- [ ] Ensure 2.4GHz network (ESP32 doesn't support 5GHz)
+- [ ] Test WiFi signal strength at gateway location
+
+### 3. Build & Deploy
+- [ ] Install PlatformIO dependencies:
+  - `jgromes/RadioLib@^6.6.0`
+  - `bblanchon/ArduinoJson@^7.0.4` 
+  - `mobizt/Firebase ESP32 Client@^4.4.17`
+- [ ] Build: `pio run -e esp32-gateway`
+- [ ] Upload firmware to ESP32
+- [ ] Monitor serial output (115200 baud)
+
+### 4. Verification
+- [ ] Check WiFi connected: `✅ Connected! RSSI: -XX dBm`
+- [ ] Check Firebase connected: `✅ Connected successfully!`
+- [ ] Check NTP sync: `✅ NTP synced: 1760607651`
+- [ ] Wait for node packets and verify data appears in Firebase Console
+- [ ] Monitor memory stability: No memory leak warnings
+
+### 5. Mobile App Integration
+- [ ] Use Firebase Database URL for mobile app connection
+- [ ] Implement real-time listeners for:
+  - `nodes/{nodeId}/latest_data` (current sensor values)
+  - `gateways/{gatewayId}/status` (gateway health)
+  - `gateways/{gatewayId}/routing_table` (network topology)
+- [ ] Query historical data from `sensor_data/{nodeId}/{timestamp}`
+- [ ] Handle offline/online states gracefully
 
 ---
 
 ## 📚 Related Documentation
 
-- `STACK_OVERFLOW_FIX.md` - Stack overflow analysis & fix
-- `MEMORY_LEAK_DETECTION.md` - Memory leak investigation
-- `PRETTY_JSON_PRINTING.md` - JSON formatting implementation
-- `PHASE3_COMPLETION_REPORT.md` - Firebase integration completion
+- **Firebase Console**: [console.firebase.google.com](https://console.firebase.google.com)
+- **Firebase Real-time Database**: [firebase.google.com/docs/database](https://firebase.google.com/docs/database)
+- **ESP32 Firebase Client**: [github.com/mobizt/Firebase-ESP32](https://github.com/mobizt/Firebase-ESP32)
+- **Project Documentation**:
+  - `WIFI_CONNECTION_SERVICE_REFERENCE.md` - WiFi service API reference
+  - `PHASE3_COMPLETION_REPORT.md` - Firebase integration implementation details
+  - `MEMORY_LEAK_DETECTION.md` - Memory optimization analysis
+  - `TIME_SYNC_FEATURE.md` - NTP time synchronization system
 
 ---
 
-**Document version**: 1.0  
-**Last updated**: October 15, 2025  
-**Author**: Gateway ESP32 Firebase Integration
+**Document Version**: 2.0  
+**Last Updated**: January 16, 2025  
+**Author**: LoRa Mesh Gateway Team  
+**Target Audience**: Mobile App Development Team
