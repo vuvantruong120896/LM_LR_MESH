@@ -379,13 +379,8 @@ void GatewayApp::uploadRoutingTable() {
     rtList->setInUse();
     size_t tableSize = rtList->getLength();
 
-    if (tableSize == 0) {
-        ESP_LOGD(TAG, "Routing table is empty, skipping upload");
-        rtList->releaseInUse();
-        return;
-    }
-
     // Convert LinkedList to vector for Firebase upload
+    // Upload even if empty to clear stale data on Firebase
     std::vector<RouteNode> routingTable;
     routingTable.reserve(tableSize);
 
@@ -400,13 +395,21 @@ void GatewayApp::uploadRoutingTable() {
 
     rtList->releaseInUse();
 
-    ESP_LOGI(TAG, "📡 Uploading routing table (%d nodes)", routingTable.size());
+    if (routingTable.size() == 0) {
+        ESP_LOGI(TAG, "📡 Uploading EMPTY routing table to clear Firebase data");
+    } else {
+        ESP_LOGI(TAG, "📡 Uploading routing table (%d nodes)", routingTable.size());
+    }
 
     auto result = firebaseClient->uploadRoutingTable(routingTable);
 
     if (result.success) {
         gatewayState.lastRoutingTableUpload = millis();
-        ESP_LOGI(TAG, "✅ Routing table uploaded (%d bytes)", result.payloadSize);
+        if (routingTable.size() == 0) {
+            ESP_LOGI(TAG, "✅ Empty routing table uploaded - Firebase cleared");
+        } else {
+            ESP_LOGI(TAG, "✅ Routing table uploaded (%d bytes)", result.payloadSize);
+        }
     } else {
         ESP_LOGW(TAG, "❌ Failed to upload routing table: %s", result.errorMessage.c_str());
     }
