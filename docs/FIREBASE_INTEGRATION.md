@@ -139,8 +139,8 @@ public:
 // Database Secret (from Firebase Console → Settings → Service Accounts → Database Secrets)
 #define FIREBASE_AUTH "0kMDkyCxejcJB350HrFlgBmb3Y5PsOiR90ZXf1MV"
 
-// Gateway ID prefix (auto-generated from MAC)
-#define FIREBASE_GATEWAY_ID_PREFIX "GW_"
+// Gateway ID prefix (auto-generated from MAC; format: "0x" + last 4 hex of MAC)
+#define FIREBASE_GATEWAY_ID_PREFIX "0x"
 ```
 
 ### Khởi Tạo Firebase
@@ -148,10 +148,10 @@ public:
 **Setup sequence trong gateway_app.cpp**:
 ```cpp
 void GatewayApp::setupFirebase() {
-    // Create Gateway ID from MAC address
+  // Create Gateway ID from MAC address (e.g., "...:AB:CD" -> "0xABCD")
     String macAddr = WiFi.macAddress();
     macAddr.replace(":", "");
-    String gatewayId = String(FIREBASE_GATEWAY_ID_PREFIX) + macAddr.substring(macAddr.length() - 4);
+  String gatewayId = String(FIREBASE_GATEWAY_ID_PREFIX) + macAddr.substring(macAddr.length() - 4);
     
     // Create Firebase client instance  
     firebaseClient = new FirebaseClient(FIREBASE_HOST, FIREBASE_AUTH, gatewayId.c_str());
@@ -171,7 +171,7 @@ void GatewayApp::setupFirebase() {
 
 ## 📊 Định Dạng Dữ Liệu Firebase
 
-### 1. Sensor Data (Dữ liệu cảm biến từ Nodes)
+### 1. Sensor Data (Dữ liệu cảm biến từ Nodes & Gateway)
 
 **Paths**: 
 - `nodes/{nodeId}/latest_data` (realtime dashboard)
@@ -204,6 +204,11 @@ void GatewayApp::setupFirebase() {
 - RSSI/SNR chỉ có với direct connections (metric=1)
 - Upload đồng thời 2 locations: latest_data + historical timeseries
 
+• Đối với dữ liệu cảm biến của chính Gateway:
+- rssi = WiFi RSSI (wifiService->getRSSI())
+- snr = 10.0 (giá trị cố định hợp lý trong môi trường indoor)
+- NodeID của Gateway được tạo từ 2 byte cuối của WiFi MAC (giống Node)
+
 **Example Upload Flow**:
 ```
 Node 0xCC64 → Gateway decrypt → Parse sensor data
@@ -213,7 +218,25 @@ Node 0xCC64 → Gateway decrypt → Parse sensor data
     2. sensor_data/0xCC64/1760607651      (charts)
 ```
 
-### 2. Gateway Status (Trạng thái Gateway)
+### 2. Gateway Info (Thông tin Gateway)
+
+**Path**: `gateways/{gatewayId}/info`
+
+**JSON Structure**:
+```json
+{
+  "mac": "AA:BB:CC:DD:EE:FF",
+  "ip": "192.168.1.100",
+  "firmware_version": "1.0.0",
+  "address": "0xEEFF" // 2 byte cuối của MAC (chuỗi hex)
+}
+```
+
+Ghi chú:
+- Trước đây có `created_at` và `last_seen`; các trường này đã được loại bỏ để đơn giản hoá schema.
+- `address` dùng cùng quy ước định danh Node (chuỗi "0xXXXX").
+
+### 3. Gateway Status (Trạng thái Gateway)
 
 **Path**: `gateways/{gatewayId}/status`
 
@@ -245,7 +268,7 @@ Node 0xCC64 → Gateway decrypt → Parse sensor data
 
 **Upload interval**: Every 60 seconds
 
-### 3. Routing Table (Bảng định tuyến mạng)
+### 4. Routing Table (Bảng định tuyến mạng)
 
 **Path**: `gateways/{gatewayId}/routing_table`
 
@@ -253,7 +276,7 @@ Node 0xCC64 → Gateway decrypt → Parse sensor data
 ```json
 {
   "node_count": 3,
-  "timestamp": 1760607651,
+  "updated_at": 1760607651,
   "nodes": {
     "0xCC64": {
       "address": "0xCC64",
@@ -283,7 +306,7 @@ Node 0xCC64 → Gateway decrypt → Parse sensor data
 
 **Field Descriptions**:
 - `node_count`: Total nodes in mesh network
-- `timestamp`: Last update timestamp
+- `updated_at`: Last update timestamp
 - `address`: Node address (hex format)
 - `via`: Route to node via this address (same as address if direct)
 - `metric`: Hop count (1=direct, 2=via 1 hop, etc.)
@@ -294,9 +317,9 @@ Node 0xCC64 → Gateway decrypt → Parse sensor data
 1. **Real-time**: When routing table changes (node join/leave)
 2. **Backup**: Every 5 minutes
 
-### 4. System Events (Log hệ thống)
+### 5. System Events (Log hệ thống)
 
-**Path**: `gateways/{gatewayId}/events/{timestamp}`
+**Path**: `events/{timestamp}`
 
 **JSON Structure**:
 ```json
