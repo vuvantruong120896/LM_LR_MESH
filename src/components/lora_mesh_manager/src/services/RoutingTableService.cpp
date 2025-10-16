@@ -228,6 +228,11 @@ void RoutingTableService::processRoute(uint16_t via, NetworkNode* node) {
         
         // REMOVED: NVS Write-Through Cache - routing table no longer persisted
         // Network will rebuild routes naturally via HELLO protocol after reboot
+        // Trigger callback for application layer to react to improved route
+        if (onRoutingTableChanged != nullptr && !callbackSuspended) {
+            ESP_LOGI(LM_TAG, "Triggering routing table changed callback due to improved route for %X", node->address);
+            onRoutingTableChanged();
+        }
     }
     else if (node->metric == rNode->networkNode.metric && via == rNode->via) {
         // Same route from same via - only reset timeout if it's a direct route
