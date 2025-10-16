@@ -270,11 +270,11 @@ void GatewayApp::setupWiFi() {
 void GatewayApp::setupFirebase() {
     ESP_LOGI(TAG, "Setting up Firebase connection...");
 
-    // Create Gateway ID from MAC address
+    // Create Gateway ID from last 2 bytes of MAC address
     String macAddr = WiFi.macAddress();
     macAddr.replace(":", "");
     String gatewayId = String(FIREBASE_GATEWAY_ID_PREFIX);
-    gatewayId += macAddr;
+    gatewayId += macAddr.substring(macAddr.length() - 4);
 
     // Create Firebase client instance
     firebaseClient = new FirebaseClient(
