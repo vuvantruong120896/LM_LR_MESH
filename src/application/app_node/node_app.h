@@ -29,6 +29,9 @@ public:
     
     void setup();
     void loop();
+    
+    // Public method for time sync packet handling (called from mesh_utils)
+    void handleTimeSyncPacket(AppPacket<TimeSyncService::TimeSyncPacket>* packet);
 
 private:
     LoraMesher& radio;
@@ -55,7 +58,6 @@ private:
     void generateDeviceUUID();
     bool isNetworkConfigured();
     void setupTimeSync();
-    void handleTimeSyncPacket(AppPacket<TimeSyncService::TimeSyncPacket>* packet);
     
     // Provisioning methods
     void checkProvisioningState();
@@ -76,8 +78,12 @@ private:
     static void processTimeSyncPackets(void* parameter);
     TaskHandle_t createTimeSyncReceiveTask();
     
-    // Instance pointer for static callbacks
+public:
+    // Instance pointer for static callbacks (public for mesh_utils access)
     static NodeApp* instance;
+    
+    // Time sync task handle (for notifications from main receive task)
+    static TaskHandle_t timeSyncTaskHandle;
 };
 
 #endif // NODE_APP_H

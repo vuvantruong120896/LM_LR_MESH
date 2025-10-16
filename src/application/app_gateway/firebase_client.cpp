@@ -1,4 +1,5 @@
 #include "firebase_client.h"
+#include "TimeSyncService.h"
 #include <time.h>
 
 // Constants
@@ -557,14 +558,15 @@ String FirebaseClient::nodeIdToString(uint16_t nodeId) {
 }
 
 uint32_t FirebaseClient::getCurrentTimestamp() {
-    // Get current time (seconds since epoch)
-    // Note: ESP32 needs NTP time sync for accurate timestamps
-    return (uint32_t)(millis() / 1000);  // Fallback: relative time
+    // Get current time from TimeSyncService (NTP synced)
+    uint32_t timestamp = TimeSyncService::getCurrentTimestamp();
     
-    // For production, use NTP:
-    // time_t now;
-    // time(&now);
-    // return (uint32_t)now;
+    // Fallback to millis() if NTP not synced yet
+    if (timestamp == 0) {
+        return (uint32_t)(millis() / 1000);
+    }
+    
+    return timestamp;
 }
 
 void FirebaseClient::updateUploadStats(bool success, size_t payloadSize, uint32_t uploadTime) {

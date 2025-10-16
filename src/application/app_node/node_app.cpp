@@ -26,6 +26,7 @@ static NodeApp* nodeAppInstance = nullptr;
 
 // Static member initialization
 NodeApp* NodeApp::instance = nullptr;
+TaskHandle_t NodeApp::timeSyncTaskHandle = nullptr;
 
 NodeApp::NodeApp() 
     : radio(LoraMesher::getInstance()), 
@@ -290,10 +291,10 @@ sensorData NodeApp::simulateSensorData() {
     // Use real timestamp if synchronized, otherwise use millis() as fallback
     if (TimeSyncService::isTimeSynced()) {
         data.timestamp = TimeSyncService::getCurrentTimestamp();
-        ESP_LOGD(LM_TAG, "Using synced timestamp: %u", data.timestamp);
+        ESP_LOGI(LM_TAG, "✅ Using synced timestamp: %u (Unix time)", data.timestamp);
     } else {
         data.timestamp = millis() / 1000;  // Convert to seconds as fallback
-        ESP_LOGD(LM_TAG, "Using fallback timestamp (boot time): %u", data.timestamp);
+        ESP_LOGW(LM_TAG, "⚠️ Using fallback timestamp (boot time): %u seconds", data.timestamp);
     }
     
     return data;
@@ -336,9 +337,9 @@ void NodeApp::setupLoRaMesher() {
     }
     
     // Create time sync receive task to handle time broadcasts from Gateway
-    TaskHandle_t timeSyncHandle = createTimeSyncReceiveTask();
-    if (timeSyncHandle) {
-        ESP_LOGI(LM_TAG, "Time sync receive task created successfully");
+    timeSyncTaskHandle = createTimeSyncReceiveTask();
+    if (timeSyncTaskHandle) {
+        ESP_LOGI(LM_TAG, "Time sync receive task created successfully (handle: %p)", timeSyncTaskHandle);
     } else {
         ESP_LOGW(LM_TAG, "Failed to create time sync receive task");
     }
