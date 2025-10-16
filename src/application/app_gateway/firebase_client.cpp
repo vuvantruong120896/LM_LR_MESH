@@ -499,14 +499,11 @@ String FirebaseClient::createRoutingTableJson(const std::vector<RouteNode>& rout
         nodeObj["role"] = route.networkNode.role;
         
         // Only include signal quality data for direct routes (metric == 1)
+        // Include RSSI/SNR for all direct routes, even if values are 0
+        // (signal data is only available for 1-hop neighbors)
         if (route.networkNode.metric == 1) {
-            if (route.receivedRSSI != 0) {
-                nodeObj["rssi"] = route.receivedRSSI;
-            }
-            
-            if (route.receivedSNR != 0) {
-                nodeObj["snr"] = route.receivedSNR;
-            }
+            nodeObj["rssi"] = route.receivedRSSI;
+            nodeObj["snr"] = route.receivedSNR;
         }
         
         nodeObj["last_seen"] = getCurrentTimestamp();
