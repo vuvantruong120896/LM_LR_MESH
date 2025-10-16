@@ -1024,13 +1024,18 @@ void GatewayApp::uploadGatewaySensorData() {
     // Generate gateway sensor data
     sensorData gatewaySensor = simulateGatewaySensorData();
     
+    // Get WiFi RSSI for Gateway sensor data (Gateway signal quality to router)
+    int8_t wifiRssi = wifiService ? wifiService->getRSSI() : -90;  // Default fallback if WiFi not available
+    float gatewaySnr = 10.0f;  // Fixed SNR value for Gateway data
+    
     ESP_LOGI(TAG, "🏠 Uploading Gateway sensor data to Firebase");
-    ESP_LOGI(TAG, "🔢 Counter: %u, 🌡️ Temp: %.1f°C, 💧 Hum: %.1f%%, ⚡ Power: %.1fV, 📡 GatewayID: 0x%04X",
+    ESP_LOGI(TAG, "🔢 Counter: %u, 🌡️ Temp: %.1f°C, 💧 Hum: %.1f%%, ⚡ Power: %.1fV, 📡 NodeID: 0x%04X",
              gatewaySensor.counter, gatewaySensor.temperature, gatewaySensor.humidity, 
              gatewaySensor.battery, gatewaySensor.nodeId);
+    ESP_LOGI(TAG, "📶 WiFi Signal - RSSI: %d dBm, SNR: %.1f dB (fixed value)", wifiRssi, gatewaySnr);
     
-    // Upload to Firebase with no RSSI/SNR (gateway is the source, not received)
-    auto result = firebaseClient->uploadSensorData(gatewaySensor, 0, 0.0f);
+    // Upload to Firebase with WiFi RSSI and fixed SNR
+    auto result = firebaseClient->uploadSensorData(gatewaySensor, wifiRssi, gatewaySnr);
     
     if (result.success) {
         gatewayState.packetsUploaded++;
