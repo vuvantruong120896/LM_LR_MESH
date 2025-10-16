@@ -165,7 +165,7 @@ void GatewayApp::loop() {
     // Re-sync with NTP every hour (if WiFi connected)
     if (gatewayState.wifiConnected && (currentTime - lastNTPSync >= NTP_RESYNC_INTERVAL)) {
         ESP_LOGI(TAG, "⏰ Periodic NTP re-sync");
-        if (TimeSyncService::syncWithNTP("pool.ntp.org", 0, 0)) {
+        if (TimeSyncService::syncWithNTP("pool.ntp.org", 25200, 0)) {
             gatewayState.ntpSynced = true;
             ESP_LOGI(TAG, "✅ NTP re-sync successful");
         }
@@ -915,9 +915,10 @@ void GatewayApp::setupTimeSync() {
         return;
     }
     
-    // Sync with NTP server (UTC timezone)
-    // You can customize: "pool.ntp.org", GMT offset, daylight saving
-    if (TimeSyncService::syncWithNTP("pool.ntp.org", 0, 0)) {
+    // Sync with NTP server (Vietnam timezone GMT+7)
+    // GMT offset: 7 * 3600 = 25200 seconds
+    // Daylight saving: 0 (Vietnam doesn't use DST)
+    if (TimeSyncService::syncWithNTP("pool.ntp.org", 25200, 0)) {
         gatewayState.ntpSynced = true;
         gatewayState.lastTimeSyncBroadcast = millis();
         ESP_LOGI(TAG, "✅ NTP sync successful - Gateway time synchronized");
