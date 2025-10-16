@@ -24,6 +24,9 @@ static uint16_t computeNodeIdFromWifiMac() {
 // Static instance pointer for callbacks
 static NodeApp* nodeAppInstance = nullptr;
 
+// Static member initialization
+NodeApp* NodeApp::instance = nullptr;
+
 NodeApp::NodeApp() 
     : radio(LoraMesher::getInstance()), 
       dataCounter(0), 
@@ -36,6 +39,7 @@ NodeApp::NodeApp()
       networkId(0),
       keyVersion(0) {
     
+    instance = this;
     nodeAppInstance = this;
     memset(deviceUUID, 0, sizeof(deviceUUID));
     memset(networkKey, 0, sizeof(networkKey));
@@ -199,6 +203,7 @@ void NodeApp::setup() {
     generateDeviceUUID();
     
     setupLoRaMesher();
+    setupTimeSync();  // Initialize time sync service for node
 
     ESP_LOGI(LM_TAG, "Node setup complete. Send interval: %d ms", SEND_INTERVAL_MS);
     ESP_LOGI(LM_TAG, "Node provisioning state: %s", 
@@ -281,7 +286,16 @@ sensorData NodeApp::simulateSensorData() {
     data.temperature = 20.0 + (random(0, 200) / 10.0); // 20-40°C
     data.humidity = 40.0 + (random(0, 600) / 10.0);    // 40-100%
     data.battery = 3.2 + (random(0, 80) / 100.0);      // 3.2-4.0V
-    data.timestamp = millis();
+    
+    // Use real timestamp if synchronized, otherwise use millis() as fallback
+    if (TimeSyncService::isTimeSynced()) {
+        data.timestamp = TimeSyncService::getCurrentTimestamp();
+        ESP_LOGD(LM_TAG, "Using synced timestamp: %u", data.timestamp);
+    } else {
+        data.timestamp = millis() / 1000;  // Convert to seconds as fallback
+        ESP_LOGD(LM_TAG, "Using fallback timestamp (boot time): %u", data.timestamp);
+    }
+    
     return data;
 }
 
@@ -319,6 +333,14 @@ void NodeApp::setupLoRaMesher() {
     } else {
         ESP_LOGE(LM_TAG, "Failed to initialize LoRaMesher");
         led_pattern_error();
+    }
+    
+    // Create time sync receive task to handle time broadcasts from Gateway
+    TaskHandle_t timeSyncHandle = createTimeSyncReceiveTask();
+    if (timeSyncHandle) {
+        ESP_LOGI(LM_TAG, "Time sync receive task created successfully");
+    } else {
+        ESP_LOGW(LM_TAG, "Failed to create time sync receive task");
     }
 }
 
@@ -682,4 +704,91 @@ static void loadRoutingTableFromNVS() {
     
     delete[] entries;
     ESP_LOGI(LM_TAG, "loadRoutingTableFromNVS: Completed");
+}
+
+void NodeApp::setupTimeSync() {
+    ESP_LOGI(LM_TAG, "Setting up Time Synchronization (Node mode)...");
+    
+    // Initialize time sync service as Node (will receive time from Gateway)
+    if (!TimeSyncService::initialize(false)) {
+        ESP_LOGE(LM_TAG, "Failed to initialize Time Sync Service");
+        return;
+    }
+    
+    ESP_LOGI(LM_TAG, "✅ Time Sync Service initialized - waiting for Gateway broadcasts");
+}
+
+void NodeApp::handleTimeSyncPacket(AppPacket<TimeSyncService::TimeSyncPacket>* packet) {
+    if (!packet || packet->payloadSize < sizeof(TimeSyncService::TimeSyncPacket)) {
+        ESP_LOGW(LM_TAG, "Invalid time sync packet received");
+        return;
+    }
+    
+    TimeSyncService::TimeSyncPacket* timeSyncData = 
+        reinterpret_cast<TimeSyncService::TimeSyncPacket*>(packet->payload);
+    
+    // Process time sync packet
+    TimeSyncService::processTimeSyncPacket(*timeSyncData);
+    
+    ESP_LOGI(LM_TAG, "⏰ Time synchronized from Gateway 0x%04X: %u.%03u", 
+             packet->src, timeSyncData->timestamp, timeSyncData->milliseconds);
+    ESP_LOGI(LM_TAG, "Time sync age: %u seconds", TimeSyncService::getTimeSinceLastSync());
+}
+
+// Static task for receiving time sync packets
+void NodeApp::processTimeSyncPackets(void* parameter) {
+    ESP_LOGI(LM_TAG, "[TIMESYNC-TASK] Time sync receive task started");
+    
+    for (;;) {
+        // Wait for notification from mesh receiver
+        ulTaskNotifyTake(pdPASS, portMAX_DELAY);
+        
+        ESP_LOGD(LM_TAG, "[TIMESYNC-TASK] Processing time sync packets...");
+        
+        while (NodeApp::instance && NodeApp::instance->radio.getReceivedQueueSize() > 0) {
+            AppPacket<uint8_t>* packet = NodeApp::instance->radio.getNextAppPacket<uint8_t>();
+            
+            if (!packet) {
+                ESP_LOGW(LM_TAG, "[TIMESYNC-TASK] Null packet received!");
+                continue;
+            }
+            
+            // Check if it's a time sync packet (8 bytes)
+            if (packet->payloadSize == sizeof(TimeSyncService::TimeSyncPacket)) {
+                AppPacket<TimeSyncService::TimeSyncPacket>* timeSyncPacket = 
+                    reinterpret_cast<AppPacket<TimeSyncService::TimeSyncPacket>*>(packet);
+                
+                NodeApp::instance->handleTimeSyncPacket(timeSyncPacket);
+            } else {
+                ESP_LOGD(LM_TAG, "[TIMESYNC-TASK] Skipping non-time-sync packet (size: %d)", 
+                         packet->payloadSize);
+            }
+            
+            // Delete packet to free memory
+            NodeApp::instance->radio.deletePacket(packet);
+        }
+    }
+}
+
+TaskHandle_t NodeApp::createTimeSyncReceiveTask() {
+    TaskHandle_t taskHandle = NULL;
+    
+    ESP_LOGI(LM_TAG, "Creating time sync receive task...");
+    
+    // Create task with 3KB stack (time sync is lightweight)
+    int res = xTaskCreate(
+        processTimeSyncPackets,
+        "Time Sync Task",
+        3072,  // 3KB stack
+        (void*) 1,
+        2,     // Same priority as other receive tasks
+        &taskHandle);
+    
+    if (res != pdPASS) {
+        ESP_LOGE(LM_TAG, "Error: Time sync task creation failed: %d", res);
+        return NULL;
+    }
+    
+    ESP_LOGI(LM_TAG, "Time sync task created successfully, handle: %p", taskHandle);
+    return taskHandle;
 }

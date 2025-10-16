@@ -79,6 +79,7 @@ void GatewayApp::setup() {
     setupLoRaMesher();
     setupWiFi();
     setupFirebase();
+    setupTimeSync();  // Setup NTP time synchronization
     
     // Register callback to upload routing table when it changes
     RoutingTableService::setRoutingTableChangedCallback(onRoutingTableChanged);
@@ -154,6 +155,28 @@ void GatewayApp::loop() {
     // Update WiFi service (handles auto-reconnect)
     if (wifiService) {
         wifiService->update();
+    }
+
+    // Periodic NTP re-sync (every 1 hour) and time broadcast (every 5 minutes)
+    static uint32_t lastNTPSync = 0;
+    const uint32_t NTP_RESYNC_INTERVAL = 3600000;  // 1 hour
+    const uint32_t TIME_BROADCAST_INTERVAL = 300000;  // 5 minutes
+    
+    // Re-sync with NTP every hour (if WiFi connected)
+    if (gatewayState.wifiConnected && (currentTime - lastNTPSync >= NTP_RESYNC_INTERVAL)) {
+        ESP_LOGI(TAG, "⏰ Periodic NTP re-sync");
+        if (TimeSyncService::syncWithNTP("pool.ntp.org", 0, 0)) {
+            gatewayState.ntpSynced = true;
+            ESP_LOGI(TAG, "✅ NTP re-sync successful");
+        }
+        lastNTPSync = currentTime;
+    }
+    
+    // Broadcast time sync to nodes every 5 minutes
+    if (gatewayState.ntpSynced && 
+        (currentTime - gatewayState.lastTimeSyncBroadcast >= TIME_BROADCAST_INTERVAL)) {
+        ESP_LOGI(TAG, "⏰ Periodic time sync broadcast to nodes");
+        broadcastTimeSync();
     }
 
     // Backup periodic upload (every 5 minutes)
@@ -876,3 +899,55 @@ void BridgeApp::loadRoutingTableFromNVS() {
     RoutingTableService::resumeCallback();
 }
 */
+
+void GatewayApp::setupTimeSync() {
+    ESP_LOGI(TAG, "Setting up Time Synchronization...");
+    
+    // Initialize time sync service as Gateway
+    if (!TimeSyncService::initialize(true)) {
+        ESP_LOGE(TAG, "Failed to initialize Time Sync Service");
+        return;
+    }
+    
+    // Wait for WiFi connection before NTP sync
+    if (!gatewayState.wifiConnected) {
+        ESP_LOGW(TAG, "WiFi not connected yet, will sync NTP later");
+        return;
+    }
+    
+    // Sync with NTP server (UTC timezone)
+    // You can customize: "pool.ntp.org", GMT offset, daylight saving
+    if (TimeSyncService::syncWithNTP("pool.ntp.org", 0, 0)) {
+        gatewayState.ntpSynced = true;
+        gatewayState.lastTimeSyncBroadcast = millis();
+        ESP_LOGI(TAG, "✅ NTP sync successful - Gateway time synchronized");
+        
+        // Immediately broadcast time to nodes
+        broadcastTimeSync();
+    } else {
+        ESP_LOGE(TAG, "❌ NTP sync failed - will retry later");
+        gatewayState.ntpSynced = false;
+    }
+}
+
+void GatewayApp::broadcastTimeSync() {
+    if (!TimeSyncService::isTimeSynced()) {
+        ESP_LOGW(TAG, "Cannot broadcast time - not synchronized yet");
+        return;
+    }
+    
+    // Create time sync packet
+    TimeSyncService::TimeSyncPacket timeSyncPacket;
+    TimeSyncService::createTimeSyncPacket(timeSyncPacket);
+    
+    // Broadcast to all nodes (destination = 0xFFFF = broadcast address)
+    uint16_t broadcastAddr = 0xFFFF;
+    
+    ESP_LOGI(TAG, "📡 Broadcasting time sync to all nodes: %u.%03u", 
+             timeSyncPacket.timestamp, timeSyncPacket.milliseconds);
+    
+    // Send via LoRa mesh (use createPacketAndSend for broadcast)
+    radio.createPacketAndSend(broadcastAddr, &timeSyncPacket, 1);
+    
+    gatewayState.lastTimeSyncBroadcast = millis();
+}

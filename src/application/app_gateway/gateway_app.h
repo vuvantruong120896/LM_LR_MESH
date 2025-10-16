@@ -13,6 +13,7 @@
 #include "components/lora_mesh_manager/src/services/AddressManagementService.h"
 #include "components/lora_mesh_manager/src/services/ProvisioningService.h"
 #include "components/lora_mesh_manager/src/services/ProvisioningProtocol.h"
+#include "components/lora_mesh_manager/src/services/TimeSyncService.h"
 
 // Gateway state structure
 struct GatewayState {
@@ -23,6 +24,8 @@ struct GatewayState {
     uint32_t totalMeshPackets = 0;
     uint32_t uploadErrors = 0;
     uint32_t bootTime = 0;
+    uint32_t lastTimeSyncBroadcast = 0;  // Time of last time sync broadcast
+    bool ntpSynced = false;              // True if NTP time sync successful
 };
 
 class GatewayApp {
@@ -54,6 +57,8 @@ private:
     void setupLoRaMesher();
     void setupWiFi();
     void setupFirebase();
+    void setupTimeSync();
+    void broadcastTimeSync();
     void initializeServices();
     void initializeNVSStorage();
     void loadNetworkConfiguration();

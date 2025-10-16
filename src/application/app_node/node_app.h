@@ -12,6 +12,7 @@
 #include "components/lora_mesh_manager/src/services/ProvisioningProtocol.h"
 #include "components/lora_mesh_manager/src/services/ProvisioningService.h"
 #include "components/lora_mesh_manager/include/mesh_security.h"
+#include "components/lora_mesh_manager/src/services/TimeSyncService.h"
 
 // Node provisioning states
 enum NodeProvisioningState {
@@ -53,6 +54,8 @@ private:
     void setupLoRaMesher();
     void generateDeviceUUID();
     bool isNetworkConfigured();
+    void setupTimeSync();
+    void handleTimeSyncPacket(AppPacket<TimeSyncService::TimeSyncPacket>* packet);
     
     // Provisioning methods
     void checkProvisioningState();
@@ -68,6 +71,13 @@ private:
     // Provisioning packet callback from ProvisioningService
     static void onProvisioningPacketReceived(uint8_t packetType, const uint8_t* packet, 
                                            size_t packetSize, uint16_t senderAddress);
+    
+    // Time sync packet receiver
+    static void processTimeSyncPackets(void* parameter);
+    TaskHandle_t createTimeSyncReceiveTask();
+    
+    // Instance pointer for static callbacks
+    static NodeApp* instance;
 };
 
 #endif // NODE_APP_H
