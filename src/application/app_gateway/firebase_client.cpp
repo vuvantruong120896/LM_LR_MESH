@@ -438,11 +438,13 @@ String FirebaseClient::createSensorDataJson(const sensorData& data, int8_t rssi,
     doc["battery"] = data.battery;
     doc["timestamp"] = m_autoTimestamp ? getCurrentTimestamp() : data.timestamp;
     
-    if (rssi != 0) {
+    // Add RSSI if available (valid range: -120 to -30 dBm)
+    if (rssi != 0 && rssi >= -120 && rssi <= -30) {
         doc["rssi"] = rssi;
     }
     
-    if (snr != 0.0f) {
+    // Add SNR if available (typical range: -20 to +15 dB)
+    if (snr != 0.0f && snr >= -20.0f && snr <= 15.0f) {
         doc["snr"] = snr;
     }
     

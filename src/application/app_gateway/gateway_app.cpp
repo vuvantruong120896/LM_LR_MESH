@@ -371,8 +371,21 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
         ESP_LOGI(TAG, "🔢 Counter: %u, 🌡️ Temp: %.1f°C, 💧 Hum: %.1f%%, 🔋 Batt: %.2fV, 📡 NodeID: 0x%04X",
              s->counter, s->temperature, s->humidity, s->battery, s->nodeId);
 
-        // Upload to Firebase (RSSI/SNR not available in AppPacket - stored in routing table)
-        auto result = firebaseClient->uploadSensorData(*s, 0, 0);
+        // Get RSSI and SNR from routing table for this node
+        int8_t rssi = 0;
+        float snr = 0.0f;
+        
+        RouteNode* routeNode = RoutingTableService::findNode(sourceNode);
+        if (routeNode) {
+            rssi = routeNode->receivedRSSI;
+            snr = routeNode->receivedSNR;
+            ESP_LOGI(TAG, "📡 Signal quality - RSSI: %d dBm, SNR: %.1f dB (from routing table)", rssi, snr);
+        } else {
+            ESP_LOGW(TAG, "⚠️ Node 0x%04X not found in routing table - no RSSI/SNR data", sourceNode);
+        }
+
+        // Upload to Firebase with RSSI and SNR from routing table
+        auto result = firebaseClient->uploadSensorData(*s, rssi, snr);
 
         if (result.success) {
             gatewayState.packetsUploaded++;
