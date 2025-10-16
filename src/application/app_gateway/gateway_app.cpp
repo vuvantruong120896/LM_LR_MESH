@@ -5,6 +5,15 @@
 
 static const char* TAG = "GATEWAY";
 
+// Compute a 16-bit Node ID using the last 2 bytes of the WiFi MAC (STA MAC)
+static uint16_t computeNodeIdFromWifiMac() {
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    // Use the last 2 bytes of the MAC as a 16-bit ID (big-endian)
+    uint16_t id = ((uint16_t)mac[4] << 8) | (uint16_t)mac[5];
+    return id;
+}
+
 // Static member initialization
 GatewayApp* GatewayApp::instance = nullptr;
 
@@ -27,7 +36,10 @@ GatewayApp::~GatewayApp() {
 
 void GatewayApp::setup() {
     ESP_LOGI(TAG, "=== LoRaMesh Gateway Application ===");
-    ESP_LOGI(TAG, "Gateway ID: 0x%X", GATEWAY_ID);
+    
+    // Get actual NodeID from MAC address
+    uint16_t gatewayNodeId = computeNodeIdFromWifiMac();
+    ESP_LOGI(TAG, "Gateway Node ID (from WiFi MAC last 2 bytes): 0x%04X", gatewayNodeId);
 
     led_init();
     led_pattern_startup();
@@ -988,8 +1000,8 @@ sensorData GatewayApp::simulateGatewaySensorData() {
     // Increment sensor counter
     data.counter = ++sensorCounter;
     
-    // Use gateway's own node ID (0x01)
-    data.nodeId = GATEWAY_ID;
+    // Use gateway's own node ID from MAC address (same as Nodes)
+    data.nodeId = computeNodeIdFromWifiMac();
     
     // Use NTP synchronized timestamp if available
     if (TimeSyncService::isTimeSynced()) {

@@ -50,7 +50,7 @@
 
 // Gateway ID for Firebase (based on MAC address)
 // Format: GW_<MAC> (e.g., "GW_240AC4123456")
-#define FIREBASE_GATEWAY_ID_PREFIX "GW_"
+#define FIREBASE_GATEWAY_ID_PREFIX "0x_"
 
 // Gateway operation settings
 #define GATEWAY_ROUTING_TABLE_INTERVAL 300000  // Backup upload every 5 minutes (real-time upload on changes)
