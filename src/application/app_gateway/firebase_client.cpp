@@ -22,6 +22,12 @@ FirebaseClient::FirebaseClient(
 {
     // Initialize statistics
     memset(&m_stats, 0, sizeof(FirebaseStats));
+    // Initialize concurrency and breaker
+    m_mutex = xSemaphoreCreateMutex();
+    m_consecutiveFailures = 0;
+    m_cooldownUntilMs = 0;
+    m_baseCooldownMs = 2000;     // 2 seconds base cooldown
+    m_failureThreshold = 5;      // after 5 consecutive failures, enter cooldown
     
     // Debug: Print gateway ID to verify it's stored correctly
     Serial.printf("[Firebase] Gateway ID stored: %s\n", m_gatewayId.c_str());
@@ -50,6 +56,11 @@ bool FirebaseClient::initialize() {
 }
 
 bool FirebaseClient::connect() {
+    LockGuard guard(m_mutex);
+    if (!guard.isLocked()) {
+        Serial.println("[Firebase] connect(): mutex lock timeout");
+        return false;
+    }
     if (m_status == ConnectionStatus::CONNECTED) {
         Serial.println("[Firebase] Already connected");
         return true;
@@ -75,6 +86,11 @@ bool FirebaseClient::connect() {
 }
 
 void FirebaseClient::disconnect() {
+    LockGuard guard(m_mutex);
+    if (!guard.isLocked()) {
+        Serial.println("[Firebase] disconnect(): mutex lock timeout");
+        return;
+    }
     if (m_status != ConnectionStatus::DISCONNECTED) {
         Serial.println("[Firebase] Disconnecting...");
         m_status = ConnectionStatus::DISCONNECTED;
@@ -100,6 +116,10 @@ FirebaseClient::UploadResult FirebaseClient::uploadSensorData(
     
     if (!isConnected()) {
         result.errorMessage = "Not connected to Firebase";
+        return result;
+    }
+    if (!circuitAllowsUpload()) {
+        result.errorMessage = "Circuit breaker active (cooldown)";
         return result;
     }
     
@@ -130,6 +150,7 @@ FirebaseClient::UploadResult FirebaseClient::uploadSensorData(
     
     result.success = success1 && success2;
     
+    recordUploadResult(result.success);
     if (result.success) {
         Serial.printf("[Firebase] Sensor data uploaded for node %s (RSSI: %d dBm, SNR: %.1f)\n", 
                      nodeIdStr.c_str(), rssi, snr);
@@ -159,6 +180,10 @@ FirebaseClient::UploadResult FirebaseClient::uploadGatewayStatus(
         result.errorMessage = "Not connected to Firebase";
         return result;
     }
+    if (!circuitAllowsUpload()) {
+        result.errorMessage = "Circuit breaker active (cooldown)";
+        return result;
+    }
     
     String jsonData = createGatewayStatusJson(
         connectedNodes, 
@@ -181,6 +206,7 @@ FirebaseClient::UploadResult FirebaseClient::uploadGatewayStatus(
     
     uint32_t uploadTime = millis() - startTime;
     
+    recordUploadResult(result.success);
     if (result.success) {
         Serial.printf("[Firebase] Gateway status uploaded (%u nodes, %lu uptime)\n", 
                      connectedNodes, uptimeSeconds);
@@ -205,6 +231,10 @@ FirebaseClient::UploadResult FirebaseClient::uploadRoutingTable(
         result.errorMessage = "Not connected to Firebase";
         return result;
     }
+    if (!circuitAllowsUpload()) {
+        result.errorMessage = "Circuit breaker active (cooldown)";
+        return result;
+    }
     
     String jsonData = createRoutingTableJson(routingTable);
     result.payloadSize = jsonData.length();
@@ -220,6 +250,7 @@ FirebaseClient::UploadResult FirebaseClient::uploadRoutingTable(
     
     uint32_t uploadTime = millis() - startTime;
     
+    recordUploadResult(result.success);
     if (result.success) {
         Serial.printf("[Firebase] Routing table uploaded (%d nodes)\n", routingTable.size());
     } else {
@@ -245,6 +276,10 @@ FirebaseClient::UploadResult FirebaseClient::logEvent(
         result.errorMessage = "Not connected to Firebase";
         return result;
     }
+    if (!circuitAllowsUpload()) {
+        result.errorMessage = "Circuit breaker active (cooldown)";
+        return result;
+    }
     
     String jsonData = createEventJson(eventType, nodeId, details);
     result.payloadSize = jsonData.length();
@@ -256,6 +291,7 @@ FirebaseClient::UploadResult FirebaseClient::logEvent(
     
     uint32_t uploadTime = millis() - startTime;
     
+    recordUploadResult(result.success);
     if (result.success) {
         Serial.printf("[Firebase] Event logged: %s\n", eventType.c_str());
     } else {
@@ -394,6 +430,11 @@ String FirebaseClient::getLastError() const {
 // Private methods
 
 bool FirebaseClient::uploadToPath(const String& path, const String& jsonData) {
+    LockGuard guard(m_mutex);
+    if (!guard.isLocked()) {
+        m_lastError = "mutex timeout";
+        return false;
+    }
     // Try updateNode (PATCH) instead of setJSON (PUT) to avoid "method not allowed" error
     // PATCH is more flexible for nested objects and works better with Firebase Security Rules
     FirebaseJson json;
@@ -435,6 +476,34 @@ bool FirebaseClient::uploadToPathWithRetry(const String& path, const String& jso
     
     Serial.printf("[Firebase] Upload failed after %u attempts\n", m_maxRetries);
     return false;
+}
+
+bool FirebaseClient::circuitAllowsUpload() {
+    uint32_t now = millis();
+    if (now < m_cooldownUntilMs) {
+        // Still in cooldown
+        return false;
+    }
+    return true;
+}
+
+void FirebaseClient::recordUploadResult(bool success) {
+    uint32_t now = millis();
+    if (success) {
+        m_consecutiveFailures = 0;
+        m_cooldownUntilMs = 0;
+        return;
+    }
+    // Failure path
+    if (m_consecutiveFailures < 255) m_consecutiveFailures++;
+    if (m_consecutiveFailures >= m_failureThreshold) {
+        // Exponential cooldown based on failures beyond threshold
+        uint8_t over = m_consecutiveFailures - m_failureThreshold;
+        uint32_t backoff = m_baseCooldownMs << (over > 5 ? 5 : over); // cap growth
+        m_cooldownUntilMs = now + backoff;
+        Serial.printf("[Firebase] Circuit breaker: %u consecutive failures, cooldown %lu ms\n",
+                      m_consecutiveFailures, backoff);
+    }
 }
 
 String FirebaseClient::createSensorDataJson(const sensorData& data, int8_t rssi, float snr) {

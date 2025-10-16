@@ -7,6 +7,8 @@
 #include <ArduinoJson.h>
 #include "application/common/mesh_utils.h"
 #include "components/lora_mesh_manager/include/LoraMesher.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 /**
  * @brief Firebase Client for Gateway Application
@@ -208,6 +210,27 @@ public:
     String getLastError() const;
 
 private:
+    // RAII helper for mutex
+    class LockGuard {
+    public:
+        explicit LockGuard(SemaphoreHandle_t m) : mtx(m), locked(false) {
+            if (mtx) {
+                if (xSemaphoreTake(mtx, pdMS_TO_TICKS(5000)) == pdTRUE) {
+                    locked = true;
+                }
+            }
+        }
+        ~LockGuard() {
+            if (locked && mtx) {
+                xSemaphoreGive(mtx);
+            }
+        }
+        bool isLocked() const { return locked; }
+    private:
+        SemaphoreHandle_t mtx;
+        bool locked;
+    };
+
     // Firebase configuration
     const char* m_firebaseHost;
     const char* m_firebaseAuth;
@@ -223,6 +246,13 @@ private:
     String m_lastError;
     bool m_autoTimestamp;
 
+    // Concurrency control and fault handling
+    SemaphoreHandle_t m_mutex;
+    uint8_t m_consecutiveFailures;
+    uint32_t m_cooldownUntilMs;
+    uint32_t m_baseCooldownMs;      // base backoff (e.g., 2000 ms)
+    uint8_t m_failureThreshold;     // activate breaker after N consecutive failures
+
     // Retry configuration
     uint8_t m_maxRetries;
     uint32_t m_retryDelayMs;
@@ -233,6 +263,8 @@ private:
     // Private methods
     bool uploadToPath(const String& path, const String& jsonData);
     bool uploadToPathWithRetry(const String& path, const String& jsonData);
+    bool circuitAllowsUpload();
+    void recordUploadResult(bool success);
     String createSensorDataJson(const sensorData& data, int8_t rssi, float snr);
     String createGatewayStatusJson(uint16_t nodes, uint32_t pktsRx, uint32_t pktsTx, 
                                     int8_t rssi, uint32_t heap, uint32_t uptime);
