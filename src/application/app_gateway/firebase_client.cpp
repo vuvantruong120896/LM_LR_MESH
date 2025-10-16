@@ -287,12 +287,15 @@ FirebaseClient::UploadResult FirebaseClient::updateGatewayInfo(
     doc["ip"] = ipAddress;
     doc["firmware_version"] = firmwareVersion;
     
-    // Extract address from last 2 bytes of MAC (e.g., "AA:BB:CC:DD:EE:FF" -> 0xEEFF)
+    // Extract address from last 2 bytes of MAC (e.g., "AA:BB:CC:DD:EE:FF" -> "0xEEFF")
     String cleanMac = macAddress;
     cleanMac.replace(":", "");
     String last4Chars = cleanMac.substring(cleanMac.length() - 4);
-    uint16_t addr = (uint16_t)strtol(last4Chars.c_str(), NULL, 16);
-    doc["addr"] = addr;
+    // Format as hex string with 0x prefix
+    char addrBuf[7];
+    snprintf(addrBuf, sizeof(addrBuf), "0x%04s", last4Chars.c_str());
+    String addrStr = String(addrBuf);
+    doc["address"] = addrStr;
     
     String jsonData;
     serializeJson(doc, jsonData);
@@ -306,8 +309,8 @@ FirebaseClient::UploadResult FirebaseClient::updateGatewayInfo(
     uint32_t uploadTime = millis() - startTime;
     
     if (result.success) {
-        Serial.printf("[Firebase] Gateway info updated (MAC: %s, IP: %s, Addr: 0x%04X)\n", 
-                     macAddress.c_str(), ipAddress.c_str(), addr);
+        Serial.printf("[Firebase] Gateway info updated (MAC: %s, IP: %s, Address: %s)\n", 
+                     macAddress.c_str(), ipAddress.c_str(), addrStr.c_str());
     } else {
         result.errorMessage = m_lastError;
     }
