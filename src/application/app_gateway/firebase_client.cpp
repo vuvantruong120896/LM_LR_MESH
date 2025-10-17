@@ -430,30 +430,43 @@ String FirebaseClient::getLastError() const {
 // Private methods
 
 bool FirebaseClient::uploadToPath(const String& path, const String& jsonData) {
-    LockGuard guard(m_mutex);
-    if (!guard.isLocked()) {
-        m_lastError = "mutex timeout";
-        return false;
-    }
+    // CRITICAL FIX: Do NOT hold mutex during network I/O (Firebase call can take 10-20 seconds)
+    // Holding mutex during Firebase.updateNode() causes task watchdog timeout
+    // Only protect m_firebaseData access and error string updates
+    
     // Try updateNode (PATCH) instead of setJSON (PUT) to avoid "method not allowed" error
     // PATCH is more flexible for nested objects and works better with Firebase Security Rules
     FirebaseJson json;
     json.setJsonData(jsonData);
     
-    bool success = Firebase.updateNode(m_firebaseData, path.c_str(), json);
-    
-    // CRITICAL FIX: Force cleanup TCP connection to prevent memory/stack leak
-    // Firebase library doesn't always cleanup properly, causing:
-    // - Stack decrease (4544 → 2000 bytes observed)
-    // - Heap leak (~64KB lost)
-    // Solution: Explicitly close WiFi client after each operation
-    m_firebaseData.clear();  // Clear internal buffers
+    bool success;
+    String errorReason;
+    {
+        LockGuard guard(m_mutex);
+        if (!guard.isLocked()) {
+            m_lastError = "mutex timeout";
+            return false;
+        }
+        
+        success = Firebase.updateNode(m_firebaseData, path.c_str(), json);
+        
+        // CRITICAL FIX: Force cleanup TCP connection to prevent memory/stack leak
+        // Firebase library doesn't always cleanup properly, causing:
+        // - Stack decrease (4544 → 2000 bytes observed)
+        // - Heap leak (~64KB lost)
+        // Solution: Explicitly close WiFi client after each operation
+        m_firebaseData.clear();  // Clear internal buffers
+        
+        if (!success) {
+            errorReason = m_firebaseData.errorReason();
+            m_lastError = errorReason;
+        }
+    }  // Release mutex immediately after Firebase operation
     
     if (success) {
         return true;
     } else {
-        m_lastError = m_firebaseData.errorReason();
-        Serial.printf("[Firebase] Upload error - Path: %s, Error: %s\n", path.c_str(), m_lastError.c_str());
+        Serial.printf("[Firebase] Upload error - Path: %s, Error: %s\n", path.c_str(), errorReason.c_str());
         return false;
     }
 }

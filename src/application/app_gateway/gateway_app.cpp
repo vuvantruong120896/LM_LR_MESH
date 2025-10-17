@@ -2,6 +2,7 @@
 #include "components/lora_mesh_manager/src/services/RoutingTableService.h"
 #include "mesh_security_config.h"
 #include <esp_log.h>
+#include <esp_task_wdt.h>
 
 static const char* TAG = "GATEWAY";
 
@@ -538,6 +539,9 @@ void GatewayApp::processGatewayPackets(void* parameter) {
 
         ESP_LOGI(TAG, "[GATEWAY-TASK] Processing gateway packets...");
         led_pattern_message();
+        
+        // CRITICAL FIX: Reset task watchdog to prevent timeout during long Firebase uploads
+        esp_task_wdt_reset();
 
         // Memory leak detection - check heap before processing
         uint32_t freeHeapBefore = ESP.getFreeHeap();
