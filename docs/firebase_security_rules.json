@@ -1,0 +1,242 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    
+    "commands": {
+      "$gatewayId": {
+        ".validate": "newData.hasChildren(['pending', 'processing', 'completed', 'failed']) == false || true",
+        
+        "pending": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          
+          "$commandId": {
+            ".validate": "newData.hasChildren(['type', 'params', 'timestamp', 'status', 'priority'])",
+            
+            "type": {
+              ".validate": "newData.isString() && (newData.val() == 'start_provisioning' || newData.val() == 'stop_provisioning' || newData.val() == 'set_netkey')"
+            },
+            
+            "params": {
+              ".validate": "newData.exists()"
+            },
+            
+            "timestamp": {
+              ".validate": "newData.isNumber() && newData.val() <= now + 60000"
+            },
+            
+            "status": {
+              ".validate": "newData.val() == 'pending'"
+            },
+            
+            "priority": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2"
+            },
+            
+            "created_by": {
+              ".validate": "newData.isString()"
+            },
+            
+            "user_id": {
+              ".validate": "newData.isString()"
+            },
+            
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        
+        "processing": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          
+          "$commandId": {
+            ".validate": "newData.hasChildren(['type', 'params', 'timestamp', 'status', 'startedAt'])",
+            
+            "status": {
+              ".validate": "newData.val() == 'processing'"
+            },
+            
+            "startedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            
+            "progress": {
+              ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 100)"
+            }
+          }
+        },
+        
+        "completed": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          
+          "$commandId": {
+            ".validate": "newData.hasChildren(['result', 'message', 'timestamp', 'completedAt', 'executionTimeMs'])",
+            
+            "result": {
+              ".validate": "newData.val() == 'success'"
+            },
+            
+            "message": {
+              ".validate": "newData.isString()"
+            },
+            
+            "completedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            
+            "executionTimeMs": {
+              ".validate": "newData.isNumber() && newData.val() >= 0"
+            },
+            
+            "details": {
+              ".validate": "newData.exists()"
+            }
+          }
+        },
+        
+        "failed": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          
+          "$commandId": {
+            ".validate": "newData.hasChildren(['result', 'message', 'timestamp', 'failedAt', 'errorCode'])",
+            
+            "result": {
+              ".validate": "newData.val() == 'failed'"
+            },
+            
+            "message": {
+              ".validate": "newData.isString()"
+            },
+            
+            "failedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            
+            "errorCode": {
+              ".validate": "newData.isString()"
+            },
+            
+            "retryable": {
+              ".validate": "!newData.exists() || newData.isBoolean()"
+            }
+          }
+        }
+      }
+    },
+    
+    "command_results": {
+      "$gatewayId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        
+        ".validate": "newData.hasChildren(['last_command_id', 'last_command_type', 'status', 'message', 'timestamp', 'gateway_online', 'last_poll'])",
+        
+        "last_command_id": {
+          ".validate": "newData.isString()"
+        },
+        
+        "last_command_type": {
+          ".validate": "newData.isString()"
+        },
+        
+        "status": {
+          ".validate": "newData.isString() && (newData.val() == 'success' || newData.val() == 'failed' || newData.val() == 'processing')"
+        },
+        
+        "message": {
+          ".validate": "newData.isString()"
+        },
+        
+        "timestamp": {
+          ".validate": "newData.isNumber()"
+        },
+        
+        "gateway_online": {
+          ".validate": "newData.isBoolean()"
+        },
+        
+        "last_poll": {
+          ".validate": "newData.isNumber()"
+        },
+        
+        "last_heartbeat": {
+          ".validate": "!newData.exists() || newData.isNumber()"
+        }
+      }
+    },
+    
+    "gateway_status": {
+      "$gatewayId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        
+        ".validate": "newData.hasChildren(['online', 'provisioning_active', 'connected_nodes', 'can_accept_commands', 'last_heartbeat'])",
+        
+        "online": {
+          ".validate": "newData.isBoolean()"
+        },
+        
+        "provisioning_active": {
+          ".validate": "newData.isBoolean()"
+        },
+        
+        "connected_nodes": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        
+        "can_accept_commands": {
+          ".validate": "newData.isBoolean()"
+        },
+        
+        "last_heartbeat": {
+          ".validate": "newData.isNumber()"
+        },
+        
+        "current_operation": {
+          ".validate": "!newData.exists() || newData.isString()"
+        },
+        
+        "wifi_rssi": {
+          ".validate": "!newData.exists() || (newData.isNumber() && newData.val() <= 0)"
+        },
+        
+        "free_heap": {
+          ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)"
+        },
+        
+        "uptime_seconds": {
+          ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)"
+        },
+        
+        "firmware_version": {
+          ".validate": "!newData.exists() || newData.isString()"
+        }
+      }
+    },
+    
+    "gateways": {
+      ".read": "auth != null"
+    },
+    
+    "nodes": {
+      ".read": "auth != null"
+    },
+    
+    "sensor_data": {
+      ".read": "auth != null"
+    },
+    
+    "routing_tables": {
+      ".read": "auth != null"
+    },
+    
+    "events": {
+      ".read": "auth != null"
+    }
+  }
+}

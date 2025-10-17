@@ -1,0 +1,177 @@
+{
+  "_comment": "Firebase Realtime Database - Command Queue Example Structure",
+  "_usage": "Import this into Firebase Console → Database → Import JSON",
+  
+  "commands": {
+    "0xABCD": {
+      "_comment": "Example Gateway ID (replace with actual MAC-based ID)",
+      
+      "pending": {
+        "_comment": "Commands waiting to be processed by Gateway",
+        
+        "cmd_1697500000001": {
+          "type": "start_provisioning",
+          "params": {
+            "durationMs": 600000,
+            "maxSessions": 4
+          },
+          "timestamp": 1697500000001,
+          "status": "pending",
+          "priority": 1,
+          "created_by": "mobile_app",
+          "user_id": "user_123"
+        },
+        
+        "cmd_1697500060001": {
+          "type": "stop_provisioning",
+          "params": {},
+          "timestamp": 1697500060001,
+          "status": "pending",
+          "priority": 2
+        },
+        
+        "cmd_1697500120001": {
+          "type": "set_netkey",
+          "params": {
+            "networkKey": "0102030405060708090A0B0C0D0E0F10",
+            "authToken": "1112131415161718",
+            "networkId": 4660,
+            "keyVersion": 2
+          },
+          "timestamp": 1697500120001,
+          "status": "pending",
+          "priority": 0,
+          "created_by": "mobile_app",
+          "user_id": "admin_001"
+        }
+      },
+      
+      "processing": {
+        "_comment": "Commands currently being executed by Gateway",
+        
+        "cmd_1697499999001": {
+          "type": "start_provisioning",
+          "params": {
+            "durationMs": 300000,
+            "maxSessions": 2
+          },
+          "timestamp": 1697499999001,
+          "status": "processing",
+          "startedAt": 1697500000000,
+          "progress": 50,
+          "estimated_completion": 1697500150000
+        }
+      },
+      
+      "completed": {
+        "_comment": "Successfully executed commands",
+        
+        "cmd_1697499900001": {
+          "type": "set_netkey",
+          "params": {
+            "keyVersion": 1,
+            "networkId": 4660
+          },
+          "result": "success",
+          "message": "Network key distributed to 5 nodes",
+          "timestamp": 1697499900001,
+          "completedAt": 1697499910001,
+          "executionTimeMs": 10000,
+          "details": {
+            "nodes_updated": 5,
+            "nodes_failed": 0,
+            "failed_nodes": []
+          }
+        },
+        
+        "cmd_1697499850001": {
+          "type": "start_provisioning",
+          "result": "success",
+          "message": "Fast discovery mode activated for 600000ms",
+          "timestamp": 1697499850001,
+          "completedAt": 1697499851000,
+          "executionTimeMs": 1000,
+          "details": {
+            "mode": "fast_discovery",
+            "hello_interval": 30,
+            "duration_ms": 600000
+          }
+        }
+      },
+      
+      "failed": {
+        "_comment": "Failed or rejected commands",
+        
+        "cmd_1697499800001": {
+          "type": "start_provisioning",
+          "result": "failed",
+          "message": "Already in provisioning mode",
+          "timestamp": 1697499800001,
+          "failedAt": 1697499801001,
+          "executionTimeMs": 1000,
+          "errorCode": "ALREADY_RUNNING",
+          "retryable": true
+        },
+        
+        "cmd_1697499700001": {
+          "type": "unknown_command",
+          "result": "failed",
+          "message": "Unknown command type",
+          "timestamp": 1697499700001,
+          "failedAt": 1697499701001,
+          "errorCode": "UNKNOWN_COMMAND",
+          "retryable": false
+        }
+      }
+    }
+  },
+  
+  "command_results": {
+    "_comment": "Current status of last command execution per gateway",
+    
+    "0xABCD": {
+      "last_command_id": "cmd_1697500000001",
+      "last_command_type": "start_provisioning",
+      "status": "success",
+      "message": "Fast discovery mode activated for 600000ms",
+      "timestamp": 1697500000001,
+      "gateway_online": true,
+      "last_poll": 1697500005000,
+      "last_heartbeat": 1697500005500
+    }
+  },
+  
+  "gateway_status": {
+    "_comment": "Real-time gateway status for command eligibility checks",
+    
+    "0xABCD": {
+      "online": true,
+      "provisioning_active": false,
+      "connected_nodes": 5,
+      "can_accept_commands": true,
+      "last_heartbeat": 1697500005000,
+      "current_operation": null,
+      "wifi_rssi": -45,
+      "free_heap": 180000,
+      "uptime_seconds": 86400,
+      "firmware_version": "1.0.0"
+    }
+  },
+  
+  "_metadata": {
+    "schema_version": "1.0.0",
+    "created_at": "2025-10-17",
+    "description": "Command queue structure for Gateway remote control",
+    "supported_commands": [
+      "start_provisioning",
+      "stop_provisioning",
+      "set_netkey"
+    ],
+    "command_retention": {
+      "pending": "5 minutes",
+      "processing": "2 minutes timeout",
+      "completed": "24 hours",
+      "failed": "24 hours"
+    }
+  }
+}

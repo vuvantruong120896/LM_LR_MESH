@@ -1002,6 +1002,7 @@ All uploads print formatted JSON:
 - **Firebase Real-time Database**: [firebase.google.com/docs/database](https://firebase.google.com/docs/database)
 - **ESP32 Firebase Client**: [github.com/mobizt/Firebase-ESP32](https://github.com/mobizt/Firebase-ESP32)
 - **Project Documentation**:
+  - `FIREBASE_COMMAND_QUEUE.md` - **Command queue architecture for Mobile App control**
   - `WIFI_CONNECTION_SERVICE_REFERENCE.md` - WiFi service API reference
   - `PHASE3_COMPLETION_REPORT.md` - Firebase integration implementation details
   - `MEMORY_LEAK_DETECTION.md` - Memory optimization analysis
