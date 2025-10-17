@@ -2,8 +2,20 @@
 #define _NODE_CONFIG_H
 
 // Hardware pin definitions for Node (TTGO T-BEAM v1.1)
+// Ensure these override any defaults from led_control.h without redefinition warnings
+#ifdef BOARD_LED
+#undef BOARD_LED
+#endif
 #define BOARD_LED   0
+
+#ifdef LED_ON
+#undef LED_ON
+#endif
 #define LED_ON      LOW
+
+#ifdef LED_OFF
+#undef LED_OFF
+#endif
 #define LED_OFF     HIGH
 
 // SPI pin configuration for Node (ESP32 - same as Gateway)
