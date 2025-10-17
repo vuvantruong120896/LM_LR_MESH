@@ -1,11 +1,14 @@
 #include "firebase_client.h"
 #include "TimeSyncService.h"
 #include <time.h>
+#include <esp_task_wdt.h>
 
 // Constants
-constexpr uint8_t DEFAULT_MAX_RETRIES = 3;
-constexpr uint32_t DEFAULT_RETRY_DELAY_MS = 1000;
-constexpr uint32_t UPLOAD_TIMEOUT_MS = 10000;
+// CRITICAL: Reduced retries and timeout to prevent task watchdog timeout (5s)
+// With 3 retries + 10s timeout = up to 35s total, causing watchdog abort
+constexpr uint8_t DEFAULT_MAX_RETRIES = 1;     // 1 retry = 2 total attempts max
+constexpr uint32_t DEFAULT_RETRY_DELAY_MS = 500;  // Reduced from 1000ms
+constexpr uint32_t UPLOAD_TIMEOUT_MS = 5000;   // Reduced from 10s to 5s
 
 FirebaseClient::FirebaseClient(
     const char* firebaseHost,
@@ -136,6 +139,9 @@ FirebaseClient::UploadResult FirebaseClient::uploadSensorData(
     
     // MEMORY FIX: Small delay between uploads to prevent TCP connection buildup
     delay(100);
+    
+    // Reset watchdog between uploads (each upload can take ~5s)
+    esp_task_wdt_reset();
     
     // 2. Time-series data (for historical charts)
     String timeSeriesPath = String("sensor_data/") + nodeIdStr + "/" + String(result.timestamp);

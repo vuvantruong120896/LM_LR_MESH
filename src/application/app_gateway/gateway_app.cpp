@@ -556,6 +556,10 @@ void GatewayApp::processGatewayPackets(void* parameter) {
             ESP_LOGD(TAG, "[GATEWAY-TASK] Processing received mesh packet");
             ESP_LOGD(TAG, "[GATEWAY-TASK] Queue size: %d", GatewayApp::instance->radio.getReceivedQueueSize());
 
+            // CRITICAL FIX: Reset watchdog before each packet processing
+            // Firebase upload can take 8-10 seconds per packet
+            esp_task_wdt_reset();
+
             AppPacket<uint8_t>* packet = GatewayApp::instance->radio.getNextAppPacket<uint8_t>();
             
             if (!packet) {
@@ -568,6 +572,9 @@ void GatewayApp::processGatewayPackets(void* parameter) {
 
             // Upload to Firebase (includes RSSI and SNR from packet)
             GatewayApp::instance->uploadToFirebase(sensorPacket);
+
+            // CRITICAL FIX: Reset watchdog after Firebase upload (can take 8-10s)
+            esp_task_wdt_reset();
 
             // CRITICAL: Delete packet to free memory
             GatewayApp::instance->radio.deletePacket(packet);
