@@ -32,5 +32,7 @@ void led_pattern_startup();
 void led_pattern_error();
 void led_pattern_connected();
 void led_pattern_message();
+void led_pattern_provisioning();  // Slow breathing pattern for provisioning mode
+void led_pattern_provision_success();  // Fast flashing for 3 seconds when provisioned
 
 #endif // _LED_CONTROL_H

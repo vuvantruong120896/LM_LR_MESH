@@ -41,3 +41,19 @@ void led_pattern_connected() {
 void led_pattern_message() {
     led_flash(1, 100);   // 1 very quick flash for message received
 }
+
+void led_pattern_provisioning() {
+    // Slow breathing pattern: 2 medium flashes to indicate waiting for provisioning
+    led_flash(2, 500);  // 2 slower flashes - provisioning mode
+}
+
+void led_pattern_provision_success() {
+    // Fast continuous flashing for 3 seconds to indicate successful provisioning
+    unsigned long startTime = millis();
+    while (millis() - startTime < 3000) {  // 3 seconds
+        led_on();
+        delay(100);  // Fast on
+        led_off();
+        delay(100);  // Fast off
+    }
+}

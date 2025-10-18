@@ -209,6 +209,13 @@ public:
      */
     String getLastError() const;
 
+    /**
+     * @brief Set user context for multi-user Firebase paths
+     * @param userUID User UID from Firebase Authentication
+     * @param gatewayMAC Gateway MAC address (e.g., "AA:BB:CC:DD:EE:FF")
+     */
+    void setUserContext(const String& userUID, const String& gatewayMAC);
+
 private:
     // RAII helper for mutex
     class LockGuard {
@@ -235,6 +242,8 @@ private:
     const char* m_firebaseHost;
     const char* m_firebaseAuth;
     String m_gatewayId;  // Use String instead of const char* to avoid dangling pointer
+    String m_userUID;    // User UID for multi-user paths
+    String m_gatewayMAC; // Gateway MAC address for multi-user paths
 
     // Firebase objects
     FirebaseData m_firebaseData;

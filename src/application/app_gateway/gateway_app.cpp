@@ -24,7 +24,8 @@ GatewayApp::GatewayApp()
       firebaseClient(nullptr),
       statusCounter(0),
       sensorCounter(0),
-      statusPacket(new gatewayStatus) {
+      statusPacket(new gatewayStatus),
+      provisionManager(nullptr) {
     instance = this;
     gatewayState.bootTime = millis();
 }
@@ -33,6 +34,7 @@ GatewayApp::~GatewayApp() {
     delete statusPacket;
     delete firebaseClient;
     delete wifiService;
+    delete provisionManager;
 }
 
 void GatewayApp::setup() {
@@ -44,6 +46,31 @@ void GatewayApp::setup() {
 
     led_init();
     led_pattern_startup();
+
+    // ===== BLE PROVISIONING CHECK =====
+    // Create provision manager and check if device is provisioned
+    provisionManager = new ProvisionManager();
+    
+    if (!provisionManager->isProvisioned()) {
+        ESP_LOGW(TAG, "⚠️ Device not provisioned! Gateway will operate in offline mode");
+        ESP_LOGI(TAG, "- Mesh network: ACTIVE");
+        ESP_LOGI(TAG, "- Sensor monitoring: ACTIVE");
+        ESP_LOGI(TAG, "- Data buffering: ACTIVE (to Flash)");
+        ESP_LOGI(TAG, "- Firebase upload: DISABLED (no user context)");
+        ESP_LOGI(TAG, "");
+        ESP_LOGI(TAG, "To enable Firebase upload, provision via mobile app");
+        led_pattern_error(); // Indicate provisioning required
+        
+        // Start BLE provisioning (non-blocking)
+        provisionManager->startProvisioningIfNeeded();
+        
+        // Continue with setup in offline mode (no WiFi, no Firebase)
+        // Skip to mesh initialization
+        ESP_LOGI(TAG, "Continuing setup in OFFLINE mode...");
+    } else {
+        ESP_LOGI(TAG, "✅ Device is provisioned, continuing setup in ONLINE mode...");
+    }
+    // ===== END BLE PROVISIONING CHECK =====
 
     // Initialize mesh security first
     if (!initializeMeshSecurity()) {
@@ -90,20 +117,37 @@ void GatewayApp::setup() {
     // Log security status
     logSecurityStatus();
     
-    setupLoRaMesher();
-    setupWiFi();
-    setupFirebase();
-    setupTimeSync();  // Setup NTP time synchronization
-    
-    // Register callback to upload routing table when it changes
-    RoutingTableService::setRoutingTableChangedCallback(onRoutingTableChanged);
-    ESP_LOGI(TAG, "Registered routing table change callback for real-time Firebase upload");
-    
-    // Routing table will be built from scratch via HELLO packets
-    ESP_LOGI(TAG, "Routing table will be built from scratch via HELLO protocol");
-
-    ESP_LOGI(TAG, "Gateway setup complete");
-    led_pattern_connected();
+    // Only setup mesh, WiFi and Firebase if provisioned
+    if (provisionManager && provisionManager->isProvisioned()) {
+        setupLoRaMesher();
+        setupWiFi();
+        setupFirebase();
+        setupTimeSync();  // Setup NTP time synchronization
+        
+        // Register callback to upload routing table when it changes
+        RoutingTableService::setRoutingTableChangedCallback(onRoutingTableChanged);
+        ESP_LOGI(TAG, "Registered routing table change callback for real-time Firebase upload");
+        
+        // Initialize offline data buffer (only when provisioned)
+        if (OfflineDataBuffer::initialize()) {
+            uint16_t count, maxSize;
+            uint8_t percentFull;
+            OfflineDataBuffer::getStats(count, maxSize, percentFull);
+            ESP_LOGI(TAG, "📦 Offline buffer ready: %u/%u samples (%u%% full)", count, maxSize, percentFull);
+        } else {
+            ESP_LOGW(TAG, "⚠️ Failed to initialize offline buffer");
+        }
+        
+        // Routing table will be built from scratch via HELLO packets
+        ESP_LOGI(TAG, "Routing table will be built from scratch via HELLO protocol");
+        
+        ESP_LOGI(TAG, "✅ Gateway setup complete (provisioned mode)");
+        led_pattern_connected();
+    } else {
+        ESP_LOGI(TAG, "⏭️ Skipping mesh/WiFi/Firebase setup (not provisioned - waiting for BLE provisioning)");
+        ESP_LOGI(TAG, "🔵 Gateway in provisioning mode - use mobile app to configure");
+        led_pattern_provisioning();  // Indicate provisioning mode
+    }
 }
 
 void GatewayApp::initializeServices() {
@@ -136,7 +180,40 @@ void GatewayApp::initializeServices() {
 }
 
 void GatewayApp::loop() {
+    // Check if provisioning just succeeded (show LED success pattern)
+    static bool successShown = false;
+    if (provisionManager && provisionManager->provisionSucceeded() && !successShown) {
+        ESP_LOGI(TAG, "🎉 Showing provision success LED pattern...");
+        led_pattern_provision_success();  // 3 seconds of fast flashing
+        provisionManager->clearProvisionSuccessFlag();
+        successShown = true;
+    }
+    
+    // Check if provisioning completed and needs restart
+    if (provisionManager && provisionManager->needsRestart()) {
+        ESP_LOGI(TAG, "🔄 Provisioning complete! Restarting NOW...");
+        delay(500);  // Short delay for stability
+        esp_restart();
+    }
+    
+    // Check provision status once
+    static bool provisionStatusChecked = false;
+    static bool isProvisioned = false;
+    
+    if (!provisionStatusChecked && provisionManager) {
+        isProvisioned = provisionManager->isProvisioned();
+        provisionStatusChecked = true;
+        ESP_LOGI(TAG, "Provision status: %s", isProvisioned ? "PROVISIONED" : "NOT PROVISIONED");
+    }
+    
     uint32_t currentTime = millis();
+    
+    // If not provisioned, only handle BLE provisioning events
+    if (!isProvisioned) {
+        // Wait for provisioning to complete
+        delay(100); // Small delay to allow BLE events to process
+        return;
+    }
     
     // Memory leak detection - log heap status every 30 seconds
     static uint32_t lastHeapCheck = 0;
@@ -166,18 +243,64 @@ void GatewayApp::loop() {
         lastHeapCheck = currentTime;
     }
 
-    // Update WiFi service (handles auto-reconnect)
+    // Update WiFi service (handles auto-reconnect) - only if provisioned
     if (wifiService) {
         wifiService->update();
     }
 
-    // Periodic NTP re-sync (every 1 hour) and time broadcast (every 5 minutes)
+    // Sync offline buffer to Firebase when online (only if provisioned)
+    if (isProvisioned && gatewayState.wifiConnected && firebaseClient) {
+        static uint32_t lastBufferSync = 0;
+        const uint32_t BUFFER_SYNC_INTERVAL = 5000; // Sync every 5 seconds when online
+        
+        if (currentTime - lastBufferSync >= BUFFER_SYNC_INTERVAL) {
+            uint16_t bufferedCount = OfflineDataBuffer::getBufferedCount();
+            
+            if (bufferedCount > 0) {
+                ESP_LOGI(TAG, "📤 Syncing offline buffer: %u samples pending", bufferedCount);
+                
+                // Upload up to 10 samples per cycle to avoid blocking
+                const uint16_t MAX_UPLOADS_PER_CYCLE = 10;
+                uint16_t uploaded = 0;
+                
+                for (uint16_t i = 0; i < MAX_UPLOADS_PER_CYCLE && bufferedCount > 0; i++) {
+                    String nodeId;
+                    sensorData data;
+                    
+                    if (OfflineDataBuffer::getOldestData(nodeId, data)) {
+                        // Upload to Firebase with RSSI/SNR = 0 (stale data)
+                        auto result = firebaseClient->uploadSensorData(data, 0, 0.0f);
+                        
+                        if (result.success) {
+                            // Remove from buffer after successful upload
+                            OfflineDataBuffer::removeOldest();
+                            uploaded++;
+                            bufferedCount--;
+                            ESP_LOGD(TAG, "✅ Synced buffered data from %s", nodeId.c_str());
+                        } else {
+                            // Failed to upload, keep in buffer and retry later
+                            ESP_LOGW(TAG, "❌ Failed to sync buffered data: %s", result.errorMessage.c_str());
+                            break; // Stop trying for this cycle
+                        }
+                    }
+                }
+                
+                if (uploaded > 0) {
+                    ESP_LOGI(TAG, "📤 Synced %u buffered samples (%u remaining)", uploaded, bufferedCount);
+                }
+            }
+            
+            lastBufferSync = currentTime;
+        }
+    }
+
+    // Periodic NTP re-sync (every 1 hour) and time broadcast (every 5 minutes) - only if provisioned
     static uint32_t lastNTPSync = 0;
     const uint32_t NTP_RESYNC_INTERVAL = 3600000;  // 1 hour
     const uint32_t TIME_BROADCAST_INTERVAL = 300000;  // 5 minutes
     
-    // Re-sync with NTP every hour (if WiFi connected)
-    if (gatewayState.wifiConnected && (currentTime - lastNTPSync >= NTP_RESYNC_INTERVAL)) {
+    // Re-sync with NTP every hour (if WiFi connected and provisioned)
+    if (isProvisioned && gatewayState.wifiConnected && (currentTime - lastNTPSync >= NTP_RESYNC_INTERVAL)) {
         ESP_LOGI(TAG, "⏰ Periodic NTP re-sync");
         if (TimeSyncService::syncWithNTP("pool.ntp.org", 25200, 0)) {
             gatewayState.ntpSynced = true;
@@ -276,10 +399,20 @@ void GatewayApp::setupLoRaMesher() {
 void GatewayApp::setupWiFi() {
     ESP_LOGI(TAG, "Setting up WiFi connection...");
 
-    // Create WiFi service instance
+    // Load WiFi credentials from provisioned data
+    String ssid, password;
+    if (!provisionManager->getWiFiCredentials(ssid, password)) {
+        ESP_LOGE(TAG, "Failed to load WiFi credentials from NVS!");
+        led_pattern_error();
+        return;
+    }
+    
+    ESP_LOGI(TAG, "Loaded WiFi SSID from provisioning: %s", ssid.c_str());
+
+    // Create WiFi service instance with provisioned credentials
     wifiService = new WiFiConnectionService(
-        WIFI_SSID,
-        WIFI_PASSWORD,
+        ssid.c_str(),
+        password.c_str(),
         true,   // auto-reconnect enabled
         1000    // initial reconnect interval: 1 second
     );
@@ -300,7 +433,7 @@ void GatewayApp::setupWiFi() {
     }
 
     // Connect to WiFi (with 15-second timeout)
-    ESP_LOGI(TAG, "Connecting to WiFi: %s", WIFI_SSID);
+    ESP_LOGI(TAG, "Connecting to WiFi: %s", ssid.c_str());
     if (wifiService->connect(15000)) {
         gatewayState.wifiConnected = true;
         ESP_LOGI(TAG, "WiFi connected! IP: %s, MAC: %s, RSSI: %d dBm",
@@ -316,18 +449,29 @@ void GatewayApp::setupWiFi() {
 void GatewayApp::setupFirebase() {
     ESP_LOGI(TAG, "Setting up Firebase connection...");
 
-    // Create Gateway ID from last 2 bytes of MAC address
-    String macAddr = WiFi.macAddress();
-    macAddr.replace(":", "");
-    String gatewayId = String(FIREBASE_GATEWAY_ID_PREFIX);
-    gatewayId += macAddr.substring(macAddr.length() - 4);
+    // Load user UID from provisioning
+    String userUID;
+    if (!provisionManager->getUserUID(userUID)) {
+        ESP_LOGE(TAG, "Failed to load user UID from NVS!");
+        led_pattern_error();
+        return;
+    }
+    
+    ESP_LOGI(TAG, "User UID from provisioning: %s", userUID.c_str());
+
+    // Create Gateway MAC address string
+    String gatewayMAC = WiFi.macAddress();
+    ESP_LOGI(TAG, "Gateway MAC: %s", gatewayMAC.c_str());
 
     // Create Firebase client instance
     firebaseClient = new FirebaseClient(
         FIREBASE_HOST,
         FIREBASE_AUTH,
-        gatewayId.c_str()
+        gatewayMAC.c_str()  // Use MAC as gateway ID
     );
+
+    // Set user context for multi-user Firebase paths
+    firebaseClient->setUserContext(userUID, gatewayMAC);
 
     // Configure retry behavior
     firebaseClient->setRetryConfig(3, 1000);  // 3 retries, 1 second delay
@@ -342,11 +486,12 @@ void GatewayApp::setupFirebase() {
     // Connect to Firebase
     if (firebaseClient->connect()) {
         gatewayState.firebaseConnected = true;
-        ESP_LOGI(TAG, "🔥 Firebase connected! Gateway ID: %s", gatewayId.c_str());
+        ESP_LOGI(TAG, "🔥 Firebase connected! User: %s, Gateway: %s", 
+                 userUID.c_str(), gatewayMAC.c_str());
 
         // Upload initial gateway info
         auto result = firebaseClient->updateGatewayInfo(
-            WiFi.macAddress(),
+            gatewayMAC,
             wifiService->getLocalIP(),
             "1.0.0"  // Firmware version
         );
@@ -364,11 +509,6 @@ void GatewayApp::setupFirebase() {
 }
 
 void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
-    if (!firebaseClient || !gatewayState.firebaseConnected) {
-        ESP_LOGW(TAG, "Firebase not available for upload");
-        return;
-    }
-
     // Check if we're in provisioning mode (Fast Discovery)
     // Don't process/upload sensor data during provisioning - only Hello packets
     uint8_t currentMode = radio.getCurrentHelloMode();
@@ -390,10 +530,6 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
             s->nodeId = sourceNode;
         }
 
-        ESP_LOGI(TAG, "☁️ Uploading sensor data from node 0x%04X to Firebase", sourceNode);
-        ESP_LOGI(TAG, "🔢 Counter: %u, 🌡️ Temp: %.1f°C, 💧 Hum: %.1f%%, 🔋 Batt: %.2fV, 📡 NodeID: 0x%04X",
-             s->counter, s->temperature, s->humidity, s->battery, s->nodeId);
-
         // Get RSSI and SNR from routing table for this node
         int8_t rssi = 0;
         float snr = 0.0f;
@@ -402,21 +538,44 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
         if (routeNode) {
             rssi = routeNode->receivedRSSI;
             snr = routeNode->receivedSNR;
-            ESP_LOGI(TAG, "📡 Signal quality - RSSI: %d dBm, SNR: %.1f dB (from routing table)", rssi, snr);
-        } else {
-            ESP_LOGW(TAG, "⚠️ Node 0x%04X not found in routing table - no RSSI/SNR data", sourceNode);
         }
 
-        // Upload to Firebase with RSSI and SNR from routing table
-        auto result = firebaseClient->uploadSensorData(*s, rssi, snr);
+        char nodeIdStr[16];
+        snprintf(nodeIdStr, sizeof(nodeIdStr), "0x%04X", sourceNode);
 
-        if (result.success) {
-            gatewayState.packetsUploaded++;
-            led_pattern_message(); // Flash LED on successful upload
-            ESP_LOGI(TAG, "✅ Upload successful (%d bytes)", result.payloadSize);
+        // Try to upload to Firebase if online and provisioned
+        if (firebaseClient && gatewayState.firebaseConnected) {
+            ESP_LOGI(TAG, "☁️ Uploading sensor data from node %s to Firebase", nodeIdStr);
+            ESP_LOGI(TAG, "🔢 Counter: %u, 🌡️ Temp: %.1f°C, 💧 Hum: %.1f%%, 🔋 Batt: %.2fV",
+                     s->counter, s->temperature, s->humidity, s->battery);
+
+            auto result = firebaseClient->uploadSensorData(*s, rssi, snr);
+
+            if (result.success) {
+                gatewayState.packetsUploaded++;
+                led_pattern_message(); // Flash LED on successful upload
+                ESP_LOGI(TAG, "✅ Upload successful (%d bytes)", result.payloadSize);
+            } else {
+                gatewayState.uploadErrors++;
+                ESP_LOGW(TAG, "❌ Firebase upload failed: %s", result.errorMessage.c_str());
+                
+                // Buffer data for later upload (RSSI/SNR will be 0 when synced)
+                if (OfflineDataBuffer::addData(String(nodeIdStr), *s)) {
+                    ESP_LOGI(TAG, "📦 Data buffered to Flash for later sync");
+                } else {
+                    ESP_LOGW(TAG, "⚠️ Failed to buffer data");
+                }
+            }
         } else {
-            gatewayState.uploadErrors++;
-            ESP_LOGW(TAG, "❌ Firebase upload failed: %s", result.errorMessage.c_str());
+            // Not provisioned or offline - buffer data
+            ESP_LOGD(TAG, "📦 Firebase offline - buffering data from node %s", nodeIdStr);
+            
+            if (OfflineDataBuffer::addData(String(nodeIdStr), *s)) {
+                uint16_t bufferedCount = OfflineDataBuffer::getBufferedCount();
+                ESP_LOGI(TAG, "📦 Data buffered (%u/%u samples)", bufferedCount, OfflineDataBuffer::MAX_BUFFER_SIZE);
+            } else {
+                ESP_LOGW(TAG, "⚠️ Failed to buffer data");
+            }
         }
     } else {
         ESP_LOGW(TAG, "Packet too small to contain sensorData structure");
@@ -1027,32 +1186,49 @@ sensorData GatewayApp::simulateGatewaySensorData() {
 }
 
 void GatewayApp::uploadGatewaySensorData() {
-    if (!firebaseClient || !gatewayState.firebaseConnected) {
-        ESP_LOGW(TAG, "Firebase not available for gateway sensor upload");
-        return;
-    }
-    
-    // Generate gateway sensor data
+    // Generate gateway sensor data (always, regardless of provision status)
     sensorData gatewaySensor = simulateGatewaySensorData();
     
     // Get WiFi RSSI for Gateway sensor data (Gateway signal quality to router)
     int8_t wifiRssi = wifiService ? wifiService->getRSSI() : -90;  // Default fallback if WiFi not available
     float gatewaySnr = 10.0f;  // Fixed SNR value for Gateway data
     
-    ESP_LOGI(TAG, "🏠 Uploading Gateway sensor data to Firebase");
-    ESP_LOGI(TAG, "🔢 Counter: %u, 🌡️ Temp: %.1f°C, 💧 Hum: %.1f%%, ⚡ Power: %.1fV, 📡 NodeID: 0x%04X",
-             gatewaySensor.counter, gatewaySensor.temperature, gatewaySensor.humidity, 
-             gatewaySensor.battery, gatewaySensor.nodeId);
-    ESP_LOGI(TAG, "📶 WiFi Signal - RSSI: %d dBm, SNR: %.1f dB (fixed value)", wifiRssi, gatewaySnr);
+    char nodeIdStr[16];
+    snprintf(nodeIdStr, sizeof(nodeIdStr), "0x%04X", gatewaySensor.nodeId);
     
-    // Upload to Firebase with WiFi RSSI and fixed SNR
-    auto result = firebaseClient->uploadSensorData(gatewaySensor, wifiRssi, gatewaySnr);
-    
-    if (result.success) {
-        gatewayState.packetsUploaded++;
-        ESP_LOGI(TAG, "✅ Gateway sensor upload successful (%d bytes)", result.payloadSize);
+    // Try to upload if online and provisioned
+    if (firebaseClient && gatewayState.firebaseConnected) {
+        ESP_LOGI(TAG, "🏠 Uploading Gateway sensor data to Firebase");
+        ESP_LOGI(TAG, "🔢 Counter: %u, 🌡️ Temp: %.1f°C, 💧 Hum: %.1f%%, ⚡ Power: %.1fV, 📡 NodeID: %s",
+                 gatewaySensor.counter, gatewaySensor.temperature, gatewaySensor.humidity, 
+                 gatewaySensor.battery, nodeIdStr);
+        ESP_LOGI(TAG, "📶 WiFi Signal - RSSI: %d dBm, SNR: %.1f dB", wifiRssi, gatewaySnr);
+        
+        // Upload to Firebase with WiFi RSSI and fixed SNR
+        auto result = firebaseClient->uploadSensorData(gatewaySensor, wifiRssi, gatewaySnr);
+        
+        if (result.success) {
+            gatewayState.packetsUploaded++;
+            ESP_LOGI(TAG, "✅ Gateway sensor upload successful (%d bytes)", result.payloadSize);
+        } else {
+            gatewayState.uploadErrors++;
+            ESP_LOGE(TAG, "❌ Gateway sensor upload failed: %s", result.errorMessage.c_str());
+            
+            // Buffer for later (RSSI/SNR will be 0 when synced)
+            if (OfflineDataBuffer::addData(String(nodeIdStr), gatewaySensor)) {
+                ESP_LOGI(TAG, "📦 Gateway data buffered to Flash for later sync");
+            }
+        }
     } else {
-        gatewayState.uploadErrors++;
-        ESP_LOGE(TAG, "❌ Gateway sensor upload failed: %s", result.errorMessage.c_str());
+        // Not provisioned or offline - buffer data
+        ESP_LOGD(TAG, "📦 Firebase offline - buffering Gateway sensor data");
+        
+        if (OfflineDataBuffer::addData(String(nodeIdStr), gatewaySensor)) {
+            uint16_t bufferedCount = OfflineDataBuffer::getBufferedCount();
+            ESP_LOGI(TAG, "📦 Gateway data buffered (%u/%u samples)", bufferedCount, OfflineDataBuffer::MAX_BUFFER_SIZE);
+        } else {
+            ESP_LOGW(TAG, "⚠️ Failed to buffer Gateway data");
+        }
     }
 }
+

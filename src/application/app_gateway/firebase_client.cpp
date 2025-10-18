@@ -73,8 +73,12 @@ bool FirebaseClient::connect() {
     
     m_status = ConnectionStatus::CONNECTING;
     
-    // Test connection with a simple read
-    String testPath = String("gateways/") + m_gatewayId + "/info";
+    // Test connection with a simple read - gateways/{userUID}/{gatewayMAC}/info
+    String testPath = "gateways/";
+    testPath += m_userUID;
+    testPath += "/";
+    testPath += m_gatewayMAC;
+    testPath += "/info";
     
     if (Firebase.setTimestamp(m_firebaseData, testPath.c_str())) {
         m_status = ConnectionStatus::CONNECTED;
@@ -132,9 +136,15 @@ FirebaseClient::UploadResult FirebaseClient::uploadSensorData(
     
     uint32_t startTime = millis();
     
-    // Upload to two locations:
-    // 1. Latest data (for dashboard real-time view)
-    String latestPath = String("nodes/") + nodeIdStr + "/latest_data";
+    // Upload to two locations with multi-user paths:
+    // 1. Latest data (for dashboard real-time view): nodes/{userUID}/{gatewayMAC}/{nodeId}/latest_data
+    String latestPath = "nodes/";
+    latestPath += m_userUID;
+    latestPath += "/";
+    latestPath += m_gatewayMAC;
+    latestPath += "/";
+    latestPath += nodeIdStr;
+    latestPath += "/latest_data";
     bool success1 = uploadToPathWithRetry(latestPath, jsonData);
     
     // MEMORY FIX: Small delay between uploads to prevent TCP connection buildup
@@ -143,8 +153,13 @@ FirebaseClient::UploadResult FirebaseClient::uploadSensorData(
     // Reset watchdog between uploads (each upload can take ~5s)
     esp_task_wdt_reset();
     
-    // 2. Time-series data (for historical charts)
-    String timeSeriesPath = String("sensor_data/") + nodeIdStr + "/" + String(result.timestamp);
+    // 2. Time-series data (for historical charts): sensor_data/{userUID}/{nodeId}/{timestamp}
+    String timeSeriesPath = "sensor_data/";
+    timeSeriesPath += m_userUID;
+    timeSeriesPath += "/";
+    timeSeriesPath += nodeIdStr;
+    timeSeriesPath += "/";
+    timeSeriesPath += String(result.timestamp);
     bool success2 = uploadToPathWithRetry(timeSeriesPath, jsonData);
     
     // MEMORY FIX: Force String cleanup
@@ -203,7 +218,12 @@ FirebaseClient::UploadResult FirebaseClient::uploadGatewayStatus(
     
     uint32_t startTime = millis();
     
-    String path = String("gateways/") + m_gatewayId + "/status";
+    // Path: gateways/{userUID}/{gatewayMAC}/status
+    String path = "gateways/";
+    path += m_userUID;
+    path += "/";
+    path += m_gatewayMAC;
+    path += "/status";
     result.success = uploadToPathWithRetry(path, jsonData);
     
     // MEMORY FIX: Force String cleanup to prevent heap fragmentation
@@ -247,7 +267,12 @@ FirebaseClient::UploadResult FirebaseClient::uploadRoutingTable(
     
     uint32_t startTime = millis();
     
-    String path = String("gateways/") + m_gatewayId + "/routing_table";
+    // Path: gateways/{userUID}/{gatewayMAC}/routing_table
+    String path = "gateways/";
+    path += m_userUID;
+    path += "/";
+    path += m_gatewayMAC;
+    path += "/routing_table";
     result.success = uploadToPathWithRetry(path, jsonData);
     
     // MEMORY FIX: Force String cleanup to prevent heap fragmentation
@@ -292,7 +317,11 @@ FirebaseClient::UploadResult FirebaseClient::logEvent(
     
     uint32_t startTime = millis();
     
-    String path = String("events/") + String(result.timestamp);
+    // Path: events/{userUID}/{timestamp}
+    String path = "events/";
+    path += m_userUID;
+    path += "/";
+    path += String(result.timestamp);
     result.success = uploadToPathWithRetry(path, jsonData);
     
     uint32_t uploadTime = millis() - startTime;
@@ -345,7 +374,12 @@ FirebaseClient::UploadResult FirebaseClient::updateGatewayInfo(
     
     uint32_t startTime = millis();
     
-    String path = String("gateways/") + m_gatewayId + "/info";
+    // Path: gateways/{userUID}/{gatewayMAC}/info
+    String path = "gateways/";
+    path += m_userUID;
+    path += "/";
+    path += m_gatewayMAC;
+    path += "/info";
     result.success = uploadToPathWithRetry(path, jsonData);
     
     uint32_t uploadTime = millis() - startTime;
@@ -393,7 +427,14 @@ FirebaseClient::UploadResult FirebaseClient::updateNodeInfo(
     
     uint32_t startTime = millis();
     
-    String path = String("nodes/") + nodeIdStr + "/info";
+    // Path: nodes/{userUID}/{gatewayMAC}/{nodeId}/info
+    String path = "nodes/";
+    path += m_userUID;
+    path += "/";
+    path += m_gatewayMAC;
+    path += "/";
+    path += nodeIdStr;
+    path += "/info";
     result.success = uploadToPathWithRetry(path, jsonData);
     
     uint32_t uploadTime = millis() - startTime;
@@ -431,6 +472,13 @@ void FirebaseClient::setAutoTimestamp(bool enabled) {
 
 String FirebaseClient::getLastError() const {
     return m_lastError;
+}
+
+void FirebaseClient::setUserContext(const String& userUID, const String& gatewayMAC) {
+    m_userUID = userUID;
+    m_gatewayMAC = gatewayMAC;
+    Serial.printf("[Firebase] User context set: UID=%s, MAC=%s\n", 
+                  userUID.c_str(), gatewayMAC.c_str());
 }
 
 // Private methods

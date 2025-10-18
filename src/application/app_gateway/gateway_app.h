@@ -6,6 +6,7 @@
 #include "firebase_client.h"
 #include "wifi_connection_service.h"
 #include "led_control.h"
+#include "offline_data_buffer.h"
 #include "../common/mesh_utils.h"
 #include "components/lora_mesh_manager/include/LoraMesher.h"
 #include "components/lora_mesh_manager/src/services/NetkeyDistributionService.h"
@@ -14,6 +15,7 @@
 #include "components/lora_mesh_manager/src/services/ProvisioningService.h"
 #include "components/lora_mesh_manager/src/services/ProvisioningProtocol.h"
 #include "components/lora_mesh_manager/src/services/TimeSyncService.h"
+#include "provision_manager.h"
 
 // Gateway state structure
 struct GatewayState {
@@ -53,6 +55,7 @@ private:
     uint32_t sensorCounter;              // Counter for gateway sensor data
     gatewayStatus* statusPacket;
     ProvisioningService* provisioningService;
+    ProvisionManager* provisionManager;
     
     // Private methods
     void setupLoRaMesher();
