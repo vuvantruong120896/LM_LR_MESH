@@ -28,21 +28,6 @@
           }
         },
         
-        "nodes": {
-          "$nodeId": {
-            ".read": "$uid === auth.uid",
-            
-            "latest_data": {
-              ".write": "auth != null"
-            },
-            
-            "info": {
-              ".write": "$uid === auth.uid || auth != null",
-              ".validate": "newData.hasChildren(['nodeId', 'gatewayMAC'])"
-            }
-          }
-        },
-        
         "commands": {
           "$gatewayMAC": {
             ".read": "$uid === auth.uid",
@@ -50,7 +35,7 @@
             
             "pending": {
               "$commandId": {
-                ".validate": "newData.hasChildren(['type', 'timestamp', 'status'])"
+                ".validate": "newData.hasChildren(['type', 'timestamp'])"
               }
             },
             
@@ -92,12 +77,52 @@
       }
     },
     
+    "nodes": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid || auth != null",
+        
+        "$gatewayMAC": {
+          "$nodeId": {
+            "latest_data": {
+              ".write": "auth != null"
+            },
+            
+            "info": {
+              ".write": "$uid === auth.uid || auth != null",
+              ".validate": "newData.hasChildren(['nodeId', 'gatewayMAC'])"
+            }
+          }
+        }
+      }
+    },
+    
     "sensor_data": {
-      ".read": "auth != null",
-      ".write": "auth != null",
-      "$nodeId": {
-        "$timestamp": {
-          ".validate": "newData.hasChildren(['temperature', 'humidity', 'timestamp'])"
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid || auth != null",
+        
+        "$nodeId": {
+          "$timestamp": {
+            ".validate": "newData.hasChildren(['temperature', 'humidity', 'timestamp'])"
+          }
+        }
+      }
+    },
+    
+    "gateways": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid || auth != null",
+        
+        "$gatewayMAC": {
+          "status": {
+            ".write": "auth != null"
+          },
+          
+          "routing_table": {
+            ".write": "auth != null"
+          }
         }
       }
     }
