@@ -24,6 +24,7 @@ GatewayApp::GatewayApp()
       firebaseClient(nullptr),
       statusCounter(0),
       sensorCounter(0),
+      lastStatusUploadTime(0),
       statusPacket(new gatewayStatus),
       provisionManager(nullptr) {
     instance = this;
@@ -316,13 +317,21 @@ void GatewayApp::loop() {
         broadcastTimeSync();
     }
 
-    // Backup periodic upload (every 5 minutes)
-    // Primary upload happens immediately via onRoutingTableChanged() callback
-    // This periodic upload serves as:
-    // - Backup mechanism in case callback fails
-    // - Ensures Firebase data stays fresh even if no changes occur
-    // - Re-syncs routing table after Firebase reconnection
-    if (gatewayState.firebaseConnected &&
+    // Routing table upload strategy:
+    // 1. Primary: Immediate upload via onRoutingTableChanged() callback when changes occur
+    // 2. Initial: Upload once immediately after Firebase connection (post-reboot)
+    // 3. Backup: Periodic upload every 5 minutes as fallback
+    static bool firstRoutingTableUploadDone = false;
+    
+    // Upload immediately on first Firebase connection after boot
+    if (gatewayState.firebaseConnected && !firstRoutingTableUploadDone) {
+        ESP_LOGI(TAG, "📡 Initial routing table upload (post-reboot)");
+        uploadRoutingTable();
+        gatewayState.lastRoutingTableUpload = currentTime;
+        firstRoutingTableUploadDone = true;
+    }
+    // Then continue with periodic backup uploads
+    else if (gatewayState.firebaseConnected &&
         (currentTime - gatewayState.lastRoutingTableUpload >= GATEWAY_ROUTING_TABLE_INTERVAL)) {
         ESP_LOGI(TAG, "⏰ Periodic backup routing table upload");
         uploadRoutingTable();
@@ -332,9 +341,19 @@ void GatewayApp::loop() {
 
     // Gateway sensor data collection and upload
     static uint32_t lastSensorUpload = 0;
-    if (gatewayState.firebaseConnected &&
+    static bool firstUploadDone = false;
+    
+    // Upload immediately on first connection after boot
+    if (gatewayState.firebaseConnected && !firstUploadDone) {
+        ESP_LOGI(TAG, "📊 Initial Gateway sensor data upload (post-reboot)");
+        uploadGatewaySensorData();
+        lastSensorUpload = currentTime;
+        firstUploadDone = true;
+    }
+    // Then continue with periodic uploads
+    else if (gatewayState.firebaseConnected &&
         (currentTime - lastSensorUpload >= GATEWAY_SENSOR_INTERVAL)) {
-        ESP_LOGI(TAG, "📊 Gateway sensor data collection");
+        ESP_LOGI(TAG, "📊 Periodic Gateway sensor data collection");
         uploadGatewaySensorData();
         lastSensorUpload = currentTime;
     }
@@ -349,6 +368,9 @@ void GatewayApp::loop() {
             led_pattern_error();   // Error pattern for disconnected
         }
     }
+
+    // Upload gateway status periodically (every 60 seconds)
+    uploadGatewayStatusPeriodic();
 
     delay(100); // Main loop delay
 }
@@ -1232,3 +1254,56 @@ void GatewayApp::uploadGatewaySensorData() {
     }
 }
 
+void GatewayApp::uploadGatewayStatusPeriodic() {
+    // Upload status every 60 seconds
+    const uint32_t UPLOAD_INTERVAL_MS = 60000;
+    
+    uint32_t currentTime = millis();
+    if (currentTime - lastStatusUploadTime < UPLOAD_INTERVAL_MS) {
+        return; // Not time yet
+    }
+    
+    // Check if provisioned and Firebase connected
+    if (!provisionManager || !provisionManager->isProvisioned()) {
+        ESP_LOGD(TAG, "📊 Skip status upload - not provisioned");
+        return;
+    }
+    
+    if (!firebaseClient || !firebaseClient->isConnected()) {
+        ESP_LOGD(TAG, "📊 Skip status upload - Firebase not connected");
+        return;
+    }
+    
+    // Collect metrics
+    uint16_t connectedNodes = 0;
+    LM_LinkedList<RouteNode>* rtList = RoutingTableService::routingTableList;
+    if (rtList) {
+        connectedNodes = rtList->getLength();
+    }
+    
+    uint32_t totalPacketsReceived = gatewayState.totalMeshPackets;
+    uint32_t totalPacketsSent = gatewayState.packetsUploaded;
+    int8_t wifiRssi = WiFi.RSSI();
+    uint32_t freeHeap = ESP.getFreeHeap();
+    uint32_t uptimeSeconds = millis() / 1000;
+    
+    ESP_LOGI(TAG, "📊 Uploading Gateway status: nodes=%u, rx=%u, tx=%u, rssi=%d, heap=%u, uptime=%u",
+             connectedNodes, totalPacketsReceived, totalPacketsSent, wifiRssi, freeHeap, uptimeSeconds);
+    
+    // Upload to Firebase
+    auto result = firebaseClient->uploadGatewayStatus(
+        connectedNodes,
+        totalPacketsReceived,
+        totalPacketsSent,
+        wifiRssi,
+        freeHeap,
+        uptimeSeconds
+    );
+    
+    if (result.success) {
+        ESP_LOGI(TAG, "✅ Gateway status uploaded successfully");
+        lastStatusUploadTime = currentTime;
+    } else {
+        ESP_LOGW(TAG, "⚠️ Failed to upload Gateway status: %s", result.errorMessage.c_str());
+    }
+}

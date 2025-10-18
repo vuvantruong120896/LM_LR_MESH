@@ -53,6 +53,7 @@ private:
     GatewayState gatewayState;
     uint32_t statusCounter;
     uint32_t sensorCounter;              // Counter for gateway sensor data
+    uint32_t lastStatusUploadTime;       // Timestamp of last gateway status upload
     gatewayStatus* statusPacket;
     ProvisioningService* provisioningService;
     ProvisionManager* provisionManager;
@@ -70,6 +71,7 @@ private:
     void uploadToFirebase(AppPacket<sensorData>* packet);
     void uploadGatewaySensorData();     // Upload gateway's own sensor data
     void uploadRoutingTable();
+    void uploadGatewayStatusPeriodic(); // Upload gateway status periodically
     sensorData simulateGatewaySensorData(); // Generate gateway sensor data
     void handleWiFiEvent(WiFiConnectionService::WiFiEvent event, int8_t rssi);
     
