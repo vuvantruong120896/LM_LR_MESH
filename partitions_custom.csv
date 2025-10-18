@@ -1,8 +1,8 @@
 # Name,   Type, SubType, Offset,  Size, Flags
 # Note: if you have increased the bootloader size, make sure to update the offsets to avoid overlap
-# Partition table for 4MB flash with OTA support
+# Partition table for 4MB flash WITHOUT OTA (optimized for larger app + SPIFFS)
+# Total 4MB: NVS(20KB) + App(2.5MB) + SPIFFS(1.4MB) = ~3.92MB
 nvs,      data, nvs,     0x9000,  0x5000,
-otadata,  data, ota,     0xe000,  0x2000,
-app0,     app,  ota_0,   0x10000, 0x180000,
-app1,     app,  ota_1,   0x190000,0x180000,
-spiffs,   data, spiffs,  0x310000,0xF0000,
+phy_init, data, phy,     0xe000,  0x1000,
+factory,  app,  factory, 0x10000, 0x280000,
+spiffs,   data, spiffs,  0x290000,0x170000,
