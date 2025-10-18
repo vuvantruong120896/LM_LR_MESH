@@ -2,7 +2,7 @@
 #define FIREBASE_COMMAND_POLLER_H
 
 #include <Arduino.h>
-#include <Firebase_ESP_Client.h>
+#include <FirebaseESP32.h>
 
 /**
  * @brief Firebase Command Poller Service

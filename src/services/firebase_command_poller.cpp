@@ -63,7 +63,7 @@ bool FirebaseCommandPoller::fetchPendingCommands() {
     ESP_LOGD(TAG, "Fetching from: %s", pendingPath.c_str());
     
     // Get all pending commands
-    if (!Firebase.RTDB.getJSON(m_fbdo, pendingPath.c_str())) {
+    if (!Firebase.getJSON(*m_fbdo, pendingPath.c_str())) {
         // Not an error - just no pending commands
         ESP_LOGD(TAG, "No pending commands (or error: %s)", m_fbdo->errorReason().c_str());
         return false;
@@ -163,11 +163,11 @@ void FirebaseCommandPoller::moveToProcessing(const Command& cmd) {
     }
     
     // Write to processing
-    if (Firebase.RTDB.setJSON(m_fbdo, processingPath.c_str(), &json)) {
+    if (Firebase.setJSON(*m_fbdo, processingPath.c_str(), json)) {
         ESP_LOGI(TAG, "✅ Command moved to processing");
         
         // Delete from pending
-        if (Firebase.RTDB.deleteNode(m_fbdo, pendingPath.c_str())) {
+        if (Firebase.deleteNode(*m_fbdo, pendingPath.c_str())) {
             ESP_LOGI(TAG, "✅ Removed from pending queue");
         } else {
             ESP_LOGW(TAG, "⚠️ Failed to remove from pending: %s", m_fbdo->errorReason().c_str());
@@ -203,11 +203,11 @@ void FirebaseCommandPoller::moveToCompleted(const Command& cmd, const String& re
     }
     
     // Write to completed
-    if (Firebase.RTDB.setJSON(m_fbdo, completedPath.c_str(), &json)) {
+    if (Firebase.setJSON(*m_fbdo, completedPath.c_str(), json)) {
         ESP_LOGI(TAG, "✅ Command marked as completed");
         
         // Delete from processing
-        Firebase.RTDB.deleteNode(m_fbdo, processingPath.c_str());
+        Firebase.deleteNode(*m_fbdo, processingPath.c_str());
     } else {
         ESP_LOGE(TAG, "❌ Failed to mark as completed: %s", m_fbdo->errorReason().c_str());
     }
@@ -237,11 +237,11 @@ void FirebaseCommandPoller::moveToFailed(const Command& cmd, const String& error
     json.set("executionTimeMs", (unsigned long)(millis() - cmd.timestamp));
     
     // Write to failed
-    if (Firebase.RTDB.setJSON(m_fbdo, failedPath.c_str(), &json)) {
+    if (Firebase.setJSON(*m_fbdo, failedPath.c_str(), json)) {
         ESP_LOGE(TAG, "✅ Command marked as failed");
         
         // Delete from processing
-        Firebase.RTDB.deleteNode(m_fbdo, processingPath.c_str());
+        Firebase.deleteNode(*m_fbdo, processingPath.c_str());
     } else {
         ESP_LOGE(TAG, "❌ Failed to mark as failed: %s", m_fbdo->errorReason().c_str());
     }
@@ -262,7 +262,7 @@ void FirebaseCommandPoller::updateCommandResult(const String& cmdId, const Strin
     json.set("gateway_online", true);
     json.set("last_poll", (unsigned long)millis());
     
-    if (Firebase.RTDB.updateNode(m_fbdo, resultPath.c_str(), &json)) {
+    if (Firebase.updateNode(*m_fbdo, resultPath.c_str(), json)) {
         ESP_LOGD(TAG, "✅ Command result updated: %s", status.c_str());
     } else {
         ESP_LOGW(TAG, "⚠️ Failed to update command result: %s", m_fbdo->errorReason().c_str());
@@ -276,7 +276,7 @@ void FirebaseCommandPoller::updateProgress(const String& cmdId, uint16_t nodesDi
     json.set("nodes_discovered", nodesDiscovered);
     json.set("time_remaining_ms", timeRemaining);
     
-    if (Firebase.RTDB.updateNode(m_fbdo, resultPath.c_str(), &json)) {
+    if (Firebase.updateNode(*m_fbdo, resultPath.c_str(), json)) {
         ESP_LOGD(TAG, "✅ Progress updated: %d nodes, %u ms remaining", nodesDiscovered, timeRemaining);
     } else {
         ESP_LOGW(TAG, "⚠️ Failed to update progress: %s", m_fbdo->errorReason().c_str());
