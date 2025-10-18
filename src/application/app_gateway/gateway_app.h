@@ -16,6 +16,7 @@
 #include "components/lora_mesh_manager/src/services/ProvisioningProtocol.h"
 #include "components/lora_mesh_manager/src/services/TimeSyncService.h"
 #include "provision_manager.h"
+#include "../../services/firebase_command_poller.h"
 
 // Gateway state structure
 struct GatewayState {
@@ -28,6 +29,13 @@ struct GatewayState {
     uint32_t bootTime = 0;
     uint32_t lastTimeSyncBroadcast = 0;  // Time of last time sync broadcast
     bool ntpSynced = false;              // True if NTP time sync successful
+    
+    // NEW: Provisioning via Firebase command
+    bool provisioningActive = false;     // True if provisioning mode active
+    uint32_t provisioningStartTime = 0;  // When provisioning started
+    uint32_t provisioningEndTime = 0;    // When provisioning should end
+    String provisioningCommandId = "";   // Current provisioning command ID
+    uint16_t nodesDiscoveredDuringProvisioning = 0; // Count of nodes discovered
 };
 
 class GatewayApp {
@@ -57,6 +65,7 @@ private:
     gatewayStatus* statusPacket;
     ProvisioningService* provisioningService;
     ProvisionManager* provisionManager;
+    FirebaseCommandPoller* commandPoller;  // NEW: Command poller for Firebase commands
     
     // Private methods
     void setupLoRaMesher();
@@ -74,6 +83,11 @@ private:
     void uploadGatewayStatusPeriodic(); // Upload gateway status periodically
     sensorData simulateGatewaySensorData(); // Generate gateway sensor data
     void handleWiFiEvent(WiFiConnectionService::WiFiEvent event, int8_t rssi);
+    
+    // NEW: Command handlers for Firebase commands
+    void handleStartProvisioning(const FirebaseCommandPoller::Command& cmd);
+    void handleStopProvisioning(const FirebaseCommandPoller::Command& cmd);
+    void updateProvisioningProgress();  // Update provisioning progress to Firebase
     
     // Static callbacks
     static void onNetkeyUpdated(const uint8_t* newKey, uint8_t version);

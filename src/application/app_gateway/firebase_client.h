@@ -216,6 +216,12 @@ public:
      */
     void setUserContext(const String& userUID, const String& gatewayMAC);
 
+    /**
+     * @brief Get Firebase data object (for command poller to share connection)
+     * @return Pointer to FirebaseData object
+     */
+    FirebaseData* getFirebaseData() { return &m_firebaseData; }
+
 private:
     // RAII helper for mutex
     class LockGuard {
