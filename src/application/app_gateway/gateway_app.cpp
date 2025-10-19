@@ -391,6 +391,8 @@ void GatewayApp::loop() {
                 handleStartProvisioning(cmd);
             } else if (cmd.type == "stop_provisioning") {
                 handleStopProvisioning(cmd);
+            } else if (cmd.type == "assign_netkey") {
+                handleAssignNetkey(cmd);
             } else {
                 ESP_LOGW(TAG, "Unknown command type: %s", cmd.type.c_str());
                 commandPoller->moveToFailed(cmd, "UNKNOWN_COMMAND", 
@@ -1494,6 +1496,124 @@ void GatewayApp::handleStopProvisioning(const FirebaseCommandPoller::Command& cm
     ESP_LOGI(TAG, "╔════════════════════════════════════════════════════════════╗");
     ESP_LOGI(TAG, "║  Provisioning Mode STOPPED                                 ║");
     ESP_LOGI(TAG, "║  Gateway returned to normal operation                      ║");
+    ESP_LOGI(TAG, "╚════════════════════════════════════════════════════════════╝");
+    ESP_LOGI(TAG, "");
+}
+
+void GatewayApp::handleAssignNetkey(const FirebaseCommandPoller::Command& cmd) {
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "╔════════════════════════════════════════════════════════════╗");
+    ESP_LOGI(TAG, "║  ASSIGN NETKEY via Firebase Command                       ║");
+    ESP_LOGI(TAG, "╚════════════════════════════════════════════════════════════╝");
+    ESP_LOGI(TAG, "Command ID: %s", cmd.id.c_str());
+    
+    // Load network config from NVS (netkey was stored during gateway registration)
+    NetworkConfig cfg;
+    if (!NVSStorageService::loadNetworkConfig(cfg)) {
+        ESP_LOGE(TAG, "❌ Failed to load network config from NVS - Gateway not registered?");
+        
+        if (commandPoller) {
+            commandPoller->moveToFailed(cmd, "NO_NETKEY", 
+                                       "Network key not found. Please register gateway first.");
+        }
+        return;
+    }
+    
+    if (!cfg.initialized) {
+        ESP_LOGE(TAG, "❌ Network config not initialized - Gateway not registered?");
+        
+        if (commandPoller) {
+            commandPoller->moveToFailed(cmd, "NETKEY_NOT_INITIALIZED", 
+                                       "Network key not initialized. Please register gateway first.");
+        }
+        return;
+    }
+    
+    ESP_LOGI(TAG, "✅ Loaded netkey from NVS:");
+    ESP_LOGI(TAG, "   Network ID: 0x%04X", cfg.networkId);
+    ESP_LOGI(TAG, "   Key Version: %d", cfg.keyVersion);
+    
+    // Update Gateway's local network key (ensure it's current)
+    if (!NetkeyDistributionService::updateLocalNetworkKey(cfg.networkKey, cfg.authToken, 
+                                                          cfg.networkId, cfg.keyVersion)) {
+        ESP_LOGE(TAG, "❌ Failed to update Gateway local network key");
+        
+        if (commandPoller) {
+            commandPoller->moveToFailed(cmd, "LOCAL_UPDATE_FAILED", 
+                                       "Failed to update Gateway's local network key");
+        }
+        return;
+    }
+    
+    ESP_LOGI(TAG, "✅ Gateway local network key updated successfully");
+    
+    // Distribute netkey to all nodes in routing table
+    ESP_LOGI(TAG, "*** DISTRIBUTING NETKEY TO ALL NODES IN ROUTING TABLE ***");
+    
+    bool distributionSuccess = false;
+    size_t routingTableSize = RoutingTableService::routingTableSize();
+    int nodesSuccessful = 0;
+    
+    if (routingTableSize > 0) {
+        ESP_LOGI(TAG, "Found %d nodes in routing table, distributing netkey...", 
+                 (int)routingTableSize);
+        
+        // Get all nodes from routing table
+        NetworkNode* nodes = RoutingTableService::getAllNetworkNodes();
+        if (nodes) {
+            distributionSuccess = NetkeyDistributionService::distributeNetkeyToAllNodes(
+                cfg.networkKey, 
+                cfg.authToken, 
+                cfg.networkId, 
+                cfg.keyVersion,
+                nodes,
+                routingTableSize
+            );
+            
+            // Count successful nodes (approximation - distributeNetkeyToAllNodes returns overall success)
+            nodesSuccessful = distributionSuccess ? routingTableSize : 0;
+            
+            delete[] nodes; // Clean up allocated memory
+            
+            ESP_LOGI(TAG, "Network-wide netkey distribution: %s", 
+                     distributionSuccess ? "SUCCESS" : "PARTIAL/FAILED");
+        } else {
+            ESP_LOGE(TAG, "❌ Failed to get nodes from routing table");
+            
+            if (commandPoller) {
+                commandPoller->moveToFailed(cmd, "NO_NODES", 
+                                           "Failed to retrieve nodes from routing table");
+            }
+            return;
+        }
+    } else {
+        ESP_LOGW(TAG, "⚠️  No nodes in routing table - nothing to provision");
+        
+        if (commandPoller) {
+            commandPoller->moveToFailed(cmd, "NO_NODES", 
+                                       "No nodes found in routing table. Start provisioning first.");
+        }
+        return;
+    }
+    
+    // Mark command as completed
+    if (commandPoller) {
+        String message = String("Netkey distributed to ") + 
+                        String(nodesSuccessful) + " of " + 
+                        String((int)routingTableSize) + " nodes";
+        
+        if (distributionSuccess) {
+            commandPoller->moveToCompleted(cmd, "success", message);
+        } else {
+            commandPoller->moveToFailed(cmd, "PARTIAL_FAILURE", message);
+        }
+    }
+    
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "╔════════════════════════════════════════════════════════════╗");
+    ESP_LOGI(TAG, "║  Netkey Distribution Completed                             ║");
+    ESP_LOGI(TAG, "║  Nodes: %d/%d successful                                   ║", 
+             nodesSuccessful, (int)routingTableSize);
     ESP_LOGI(TAG, "╚════════════════════════════════════════════════════════════╝");
     ESP_LOGI(TAG, "");
 }

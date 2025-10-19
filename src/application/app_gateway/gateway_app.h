@@ -87,6 +87,7 @@ private:
     // NEW: Command handlers for Firebase commands
     void handleStartProvisioning(const FirebaseCommandPoller::Command& cmd);
     void handleStopProvisioning(const FirebaseCommandPoller::Command& cmd);
+    void handleAssignNetkey(const FirebaseCommandPoller::Command& cmd);
     void updateProvisioningProgress();  // Update provisioning progress to Firebase
     
     // Static callbacks

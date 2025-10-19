@@ -1,6 +1,7 @@
 #include "provision_manager.h"
 #include "esp_mac.h"
 #include "led_control.h"  // For LED feedback
+#include "../../../components/lora_mesh_manager/src/services/NVSStorageService.h"  // For mesh config sync
 
 static const char* TAG = "ProvisionMgr";
 
@@ -60,13 +61,35 @@ void ProvisionManager::handleProvisionData(const BleProvisioning::ProvisionData&
         return;
     }
     
-    // Save to NVS
+    // Save to NVS (kagri_prov namespace)
     if (saveProvisionData(data.ssid, data.password, data.userUID, netkey)) {
         ESP_LOGI(TAG, "✓ Provisioning data saved successfully");
         ESP_LOGI(TAG, "  WiFi: %s", data.ssid.c_str());
         ESP_LOGI(TAG, "  User: %s", data.userUID.c_str());
         ESP_LOGI(TAG, "  MAC: %s", CryptoUtils::getGatewayMAC().c_str());
         ESP_LOGI(TAG, "  Netkey: %s", CryptoUtils::toHexString(netkey, 16).c_str());
+        
+        // CRITICAL: Sync netkey to mesh_config namespace for assign_netkey command
+        ESP_LOGI(TAG, "🔄 Syncing netkey to mesh_config namespace...");
+        NetworkConfig meshCfg;
+        memset(&meshCfg, 0, sizeof(meshCfg));
+        memcpy(meshCfg.networkKey, netkey, 16);
+        // Generate dummy authToken (not used in current impl, but struct requires it)
+        memset(meshCfg.authToken, 0xAB, 8); // Placeholder
+        meshCfg.networkId = 0x0001; // Default network ID
+        meshCfg.keyVersion = 1;
+        meshCfg.timestamp = millis() / 1000;
+        meshCfg.initialized = true;
+        
+        if (!NVSStorageService::isInitialized()) {
+            NVSStorageService::initialize();
+        }
+        
+        if (NVSStorageService::saveNetworkConfig(meshCfg)) {
+            ESP_LOGI(TAG, "✅ Netkey synced to mesh_config namespace");
+        } else {
+            ESP_LOGW(TAG, "⚠️  Failed to sync netkey to mesh_config (assign_netkey may fail!)");
+        }
         
         ESP_LOGI(TAG, "🎉 Provisioning successful!");
         

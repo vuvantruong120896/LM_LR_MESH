@@ -484,6 +484,13 @@ void FirebaseClient::setUserContext(const String& userUID, const String& gateway
 // Private methods
 
 bool FirebaseClient::uploadToPath(const String& path, const String& jsonData) {
+    // CRITICAL FIX: Check WiFi connection before upload to prevent BearSSL crashes
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("[Firebase] WiFi not connected, skipping upload");
+        m_lastError = "WiFi disconnected";
+        return false;
+    }
+    
     // CRITICAL FIX: Do NOT hold mutex during network I/O (Firebase call can take 10-20 seconds)
     // Holding mutex during Firebase.updateNode() causes task watchdog timeout
     // Only protect m_firebaseData access and error string updates
@@ -502,18 +509,33 @@ bool FirebaseClient::uploadToPath(const String& path, const String& jsonData) {
             return false;
         }
         
+        // CRITICAL FIX: Feed watchdog before Firebase operation (can take 5-8 seconds)
+        esp_task_wdt_reset();
+        
         success = Firebase.updateNode(m_firebaseData, path.c_str(), json);
+        
+        // CRITICAL FIX: Feed watchdog after Firebase operation
+        esp_task_wdt_reset();
         
         // CRITICAL FIX: Force cleanup TCP connection to prevent memory/stack leak
         // Firebase library doesn't always cleanup properly, causing:
         // - Stack decrease (4544 → 2000 bytes observed)
         // - Heap leak (~64KB lost)
+        // - BearSSL buffer corruption → LoadProhibited crash
         // Solution: Explicitly close WiFi client after each operation
         m_firebaseData.clear();  // Clear internal buffers
         
         if (!success) {
             errorReason = m_firebaseData.errorReason();
             m_lastError = errorReason;
+            
+            // CRITICAL FIX: Detect BearSSL errors and prevent retry (avoids crash)
+            if (errorReason.indexOf("BearSSL") >= 0 || errorReason.indexOf("SSL") >= 0) {
+                Serial.printf("[Firebase] BearSSL error detected, forcing reconnect: %s\n", errorReason.c_str());
+                // Force close all connections to prevent buffer corruption
+                Firebase.reconnectWiFi(true);
+                delay(100);  // Give time for cleanup
+            }
         }
     }  // Release mutex immediately after Firebase operation
     
@@ -527,6 +549,10 @@ bool FirebaseClient::uploadToPath(const String& path, const String& jsonData) {
 
 bool FirebaseClient::uploadToPathWithRetry(const String& path, const String& jsonData) {
     for (uint8_t attempt = 0; attempt < m_maxRetries; attempt++) {
+        // CRITICAL FIX: Feed watchdog before each upload attempt
+        // Prevents task watchdog timeout during retries (especially with SSL errors)
+        esp_task_wdt_reset();
+        
         if (uploadToPath(path, jsonData)) {
             // CRITICAL FIX: Small delay after successful upload to allow WiFi stack cleanup
             // Prevents TCP connection accumulation and stack/heap leaks
@@ -537,7 +563,12 @@ bool FirebaseClient::uploadToPathWithRetry(const String& path, const String& jso
         if (attempt < m_maxRetries - 1) {
             Serial.printf("[Firebase] Upload failed (attempt %u/%u), retrying in %lu ms...\n",
                          attempt + 1, m_maxRetries, m_retryDelayMs);
+            
+            // CRITICAL FIX: Feed watchdog during retry delay
+            // Prevents timeout when multiple packets fail and retry
+            esp_task_wdt_reset();
             delay(m_retryDelayMs);
+            esp_task_wdt_reset();  // Feed again after delay
         }
     }
     
