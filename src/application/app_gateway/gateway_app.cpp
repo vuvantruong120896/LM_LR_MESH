@@ -667,24 +667,21 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
                 ESP_LOGI(TAG, "✅ Upload successful (%d bytes)", result.payloadSize);
             } else {
                 gatewayState.uploadErrors++;
-                ESP_LOGW(TAG, "❌ Firebase upload failed: %s", result.errorMessage.c_str());
-                
-                // Buffer data for later upload (RSSI/SNR will be 0 when synced)
-                if (OfflineDataBuffer::addData(String(nodeIdStr), *s)) {
-                    ESP_LOGI(TAG, "📦 Data buffered to Flash for later sync");
-                } else {
-                    ESP_LOGW(TAG, "⚠️ Failed to buffer data");
-                }
+                // FIX: Không buffer khi upload fail - chỉ log error và retry sample tiếp theo
+                // Upload failure có thể do lỗi tạm thời (network glitch, Firebase overload)
+                // Sample tiếp theo sẽ thử lại - tránh lãng phí NVS
+                ESP_LOGW(TAG, "❌ Firebase upload failed (will retry on next sample): %s", 
+                         result.errorMessage.c_str());
             }
         } else {
-            // Not provisioned or offline - buffer data
-            ESP_LOGD(TAG, "📦 Firebase offline - buffering data from node %s", nodeIdStr);
+            // Not provisioned or offline - buffer data to NVS
+            ESP_LOGD(TAG, "📦 Gateway offline - buffering data from node %s", nodeIdStr);
             
             if (OfflineDataBuffer::addData(String(nodeIdStr), *s)) {
                 uint16_t bufferedCount = OfflineDataBuffer::getBufferedCount();
                 ESP_LOGI(TAG, "📦 Data buffered (%u/%u samples)", bufferedCount, OfflineDataBuffer::MAX_BUFFER_SIZE);
             } else {
-                ESP_LOGW(TAG, "⚠️ Failed to buffer data");
+                ESP_LOGW(TAG, "⚠️ Failed to buffer data - NVS full or error");
             }
         }
     } else {
@@ -1372,22 +1369,19 @@ void GatewayApp::uploadGatewaySensorData() {
             ESP_LOGI(TAG, "✅ Gateway sensor upload successful (%d bytes)", result.payloadSize);
         } else {
             gatewayState.uploadErrors++;
-            ESP_LOGE(TAG, "❌ Gateway sensor upload failed: %s", result.errorMessage.c_str());
-            
-            // Buffer for later (RSSI/SNR will be 0 when synced)
-            if (OfflineDataBuffer::addData(String(nodeIdStr), gatewaySensor)) {
-                ESP_LOGI(TAG, "📦 Gateway data buffered to Flash for later sync");
-            }
+            // FIX: Không buffer khi upload fail - chỉ log error và retry sample tiếp theo
+            ESP_LOGE(TAG, "❌ Gateway sensor upload failed (will retry on next sample): %s", 
+                     result.errorMessage.c_str());
         }
     } else {
-        // Not provisioned or offline - buffer data
-        ESP_LOGD(TAG, "📦 Firebase offline - buffering Gateway sensor data");
+        // Not provisioned or offline - buffer data to NVS
+        ESP_LOGD(TAG, "📦 Gateway offline - buffering sensor data");
         
         if (OfflineDataBuffer::addData(String(nodeIdStr), gatewaySensor)) {
             uint16_t bufferedCount = OfflineDataBuffer::getBufferedCount();
             ESP_LOGI(TAG, "📦 Gateway data buffered (%u/%u samples)", bufferedCount, OfflineDataBuffer::MAX_BUFFER_SIZE);
         } else {
-            ESP_LOGW(TAG, "⚠️ Failed to buffer Gateway data");
+            ESP_LOGW(TAG, "⚠️ Failed to buffer Gateway data - NVS full or error");
         }
     }
 }

@@ -1,4 +1,5 @@
 #include "node_app.h"
+#include "node_offline_buffer.h"
 #include "mesh_security_config.h"
 #include "components/lora_mesh_manager/src/services/ProvisioningService.h"
 #include "components/lora_mesh_manager/src/services/NetkeyDistributionService.h"
@@ -189,6 +190,17 @@ void NodeApp::setup() {
     RoutingTableService::setRoutingTableChangedCallback(saveRoutingTableToNVS);
     ESP_LOGI(LM_TAG, "Routing table change callback registered for automatic NVS save");
     
+    // Initialize Node offline buffer for sensor data when gateway unavailable
+    if (NodeOfflineBuffer::initialize()) {
+        uint16_t count, maxSize;
+        uint8_t percentFull;
+        NodeOfflineBuffer::getStats(count, maxSize, percentFull);
+        ESP_LOGI(LM_TAG, "📦 Node offline buffer ready: %u/%u samples (%u%% full)", 
+                 count, maxSize, percentFull);
+    } else {
+        ESP_LOGW(LM_TAG, "⚠️ Failed to initialize node offline buffer");
+    }
+    
     // Initialize ProvisioningService for Node
     if (!ProvisioningService::initialize()) {
         ESP_LOGE(LM_TAG, "Failed to initialize Provisioning Service");
@@ -224,6 +236,7 @@ void NodeApp::loop() {
     if (provisioningState == NODE_STATE_PROVISIONED && hasValidNetworkKey) {
         static uint32_t lastDataSend = 0;
         static uint32_t lastRoutingSave = 0;
+        static uint32_t lastBufferSync = 0;
         
         if (currentTime - lastDataSend >= SEND_INTERVAL_MS) {
             // Check if we're in provisioning mode (Fast Discovery)
@@ -263,17 +276,87 @@ void NodeApp::loop() {
             }
 
             // Send sensorData struct to Bridge (use createPacketAndSend so secure wrapping is applied when enabled)
-            // Find gateway node by role in routing table; fallback to broadcast if unknown
+            // Find gateway node by role in routing table; fallback to buffer if not found
             {
                 uint16_t dst = findGatewayAddress();
-                ESP_LOGI(LM_TAG, "Sending sensor data to gateway at address 0x%04X", dst);
-                // Send sensorData struct to gateway (use createPacketAndSend so secure wrapping is applied when enabled)
-                radio.createPacketAndSend<sensorData>(dst, &s, 1);
+                
+                // Check if gateway exists (not broadcast address)
+                if (dst == BROADCAST_ADDR) {
+                    // No gateway found in routing table - buffer data to NVS
+                    ESP_LOGW(LM_TAG, "⚠️ No gateway found (role=GATEWAY) in routing table - buffering sensor data");
+                    
+                    if (NodeOfflineBuffer::addData(s)) {
+                        uint16_t count = NodeOfflineBuffer::getBufferedCount();
+                        ESP_LOGI(LM_TAG, "📦 Sensor data buffered (%u/%u samples)", count, NodeOfflineBuffer::MAX_BUFFER_SIZE);
+                    } else {
+                        ESP_LOGW(LM_TAG, "⚠️ Failed to buffer sensor data - NVS full or error");
+                    }
+                    
+                    // Do NOT send broadcast - save LoRa energy and avoid network congestion
+                } else {
+                    // Gateway found - send current data
+                    ESP_LOGI(LM_TAG, "Sending sensor data to gateway at address 0x%04X", dst);
+                    radio.createPacketAndSend<sensorData>(dst, &s, 1);
+                }
             }
             
-            led_pattern_message(); // Flash LED to indicate data sent
+            led_pattern_message(); // Flash LED to indicate data sent/buffered
 
             lastDataSend = currentTime;
+        }
+        
+        // Sync buffered data periodically when gateway is available
+        // Separate from data send to avoid congestion and allow controlled sync rate
+        const uint32_t BUFFER_SYNC_INTERVAL = 30000; // Sync every 30 seconds
+        if (currentTime - lastBufferSync >= BUFFER_SYNC_INTERVAL) {
+            uint16_t bufferedCount = NodeOfflineBuffer::getBufferedCount();
+            
+            if (bufferedCount > 0) {
+                // Check if gateway is available
+                uint16_t dst = findGatewayAddress();
+                
+                if (dst != BROADCAST_ADDR) {
+                    ESP_LOGI(LM_TAG, "📤 Syncing buffered data: %u samples pending", bufferedCount);
+                    
+                    // Send up to 3 buffered samples per sync cycle to avoid network congestion
+                    const uint16_t MAX_SYNC_PER_CYCLE = 3;
+                    uint16_t synced = 0;
+                    
+                    for (uint16_t i = 0; i < MAX_SYNC_PER_CYCLE && bufferedCount > 0; i++) {
+                        sensorData bufferedData;
+                        if (NodeOfflineBuffer::getOldestData(bufferedData)) {
+                            // Send buffered data to gateway
+                            ESP_LOGI(LM_TAG, "📤 Sending buffered sample #%d (counter: %u, age: %us)", 
+                                     i+1, bufferedData.counter, 
+                                     (currentTime/1000) - bufferedData.timestamp);
+                            radio.createPacketAndSend<sensorData>(dst, &bufferedData, 1);
+                            
+                            // Remove from buffer after sending
+                            // Note: We assume send is successful via LoRa ACK mechanism
+                            NodeOfflineBuffer::removeOldest();
+                            bufferedCount--;
+                            synced++;
+                            
+                            // Add delay between sends to avoid congestion (500ms spacing)
+                            vTaskDelay(pdMS_TO_TICKS(500));
+                        } else {
+                            ESP_LOGW(LM_TAG, "Failed to retrieve buffered data");
+                            break;
+                        }
+                    }
+                    
+                    if (bufferedCount > 0) {
+                        ESP_LOGI(LM_TAG, "📦 Synced %u samples, %u remaining (will sync in next cycle)", 
+                                 synced, bufferedCount);
+                    } else {
+                        ESP_LOGI(LM_TAG, "✅ All buffered data synced successfully (%u samples)", synced);
+                    }
+                } else {
+                    ESP_LOGD(LM_TAG, "📦 %u samples buffered, but no gateway available for sync", bufferedCount);
+                }
+            }
+            
+            lastBufferSync = currentTime;
         }
         
         // NOTE: Routing table is now saved to NVS ONLY when changes occur (node added/removed)

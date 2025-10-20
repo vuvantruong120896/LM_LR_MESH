@@ -23,10 +23,10 @@ NVS Namespace: "offline_buf"
 ├── "dat_000" (blob) → Sensor data for sample 0 (44 bytes)
 ├── "nid_001" (str)  → Node ID for sample 1
 ├── "dat_001" (blob) → Sensor data for sample 1
-└── ... (up to 500 samples)
+└── ... (up to 50 samples, reduced from 500)
 ```
 
-**Maximum Buffered Samples**: 500
+**Maximum Buffered Samples**: 50 (reduced from 500 to save NVS space)
 
 **Memory Per Sample**: 
 - String (Node ID): ~16 bytes + length
@@ -35,8 +35,8 @@ NVS Namespace: "offline_buf"
 - **Total per sample**: ~110 bytes overhead + data
 
 **Total NVS Usage**:
-- Max: ~55 KB (500 samples × 110 bytes)
-- Actual on ESP32: Configurable, typically 64 KB allocated
+- Max: ~5.5 KB (50 samples × 110 bytes)
+- Actual on ESP32: Configurable, typically 64 KB allocated (uses only ~9% with 50 samples)
 
 ### 2. **Network Configuration** (lora_mesh namespace)
 
@@ -163,7 +163,7 @@ When device boots with firmware v1.0+ but finds old NVS v0.x:
 - Binary blob size differs between versions
 - Direct memory interpretation would cause corruption
 - Data already uploaded to Firebase (cloud backup exists)
-- 500-sample buffer provides sufficient redundancy
+- 50-sample buffer provides sufficient redundancy (8-12 minutes typical offline window)
 
 ## Implementation Details
 
@@ -216,9 +216,9 @@ OfflineDataBuffer::getStats(count, maxSize, percentFull)
 
 ```
 ✅ Offline buffer initialized: head=0, tail=0, count=0
-📦 Buffered data from 0xE764 (count: 1/500)
+📦 Buffered data from 0xE764 (count: 1/50)
 🗑️ Removed oldest buffered data (remaining: 0)
-📊 Buffer usage: 125/500 (25%)
+📊 Buffer usage: 12/50 (24%)
 ```
 
 ### Schema Migration Logs

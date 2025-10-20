@@ -52,7 +52,7 @@ Key           | Type   | Purpose
 "tail"        | u16    | Index of next read position (oldest data)
 "count"       | u16    | Current count of buffered items
 "version"     | u8     | NVS schema version (NEW in 1.0)
-"nid_XXX"     | str    | Node ID at index XXX (up to 500 entries)
+"nid_XXX"     | str    | Node ID at index XXX (up to 50 entries)
 "dat_XXX"     | blob   | Sensor data blob at index XXX
 ```
 
@@ -76,7 +76,7 @@ When the device boots and detects an old NVS schema version:
 
 - Binary blob format differences between versions would cause **memory corruption**
 - Old temperature/humidity data cannot be automatically converted to soil sensor readings (semantically different)
-- 500 sample buffer provides sufficient redundancy (can afford to lose offline data on major version change)
+- 50-sample buffer provides sufficient redundancy for ~8-12 minutes typical offline time
 - Firebase already has cloud backup of all uploaded data
 
 ## Implementation Details

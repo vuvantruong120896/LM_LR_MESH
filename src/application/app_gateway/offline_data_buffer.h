@@ -16,10 +16,13 @@
  * - Persistent storage across reboots
  * - Circular buffer (FIFO - oldest data replaced when full)
  * - Efficient NVS usage with single namespace
+ * 
+ * Capacity: 50 samples × 44 bytes = ~2.2 KB data + ~2.5 KB metadata = ~4.7 KB total
+ * Typical offline window: 50 samples × 10-15s interval = 8-12 minutes
  */
 class OfflineDataBuffer {
 public:
-    static const uint16_t MAX_BUFFER_SIZE = 500;  // Maximum buffered samples
+    static const uint16_t MAX_BUFFER_SIZE = 50;  // Maximum buffered samples (reduced from 500 to save NVS space)
     static const uint8_t CURRENT_SCHEMA_VERSION = 1;  // NVS schema version (incremented on breaking changes)
     
     /**
