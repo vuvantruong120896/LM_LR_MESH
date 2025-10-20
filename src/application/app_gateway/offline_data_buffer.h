@@ -19,10 +19,15 @@
  */
 class OfflineDataBuffer {
 public:
-    static const uint16_t MAX_BUFFER_SIZE = 500; // Maximum buffered samples
+    static const uint16_t MAX_BUFFER_SIZE = 500;  // Maximum buffered samples
+    static const uint8_t CURRENT_SCHEMA_VERSION = 1;  // NVS schema version (incremented on breaking changes)
     
     /**
-     * @brief Initialize NVS for offline buffer
+     * @brief Initialize NVS for offline buffer with schema version checking
+     * 
+     * Performs automatic migration if NVS schema version doesn't match current version.
+     * On version mismatch, old data is cleared to prevent memory corruption from format differences.
+     * 
      * @return true if initialization successful
      */
     static bool initialize();
@@ -77,9 +82,10 @@ public:
 
 private:
     static const char* NVS_NAMESPACE;
-    static const char* KEY_HEAD;  // Index of next write position
-    static const char* KEY_TAIL;  // Index of next read position
-    static const char* KEY_COUNT; // Current count of buffered items
+    static const char* KEY_HEAD;      // Index of next write position
+    static const char* KEY_TAIL;      // Index of next read position
+    static const char* KEY_COUNT;     // Current count of buffered items
+    static const char* KEY_VERSION;   // NVS schema version (NEW in v1.0)
     
     static nvs_handle_t nvsHandle;
     static bool initialized;

@@ -7,6 +7,7 @@ const char* OfflineDataBuffer::NVS_NAMESPACE = "offline_buf";
 const char* OfflineDataBuffer::KEY_HEAD = "head";
 const char* OfflineDataBuffer::KEY_TAIL = "tail";
 const char* OfflineDataBuffer::KEY_COUNT = "count";
+const char* OfflineDataBuffer::KEY_VERSION = "version";
 
 nvs_handle_t OfflineDataBuffer::nvsHandle = 0;
 bool OfflineDataBuffer::initialized = false;
@@ -18,8 +19,37 @@ bool OfflineDataBuffer::initialize() {
     
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvsHandle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to open NVS namespace: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "❌ Failed to open NVS namespace: %s", esp_err_to_name(err));
         return false;
+    }
+    
+    // Check NVS schema version for backward compatibility
+    uint8_t storedVersion = 0;
+    esp_err_t versionErr = nvs_get_u8(nvsHandle, KEY_VERSION, &storedVersion);
+    
+    if (versionErr == ESP_ERR_NVS_NOT_FOUND) {
+        // First time setup - no version stored yet
+        ESP_LOGI(TAG, "📝 First-time NVS buffer initialization (no version found)");
+        ESP_LOGI(TAG, "   Setting schema version: %d", CURRENT_SCHEMA_VERSION);
+        nvs_set_u8(nvsHandle, KEY_VERSION, CURRENT_SCHEMA_VERSION);
+    } else if (versionErr == ESP_OK && storedVersion != CURRENT_SCHEMA_VERSION) {
+        // Schema version mismatch - migration needed
+        ESP_LOGW(TAG, "⚠️ NVS schema version mismatch!");
+        ESP_LOGW(TAG, "   Stored version: %d, Current version: %d", storedVersion, CURRENT_SCHEMA_VERSION);
+        ESP_LOGW(TAG, "   Clearing offline buffer to prevent data corruption");
+        
+        // Clear all buffered data from old schema
+        writeUint16(KEY_HEAD, 0);
+        writeUint16(KEY_TAIL, 0);
+        writeUint16(KEY_COUNT, 0);
+        nvs_set_u8(nvsHandle, KEY_VERSION, CURRENT_SCHEMA_VERSION);
+        nvs_commit(nvsHandle);
+        
+        ESP_LOGI(TAG, "✅ Migration complete - buffer cleared, schema updated to v%d", CURRENT_SCHEMA_VERSION);
+    } else if (versionErr == ESP_OK) {
+        ESP_LOGI(TAG, "✅ NVS schema version matches: %d", storedVersion);
+    } else {
+        ESP_LOGE(TAG, "❌ Failed to read NVS version: %s", esp_err_to_name(versionErr));
     }
     
     initialized = true;
