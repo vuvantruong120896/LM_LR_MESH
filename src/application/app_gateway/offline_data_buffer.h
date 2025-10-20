@@ -36,10 +36,10 @@ public:
     static bool initialize();
     
     /**
-     * @brief Add sensor data to buffer
+     * @brief Add sensor data to buffer (with duplicate detection)
      * @param nodeId Node/Gateway ID (hex string like "0xE764")
      * @param data Sensor data to buffer
-     * @return true if successfully buffered
+     * @return true if successfully buffered (or skipped duplicate)
      */
     static bool addData(const String& nodeId, const sensorData& data);
     
@@ -92,6 +92,10 @@ private:
     
     static nvs_handle_t nvsHandle;
     static bool initialized;
+    
+    // Cache for duplicate detection (avoid NVS reads in hot path)
+    static String lastNodeId;
+    static uint32_t lastCounter;
     
     /**
      * @brief Get NVS key for data entry
