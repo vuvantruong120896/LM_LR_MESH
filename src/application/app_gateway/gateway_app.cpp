@@ -272,8 +272,14 @@ void GatewayApp::loop() {
                     sensorData data;
                     
                     if (OfflineDataBuffer::getOldestData(nodeId, data)) {
+                        // CRITICAL: Reset watchdog before Firebase upload
+                        esp_task_wdt_reset();
+                        
                         // Upload to Firebase with RSSI/SNR = 0 (stale data)
                         auto result = firebaseClient->uploadSensorData(data, 0, 0.0f);
+                        
+                        // CRITICAL: Reset watchdog after Firebase upload
+                        esp_task_wdt_reset();
                         
                         if (result.success) {
                             // Remove from buffer after successful upload
@@ -669,7 +675,13 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
                     break;
             }
 
+            // CRITICAL: Reset watchdog before Firebase upload (can take 8-15 seconds)
+            esp_task_wdt_reset();
+            
             auto result = firebaseClient->uploadSensorData(*s, rssi, snr);
+            
+            // CRITICAL: Reset watchdog after Firebase upload completes
+            esp_task_wdt_reset();
 
             if (result.success) {
                 gatewayState.packetsUploaded++;
@@ -753,7 +765,13 @@ void GatewayApp::uploadRoutingTable() {
         ESP_LOGI(TAG, "📡 Uploading routing table (%d nodes)", routingTable.size());
     }
 
+    // CRITICAL: Reset watchdog before Firebase upload
+    esp_task_wdt_reset();
+    
     auto result = firebaseClient->uploadRoutingTable(routingTable);
+    
+    // CRITICAL: Reset watchdog after Firebase upload
+    esp_task_wdt_reset();
 
     if (result.success) {
         gatewayState.lastRoutingTableUpload = millis();
@@ -1388,8 +1406,14 @@ void GatewayApp::uploadGatewaySensorData() {
         }
         ESP_LOGI(TAG, "📶 WiFi Signal - RSSI: %d dBm, SNR: %.1f dB", wifiRssi, gatewaySnr);
         
+        // CRITICAL: Reset watchdog before Firebase upload
+        esp_task_wdt_reset();
+        
         // Upload to Firebase with WiFi RSSI and fixed SNR
         auto result = firebaseClient->uploadSensorData(gatewaySensor, wifiRssi, gatewaySnr);
+        
+        // CRITICAL: Reset watchdog after Firebase upload
+        esp_task_wdt_reset();
         
         if (result.success) {
             gatewayState.packetsUploaded++;
@@ -1451,6 +1475,9 @@ void GatewayApp::uploadGatewayStatusPeriodic() {
     ESP_LOGI(TAG, "📊 Uploading Gateway status: nodes=%u, rx=%u, tx=%u, rssi=%d, heap=%u, uptime=%u",
              connectedNodes, totalPacketsReceived, totalPacketsSent, wifiRssi, freeHeap, uptimeSeconds);
     
+    // CRITICAL: Reset watchdog before Firebase upload
+    esp_task_wdt_reset();
+    
     // Upload to Firebase
     auto result = firebaseClient->uploadGatewayStatus(
         connectedNodes,
@@ -1460,6 +1487,9 @@ void GatewayApp::uploadGatewayStatusPeriodic() {
         freeHeap,
         uptimeSeconds
     );
+    
+    // CRITICAL: Reset watchdog after Firebase upload
+    esp_task_wdt_reset();
     
     if (result.success) {
         ESP_LOGI(TAG, "✅ Gateway status uploaded successfully");
