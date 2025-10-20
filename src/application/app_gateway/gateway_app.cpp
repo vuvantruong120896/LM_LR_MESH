@@ -1472,8 +1472,8 @@ void GatewayApp::uploadGatewayStatusPeriodic() {
         lastStatusUploadTime = currentTime;
         
         // For circuit breaker errors, we should definitely back off
-        if (result.errorMessage.find("Circuit breaker") != std::string::npos ||
-            result.errorMessage.find("cooldown") != std::string::npos) {
+        if (result.errorMessage.indexOf("Circuit breaker") != -1 ||
+            result.errorMessage.indexOf("cooldown") != -1) {
             ESP_LOGD(TAG, "📊 Circuit breaker active - backing off for 60 seconds");
         }
     }
