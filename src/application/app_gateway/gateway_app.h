@@ -67,6 +67,9 @@ private:
     ProvisionManager* provisionManager;
     FirebaseCommandPoller* commandPoller;  // NEW: Command poller for Firebase commands
     
+    // Counter tracking to prevent duplicate data storage
+    std::map<uint16_t, uint32_t> lastProcessedCounter;  // nodeId -> last processed counter
+    
     // Private methods
     void setupLoRaMesher();
     void setupWiFi();

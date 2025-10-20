@@ -3,6 +3,7 @@
 #include "mesh_security_config.h"
 #include <esp_log.h>
 #include <esp_task_wdt.h>
+#include <map>
 
 static const char* TAG = "GATEWAY";
 
@@ -638,8 +639,17 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
         char nodeIdStr[16];
         snprintf(nodeIdStr, sizeof(nodeIdStr), "0x%04X", sourceNode);
 
-        // Try to upload to Firebase if online and provisioned
-        if (firebaseClient && gatewayState.firebaseConnected) {
+        // Check if this is a duplicate packet (same counter from same node)
+        bool isDuplicate = false;
+        auto it = lastProcessedCounter.find(sourceNode);
+        if (it != lastProcessedCounter.end() && it->second == s->counter) {
+            isDuplicate = true;
+            ESP_LOGD(TAG, "⚠️ Duplicate sensor data detected from node %s (counter: %u) - skipping", 
+                     nodeIdStr, s->counter);
+        }
+
+        // Try to upload to Firebase if online and provisioned (and not duplicate)
+        if (firebaseClient && gatewayState.firebaseConnected && !isDuplicate) {
             ESP_LOGI(TAG, "☁️ Uploading sensor data from node %s to Firebase", nodeIdStr);
             
             // Log sensor-specific data based on device type
@@ -665,21 +675,38 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
                 gatewayState.packetsUploaded++;
                 led_pattern_message(); // Flash LED on successful upload
                 ESP_LOGI(TAG, "✅ Upload successful (%d bytes)", result.payloadSize);
+                
+                // Update last processed counter for this node
+                lastProcessedCounter[sourceNode] = s->counter;
             } else {
                 gatewayState.uploadErrors++;
-                // FIX: Không buffer khi upload fail - chỉ log error và retry sample tiếp theo
-                // Upload failure có thể do lỗi tạm thời (network glitch, Firebase overload)
-                // Sample tiếp theo sẽ thử lại - tránh lãng phí NVS
-                ESP_LOGW(TAG, "❌ Firebase upload failed (will retry on next sample): %s", 
-                         result.errorMessage.c_str());
+                
+                // Buffer data when upload fails (network issue, Firebase error, etc.)
+                // This covers: WiFi connected but no internet, Firebase overload, API errors
+                ESP_LOGW(TAG, "❌ Firebase upload failed: %s", result.errorMessage.c_str());
+                ESP_LOGI(TAG, "📦 Buffering data to NVS for later sync...");
+                
+                if (OfflineDataBuffer::addData(String(nodeIdStr), *s)) {
+                    uint16_t bufferedCount = OfflineDataBuffer::getBufferedCount();
+                    ESP_LOGI(TAG, "✅ Data buffered (%u/%u samples)", bufferedCount, OfflineDataBuffer::MAX_BUFFER_SIZE);
+                    
+                    // Update last processed counter to prevent duplicate buffering
+                    lastProcessedCounter[sourceNode] = s->counter;
+                } else {
+                    ESP_LOGW(TAG, "⚠️ Failed to buffer data - NVS full or error");
+                    // Don't update counter - allow retry on next packet
+                }
             }
-        } else {
+        } else if (!isDuplicate) {
             // Not provisioned or offline - buffer data to NVS
             ESP_LOGD(TAG, "📦 Gateway offline - buffering data from node %s", nodeIdStr);
             
             if (OfflineDataBuffer::addData(String(nodeIdStr), *s)) {
                 uint16_t bufferedCount = OfflineDataBuffer::getBufferedCount();
                 ESP_LOGI(TAG, "📦 Data buffered (%u/%u samples)", bufferedCount, OfflineDataBuffer::MAX_BUFFER_SIZE);
+                
+                // Update last processed counter to prevent duplicate buffering
+                lastProcessedCounter[sourceNode] = s->counter;
             } else {
                 ESP_LOGW(TAG, "⚠️ Failed to buffer data - NVS full or error");
             }
