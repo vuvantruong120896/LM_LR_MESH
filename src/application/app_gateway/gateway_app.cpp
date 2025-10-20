@@ -204,6 +204,10 @@ void GatewayApp::loop() {
     static bool provisionStatusChecked = false;
     static bool isProvisioned = false;
     
+    // CRITICAL: Reset watchdog at beginning of each loop iteration
+    // This prevents timeout when multiple Firebase operations run consecutively
+    esp_task_wdt_reset();
+    
     if (!provisionStatusChecked && provisionManager) {
         isProvisioned = provisionManager->isProvisioned();
         provisionStatusChecked = true;
@@ -335,6 +339,10 @@ void GatewayApp::loop() {
     // Upload immediately on first Firebase connection after boot
     if (gatewayState.firebaseConnected && !firstRoutingTableUploadDone) {
         ESP_LOGI(TAG, "📡 Initial routing table upload (post-reboot)");
+        
+        // CRITICAL: Reset watchdog before Firebase operation
+        esp_task_wdt_reset();
+        
         uploadRoutingTable();
         gatewayState.lastRoutingTableUpload = currentTime;
         firstRoutingTableUploadDone = true;
@@ -343,6 +351,10 @@ void GatewayApp::loop() {
     else if (gatewayState.firebaseConnected &&
         (currentTime - gatewayState.lastRoutingTableUpload >= GATEWAY_ROUTING_TABLE_INTERVAL)) {
         ESP_LOGI(TAG, "⏰ Periodic backup routing table upload");
+        
+        // CRITICAL: Reset watchdog before Firebase operation
+        esp_task_wdt_reset();
+        
         uploadRoutingTable();
         // Always update timestamp even if upload fails to prevent rapid retries
         gatewayState.lastRoutingTableUpload = currentTime;
@@ -355,6 +367,10 @@ void GatewayApp::loop() {
     // Upload immediately on first connection after boot
     if (gatewayState.firebaseConnected && !firstUploadDone) {
         ESP_LOGI(TAG, "📊 Initial Gateway sensor data upload (post-reboot)");
+        
+        // CRITICAL: Reset watchdog before Firebase operation
+        esp_task_wdt_reset();
+        
         uploadGatewaySensorData();
         lastSensorUpload = currentTime;
         firstUploadDone = true;
@@ -363,6 +379,10 @@ void GatewayApp::loop() {
     else if (gatewayState.firebaseConnected &&
         (currentTime - lastSensorUpload >= GATEWAY_SENSOR_INTERVAL)) {
         ESP_LOGI(TAG, "📊 Periodic Gateway sensor data collection");
+        
+        // CRITICAL: Reset watchdog before Firebase operation
+        esp_task_wdt_reset();
+        
         uploadGatewaySensorData();
         lastSensorUpload = currentTime;
     }
