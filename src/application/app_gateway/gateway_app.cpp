@@ -1397,12 +1397,14 @@ void GatewayApp::uploadGatewayStatusPeriodic() {
     
     // Check if provisioned and Firebase connected
     if (!provisionManager || !provisionManager->isProvisioned()) {
-        ESP_LOGD(TAG, "📊 Skip status upload - not provisioned");
+        // Update timestamp to avoid spam checking
+        lastStatusUploadTime = currentTime;
         return;
     }
     
     if (!firebaseClient || !firebaseClient->isConnected()) {
-        ESP_LOGD(TAG, "📊 Skip status upload - Firebase not connected");
+        // Update timestamp to avoid spam checking when Firebase is disconnected
+        lastStatusUploadTime = currentTime;
         return;
     }
     
@@ -1437,6 +1439,16 @@ void GatewayApp::uploadGatewayStatusPeriodic() {
         lastStatusUploadTime = currentTime;
     } else {
         ESP_LOGW(TAG, "⚠️ Failed to upload Gateway status: %s", result.errorMessage.c_str());
+        
+        // Always update timestamp to prevent spam, especially for circuit breaker
+        // This ensures we respect the 60-second interval even on failures
+        lastStatusUploadTime = currentTime;
+        
+        // For circuit breaker errors, we should definitely back off
+        if (result.errorMessage.find("Circuit breaker") != std::string::npos ||
+            result.errorMessage.find("cooldown") != std::string::npos) {
+            ESP_LOGD(TAG, "📊 Circuit breaker active - backing off for 60 seconds");
+        }
     }
 }
 
