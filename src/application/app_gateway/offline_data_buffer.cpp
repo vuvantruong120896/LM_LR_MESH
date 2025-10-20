@@ -74,6 +74,40 @@ bool OfflineDataBuffer::addData(const String& nodeId, const sensorData& data) {
     uint16_t tail = readUint16(KEY_TAIL, 0);
     uint16_t count = readUint16(KEY_COUNT, 0);
     
+    // CHECK DUPLICATE: Prevent storing same counter twice (when upload fails repeatedly)
+    if (count > 0) {
+        // Get last buffered data position (head - 1, wrapped around)
+        uint16_t lastPos = (head == 0) ? (MAX_BUFFER_SIZE - 1) : (head - 1);
+        
+        // Read last stored nodeId
+        String lastNodeIdKey = getDataKey(lastPos, true);
+        size_t required_size = 0;
+        esp_err_t err = nvs_get_str(nvsHandle, lastNodeIdKey.c_str(), NULL, &required_size);
+        if (err == ESP_OK && required_size > 0) {
+            char* lastNodeIdBuf = (char*)malloc(required_size);
+            if (lastNodeIdBuf) {
+                err = nvs_get_str(nvsHandle, lastNodeIdKey.c_str(), lastNodeIdBuf, &required_size);
+                String lastNodeId(lastNodeIdBuf);
+                free(lastNodeIdBuf);
+                
+                // If same nodeId, check counter
+                if (err == ESP_OK && lastNodeId == nodeId) {
+                    // Read last stored data
+                    String lastDataKey = getDataKey(lastPos, false);
+                    sensorData lastData;
+                    size_t dataSize = sizeof(sensorData);
+                    err = nvs_get_blob(nvsHandle, lastDataKey.c_str(), &lastData, &dataSize);
+                    
+                    if (err == ESP_OK && lastData.counter == data.counter) {
+                        ESP_LOGD(TAG, "⏭️ Skipping duplicate data from %s (counter: %u already buffered)", 
+                                 nodeId.c_str(), data.counter);
+                        return true; // Not an error, just skip duplicate
+                    }
+                }
+            }
+        }
+    }
+    
     // If buffer full, overwrite oldest (move tail forward)
     if (count >= MAX_BUFFER_SIZE) {
         tail = (tail + 1) % MAX_BUFFER_SIZE;

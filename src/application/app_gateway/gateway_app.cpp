@@ -1440,9 +1440,16 @@ void GatewayApp::uploadGatewaySensorData() {
             ESP_LOGI(TAG, "✅ Gateway sensor upload successful (%d bytes)", result.payloadSize);
         } else {
             gatewayState.uploadErrors++;
-            // FIX: Không buffer khi upload fail - chỉ log error và retry sample tiếp theo
-            ESP_LOGE(TAG, "❌ Gateway sensor upload failed (will retry on next sample): %s", 
-                     result.errorMessage.c_str());
+            ESP_LOGW(TAG, "❌ Gateway sensor upload failed: %s", result.errorMessage.c_str());
+            ESP_LOGI(TAG, "📦 Buffering Gateway sensor data to NVS for later sync...");
+            
+            // Buffer Gateway sensor data to NVS (same as Node data)
+            if (OfflineDataBuffer::addData(String(nodeIdStr), gatewaySensor)) {
+                uint16_t bufferedCount = OfflineDataBuffer::getBufferedCount();
+                ESP_LOGI(TAG, "✅ Gateway sensor data buffered (%u/%u samples)", bufferedCount, OfflineDataBuffer::MAX_BUFFER_SIZE);
+            } else {
+                ESP_LOGW(TAG, "⚠️ Failed to buffer Gateway sensor data - NVS full or error");
+            }
         }
     } else {
         // Not provisioned or offline - buffer data to NVS
