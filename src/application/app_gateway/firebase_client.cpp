@@ -607,9 +607,9 @@ void FirebaseClient::recordUploadResult(bool success) {
 String FirebaseClient::createSensorDataJson(const sensorData& data, int8_t rssi, float snr) {
     JsonDocument doc;
     
+    // Common fields for all device types
+    doc["deviceType"] = deviceTypeToString(data.deviceType);
     doc["counter"] = data.counter;
-    doc["temperature"] = data.temperature;
-    doc["humidity"] = data.humidity;
     doc["battery"] = data.battery;
     doc["timestamp"] = m_autoTimestamp ? getCurrentTimestamp() : data.timestamp;
     
@@ -623,8 +623,58 @@ String FirebaseClient::createSensorDataJson(const sensorData& data, int8_t rssi,
         doc["snr"] = snr;
     }
     
+    // Add sensor-specific fields based on device type
+    switch (data.deviceType) {
+        case DeviceType::SOIL_SENSOR:
+            doc["soilMoisture"] = data.data.soil.soilMoisture;
+            doc["soilTemperature"] = data.data.soil.soilTemperature;
+            doc["pH"] = data.data.soil.pH;
+            doc["ec"] = data.data.soil.ec;
+            doc["nitrogen"] = data.data.soil.nitrogen;
+            doc["phosphorus"] = data.data.soil.phosphorus;
+            doc["potassium"] = data.data.soil.potassium;
+            Serial.printf("[Firebase] Soil sensor data - Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, EC: %.2f mS/cm\n",
+                data.data.soil.soilMoisture, data.data.soil.soilTemperature, 
+                data.data.soil.pH, data.data.soil.ec);
+            break;
+            
+        case DeviceType::ENV_SENSOR:
+            doc["temperature"] = data.data.environment.temperature;
+            doc["humidity"] = data.data.environment.humidity;
+            doc["pressure"] = data.data.environment.pressure;
+            doc["lightIntensity"] = data.data.environment.lightIntensity;
+            Serial.printf("[Firebase] Environment sensor data - Temp: %.1f°C, Humidity: %.1f%%\n",
+                data.data.environment.temperature, data.data.environment.humidity);
+            break;
+            
+        case DeviceType::WATER_SENSOR:
+            doc["waterTemp"] = data.data.water.waterTemp;
+            doc["pH"] = data.data.water.pH;
+            doc["tds"] = data.data.water.tds;
+            doc["turbidity"] = data.data.water.turbidity;
+            Serial.printf("[Firebase] Water sensor data - Temp: %.1f°C, pH: %.2f, TDS: %.1f ppm\n",
+                data.data.water.waterTemp, data.data.water.pH, data.data.water.tds);
+            break;
+            
+        case DeviceType::GATEWAY:
+            // Gateway may not have sensor data, or may report minimal metrics
+            Serial.println("[Firebase] Gateway status (no sensor data)");
+            break;
+            
+        case DeviceType::UNKNOWN:
+        default:
+            // For unknown types, serialize generic values array
+            Serial.printf("[Firebase] Unknown device type: %d\n", (int)data.deviceType);
+            for (int i = 0; i < 8; i++) {
+                String key = "value" + String(i);
+                doc[key] = data.data.values[i];
+            }
+            break;
+    }
+    
     // Debug: Print JSON payload in pretty format
-    Serial.printf("[Firebase] Sensor data JSON (node 0x%04X):\n", data.nodeId);
+    Serial.printf("[Firebase] Sensor data JSON (node 0x%04X, type: %s):\n", 
+        data.nodeId, deviceTypeToString(data.deviceType));
     serializeJsonPretty(doc, Serial);
     Serial.println();
     

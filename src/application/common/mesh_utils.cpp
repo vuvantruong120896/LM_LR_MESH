@@ -41,8 +41,36 @@ void printDataPacket(AppPacket<dataPacket>* packet) {
 }
 
 void printSensorData(const sensorData& data) {
-    ESP_LOGI(LM_TAG, "Sensor - Temp: %.2f°C, Hum: %.2f%%, Bat: %.2fV, Time: %d",
-                  data.temperature, data.humidity, data.battery, data.timestamp);
+    ESP_LOGI(LM_TAG, "Device Type: %s, Battery: %.2fV, Counter: %d, Time: %d",
+                  deviceTypeToString(data.deviceType), data.battery, data.counter, data.timestamp);
+    
+    // Print sensor-specific data based on device type
+    switch (data.deviceType) {
+        case DeviceType::SOIL_SENSOR:
+            ESP_LOGI(LM_TAG, "  Soil - Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, EC: %.2f mS/cm",
+                     data.data.soil.soilMoisture, data.data.soil.soilTemperature, 
+                     data.data.soil.pH, data.data.soil.ec);
+            ESP_LOGI(LM_TAG, "  NPK - N: %.1f, P: %.1f, K: %.1f mg/kg",
+                     data.data.soil.nitrogen, data.data.soil.phosphorus, data.data.soil.potassium);
+            break;
+            
+        case DeviceType::ENV_SENSOR:
+            ESP_LOGI(LM_TAG, "  Environment - Temp: %.1f°C, Humidity: %.1f%%, Pressure: %.1f hPa, Light: %.1f lux",
+                     data.data.environment.temperature, data.data.environment.humidity,
+                     data.data.environment.pressure, data.data.environment.lightIntensity);
+            break;
+            
+        case DeviceType::WATER_SENSOR:
+            ESP_LOGI(LM_TAG, "  Water - Temp: %.1f°C, pH: %.2f, TDS: %.1f ppm, Turbidity: %.1f NTU",
+                     data.data.water.waterTemp, data.data.water.pH,
+                     data.data.water.tds, data.data.water.turbidity);
+            break;
+            
+        default:
+            ESP_LOGI(LM_TAG, "  Generic values: [0]=%.2f [1]=%.2f [2]=%.2f",
+                     data.data.values[0], data.data.values[1], data.data.values[2]);
+            break;
+    }
 }
 
 void processReceivedPackets(void*) {

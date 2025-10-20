@@ -641,8 +641,23 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
         // Try to upload to Firebase if online and provisioned
         if (firebaseClient && gatewayState.firebaseConnected) {
             ESP_LOGI(TAG, "☁️ Uploading sensor data from node %s to Firebase", nodeIdStr);
-            ESP_LOGI(TAG, "🔢 Counter: %u, 🌡️ Temp: %.1f°C, 💧 Hum: %.1f%%, 🔋 Batt: %.2fV",
-                     s->counter, s->temperature, s->humidity, s->battery);
+            
+            // Log sensor-specific data based on device type
+            switch (s->deviceType) {
+                case DeviceType::SOIL_SENSOR:
+                    ESP_LOGI(TAG, "🌱 Soil Sensor - Counter: %u, Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, Batt: %.2fV",
+                             s->counter, s->data.soil.soilMoisture, s->data.soil.soilTemperature, 
+                             s->data.soil.pH, s->battery);
+                    break;
+                case DeviceType::ENV_SENSOR:
+                    ESP_LOGI(TAG, "🌡️ Env Sensor - Counter: %u, Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV",
+                             s->counter, s->data.environment.temperature, s->data.environment.humidity, s->battery);
+                    break;
+                default:
+                    ESP_LOGI(TAG, "📊 Sensor - Counter: %u, Type: %s, Batt: %.2fV",
+                             s->counter, deviceTypeToString(s->deviceType), s->battery);
+                    break;
+            }
 
             auto result = firebaseClient->uploadSensorData(*s, rssi, snr);
 
@@ -1256,16 +1271,13 @@ void GatewayApp::broadcastTimeSync() {
 sensorData GatewayApp::simulateGatewaySensorData() {
     sensorData data;
     
-    // Simulate environmental sensor data for Gateway location
-    // Gateway typically in a controlled environment (indoors)
-    data.temperature = 22.0 + (random(0, 100) / 10.0); // 22-32°C (indoor range)
-    data.humidity = 30.0 + (random(0, 400) / 10.0);    // 30-70% (indoor humidity)
-    data.battery = 5.0;  // Gateway powered by mains, indicate 5V supply
+    // Set device type - Gateway has soil sensor for demo/testing
+    // NOTE: In production, this should be read from NVS/config
+    data.deviceType = DeviceType::SOIL_SENSOR;
     
-    // Increment sensor counter
+    // === Common fields (all sensor types) ===
+    data.battery = 3.7 + (random(0, 60) / 100.0);  // 3.7-4.3V LiPo battery simulation
     data.counter = ++sensorCounter;
-    
-    // Use gateway's own node ID from MAC address (same as Nodes)
     data.nodeId = computeNodeIdFromWifiMac();
     
     // Use NTP synchronized timestamp if available
@@ -1275,6 +1287,42 @@ sensorData GatewayApp::simulateGatewaySensorData() {
     } else {
         data.timestamp = millis() / 1000;  // Fallback to boot time
         ESP_LOGW(TAG, "⚠️ Gateway sensor using fallback timestamp: %u seconds", data.timestamp);
+    }
+    
+    // === Sensor-specific data based on deviceType ===
+    switch (data.deviceType) {
+        case DeviceType::SOIL_SENSOR:
+            // Simulate soil sensor readings (realistic agricultural ranges)
+            data.data.soil.soilMoisture = 20.0 + (random(0, 600) / 10.0);      // 20-80% moisture
+            data.data.soil.soilTemperature = 18.0 + (random(0, 150) / 10.0);   // 18-33°C soil temp
+            data.data.soil.pH = 5.5 + (random(0, 250) / 100.0);                // pH 5.5-8.0
+            data.data.soil.ec = 0.3 + (random(0, 300) / 100.0);                // 0.3-3.3 mS/cm (low to high fertility)
+            data.data.soil.nitrogen = 50.0 + (random(0, 2000) / 10.0);         // 50-250 mg/kg
+            data.data.soil.phosphorus = 20.0 + (random(0, 1000) / 10.0);       // 20-120 mg/kg
+            data.data.soil.potassium = 80.0 + (random(0, 1500) / 10.0);        // 80-230 mg/kg
+            
+            ESP_LOGI(TAG, "🌱 Soil sensor data: Moisture=%.1f%%, Temp=%.1f°C, pH=%.2f, EC=%.2f mS/cm",
+                     data.data.soil.soilMoisture, data.data.soil.soilTemperature, 
+                     data.data.soil.pH, data.data.soil.ec);
+            ESP_LOGI(TAG, "   NPK: N=%.0f, P=%.0f, K=%.0f mg/kg",
+                     data.data.soil.nitrogen, data.data.soil.phosphorus, data.data.soil.potassium);
+            break;
+            
+        case DeviceType::ENV_SENSOR:
+            // Simulate environment sensor (indoor conditions)
+            data.data.environment.temperature = 22.0 + (random(0, 100) / 10.0);    // 22-32°C
+            data.data.environment.humidity = 30.0 + (random(0, 400) / 10.0);       // 30-70%
+            data.data.environment.pressure = 1000.0 + (random(0, 300) / 10.0);     // 1000-1030 hPa
+            data.data.environment.lightIntensity = 100.0 + (random(0, 9000) / 10.0); // 100-1000 lux
+            
+            ESP_LOGI(TAG, "🌡️ Environment sensor: Temp=%.1f°C, Hum=%.1f%%, Pres=%.1f hPa, Light=%.0f lux",
+                     data.data.environment.temperature, data.data.environment.humidity,
+                     data.data.environment.pressure, data.data.environment.lightIntensity);
+            break;
+            
+        default:
+            ESP_LOGW(TAG, "⚠️ Unknown device type, using default values");
+            break;
     }
     
     return data;
@@ -1294,9 +1342,26 @@ void GatewayApp::uploadGatewaySensorData() {
     // Try to upload if online and provisioned
     if (firebaseClient && gatewayState.firebaseConnected) {
         ESP_LOGI(TAG, "🏠 Uploading Gateway sensor data to Firebase");
-        ESP_LOGI(TAG, "🔢 Counter: %u, 🌡️ Temp: %.1f°C, 💧 Hum: %.1f%%, ⚡ Power: %.1fV, 📡 NodeID: %s",
-                 gatewaySensor.counter, gatewaySensor.temperature, gatewaySensor.humidity, 
-                 gatewaySensor.battery, nodeIdStr);
+        
+        // Log Gateway sensor-specific data based on device type
+        switch (gatewaySensor.deviceType) {
+            case DeviceType::SOIL_SENSOR:
+                ESP_LOGI(TAG, "🌱 Gateway Soil - Counter: %u, Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, Batt: %.2fV, NodeID: %s",
+                         gatewaySensor.counter, gatewaySensor.data.soil.soilMoisture, 
+                         gatewaySensor.data.soil.soilTemperature, gatewaySensor.data.soil.pH,
+                         gatewaySensor.battery, nodeIdStr);
+                break;
+            case DeviceType::ENV_SENSOR:
+                ESP_LOGI(TAG, "🌡️ Gateway Env - Counter: %u, Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV, NodeID: %s",
+                         gatewaySensor.counter, gatewaySensor.data.environment.temperature, 
+                         gatewaySensor.data.environment.humidity, gatewaySensor.battery, nodeIdStr);
+                break;
+            default:
+                ESP_LOGI(TAG, "📊 Gateway - Counter: %u, Type: %s, Batt: %.2fV, NodeID: %s",
+                         gatewaySensor.counter, deviceTypeToString(gatewaySensor.deviceType), 
+                         gatewaySensor.battery, nodeIdStr);
+                break;
+        }
         ESP_LOGI(TAG, "📶 WiFi Signal - RSSI: %d dBm, SNR: %.1f dB", wifiRssi, gatewaySnr);
         
         // Upload to Firebase with WiFi RSSI and fixed SNR

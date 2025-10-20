@@ -246,9 +246,21 @@ void NodeApp::loop() {
             s.timestamp = currentTime;
             s.nodeId = assignedAddress ? assignedAddress : localAddr;
 
-            // Log with a single icon for easy visual identification
-            ESP_LOGI(LM_TAG, "🌡️ Sending sensor data #%d - Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV",
-                     s.counter, s.temperature, s.humidity, s.battery);
+            // Log with appropriate icon based on device type
+            switch (s.deviceType) {
+                case DeviceType::SOIL_SENSOR:
+                    ESP_LOGI(LM_TAG, "🌱 Sending soil sensor data #%d - Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, Batt: %.2fV",
+                             s.counter, s.data.soil.soilMoisture, s.data.soil.soilTemperature, s.data.soil.pH, s.battery);
+                    break;
+                case DeviceType::ENV_SENSOR:
+                    ESP_LOGI(LM_TAG, "🌡️ Sending environment sensor data #%d - Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV",
+                             s.counter, s.data.environment.temperature, s.data.environment.humidity, s.battery);
+                    break;
+                default:
+                    ESP_LOGI(LM_TAG, "📊 Sending sensor data #%d - Type: %s, Batt: %.2fV",
+                             s.counter, deviceTypeToString(s.deviceType), s.battery);
+                    break;
+            }
 
             // Send sensorData struct to Bridge (use createPacketAndSend so secure wrapping is applied when enabled)
             // Find gateway node by role in routing table; fallback to broadcast if unknown
@@ -284,9 +296,21 @@ void NodeApp::loop() {
 
 sensorData NodeApp::simulateSensorData() {
     sensorData data;
-    data.temperature = 20.0 + (random(0, 200) / 10.0); // 20-40°C
-    data.humidity = 40.0 + (random(0, 600) / 10.0);    // 40-100%
-    data.battery = 3.2 + (random(0, 80) / 100.0);      // 3.2-4.0V
+    
+    // Set device type - This node simulates a soil sensor
+    data.deviceType = DeviceType::SOIL_SENSOR;
+    
+    // Simulate realistic soil sensor readings
+    data.data.soil.soilMoisture = 20.0 + (random(0, 600) / 10.0);      // 20-80% moisture
+    data.data.soil.soilTemperature = 18.0 + (random(0, 150) / 10.0);  // 18-33°C
+    data.data.soil.pH = 5.5 + (random(0, 250) / 100.0);                // pH 5.5-8.0
+    data.data.soil.ec = 0.3 + (random(0, 300) / 100.0);                // 0.3-3.3 mS/cm (electrical conductivity)
+    data.data.soil.nitrogen = 50.0 + (random(0, 2000) / 10.0);         // 50-250 mg/kg
+    data.data.soil.phosphorus = 20.0 + (random(0, 1000) / 10.0);       // 20-120 mg/kg
+    data.data.soil.potassium = 80.0 + (random(0, 1500) / 10.0);        // 80-230 mg/kg
+    
+    // Battery simulation
+    data.battery = 3.2 + (random(0, 80) / 100.0);  // 3.2-4.0V
     
     // Use real timestamp if synchronized, otherwise use millis() as fallback
     if (TimeSyncService::isTimeSynced()) {
@@ -296,6 +320,12 @@ sensorData NodeApp::simulateSensorData() {
         data.timestamp = millis() / 1000;  // Convert to seconds as fallback
         ESP_LOGW(LM_TAG, "⚠️ Using fallback timestamp (boot time): %u seconds", data.timestamp);
     }
+    
+    ESP_LOGD(LM_TAG, "🌱 Soil sensor simulation - Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, EC: %.2f mS/cm",
+             data.data.soil.soilMoisture, data.data.soil.soilTemperature, 
+             data.data.soil.pH, data.data.soil.ec);
+    ESP_LOGD(LM_TAG, "   NPK values - N: %.1f, P: %.1f, K: %.1f mg/kg",
+             data.data.soil.nitrogen, data.data.soil.phosphorus, data.data.soil.potassium);
     
     return data;
 }
