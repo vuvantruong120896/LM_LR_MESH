@@ -693,6 +693,31 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
         return;
     }
 
+    // ⚠️ CRITICAL: Memory safety check before processing (Oct 21, 2025)
+    // Prevents stack overflow and heap corruption
+    uint32_t stackFree = uxTaskGetStackHighWaterMark(NULL);
+    uint32_t heapFree = esp_get_free_heap_size();
+    
+    const uint32_t MIN_STACK_THRESHOLD = 3072;   // 3 KB minimum stack
+    const uint32_t MIN_HEAP_THRESHOLD = 20480;   // 20 KB minimum heap
+    
+    if (stackFree < MIN_STACK_THRESHOLD || heapFree < MIN_HEAP_THRESHOLD) {
+        ESP_LOGW(TAG, "❌ [SAFETY] Insufficient memory - Stack: %u bytes (need %u), Heap: %u bytes (need %u). Skipping packet processing.",
+                 stackFree, MIN_STACK_THRESHOLD, heapFree, MIN_HEAP_THRESHOLD);
+        gatewayState.uploadErrors++;
+        
+        // Buffer data if possible for later processing
+        if (packet->payloadSize >= sizeof(sensorData)) {
+            sensorData* s = reinterpret_cast<sensorData*>(packet->payload);
+            char nodeIdStr[16];
+            snprintf(nodeIdStr, sizeof(nodeIdStr), "0x%04X", packet->src);
+            String nodeIdStr_obj(nodeIdStr);
+            OfflineDataBuffer::addData(nodeIdStr_obj, *s);
+            ESP_LOGI(TAG, "📦 Buffered sensor data for node %s to offline storage", nodeIdStr);
+        }
+        return;
+    }
+
     gatewayState.totalMeshPackets++;
 
     // Extract data from packet - payload contains the actual sensorData
@@ -1018,16 +1043,20 @@ TaskHandle_t GatewayApp::createGatewayReceiveTask() {
 
     ESP_LOGI(TAG, "Creating gateway receive task...");
 
-    // CRITICAL FIX: Increased stack size from 4096 to 8192 bytes
-    // Reason: Stack overflow when uploading to Firebase via WiFi TCP
-    // - WiFi TCP connection stack usage: ~2KB
-    // - Firebase client operations: ~2KB
-    // - Nested function calls: ~1KB
-    // - Safety margin: ~3KB
+    // CRITICAL FIX: Increased stack size from 8192 to 16384 bytes (Oct 21, 2025)
+    // REASON: Stack overflow when processing LoRa packets + Firebase operations
+    // ANALYSIS:
+    // - LoRa packet decryption buffer: ~64 bytes
+    // - JSON data creation for Firebase: ~500 bytes
+    // - Firebase client state: ~200 bytes
+    // - Nested function calls & local variables: ~300+ bytes
+    // - WiFi TCP stack: ~2KB
+    // TOTAL required: ~3.5KB minimum
+    // With safety margin: 16KB recommended
     int res = xTaskCreate(
         processGatewayPackets,
         "Gateway Receive Task",
-        8192,  // Increased from 4096 to prevent stack overflow
+        16384,  // Increased from 8192 to 16384 (CRITICAL: prevents stack overflow)
         (void*) 1,
         2,
         &taskHandle);
@@ -1038,7 +1067,7 @@ TaskHandle_t GatewayApp::createGatewayReceiveTask() {
         return NULL;
     }
 
-    ESP_LOGI(TAG, "Gateway task created successfully, handle: %p, stack: 8192 bytes", taskHandle);
+    ESP_LOGI(TAG, "Gateway task created successfully, handle: %p, stack: 16384 bytes", taskHandle);
     return taskHandle;
 }
 

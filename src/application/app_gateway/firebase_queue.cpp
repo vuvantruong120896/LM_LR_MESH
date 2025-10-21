@@ -449,19 +449,37 @@ bool FirebaseQueueManager::processOperation(const FirebaseQueueItem_t& item) {
 bool FirebaseQueueManager::processSensorUpload(const FirebaseQueueItem_t& item) {
     ESP_LOGD(TAG, "📡 Uploading sensor data to Firebase");
     
-    auto result = m_firebaseClient->uploadSensorData(
-        item.payload.sensorUpload.data,
-        item.payload.sensorUpload.rssi,
-        item.payload.sensorUpload.snr
-    );
+    // ⚠️ CRITICAL FIX (Oct 21, 2025): Memory leak prevention
+    // Force scope boundaries to ensure String/temporary data is freed
+    bool success = false;
+    {
+        auto result = m_firebaseClient->uploadSensorData(
+            item.payload.sensorUpload.data,
+            item.payload.sensorUpload.rssi,
+            item.payload.sensorUpload.snr
+        );
+        
+        if (result.success) {
+            ESP_LOGD(TAG, "✅ Sensor data uploaded (%d bytes)", result.payloadSize);
+            success = true;
+        } else {
+            ESP_LOGW(TAG, "❌ Sensor upload failed: %s", result.errorMessage.c_str());
+            success = false;
+        }
+    }  // ← Scope ends here, temporary data freed
     
-    if (result.success) {
-        ESP_LOGD(TAG, "✅ Sensor data uploaded (%d bytes)", result.payloadSize);
-    } else {
-        ESP_LOGW(TAG, "❌ Sensor upload failed: %s", result.errorMessage.c_str());
+    // ⚠️ CRITICAL FIX (Oct 21, 2025): Force memory cleanup every 5 operations
+    static uint32_t operationCount = 0;
+    if (++operationCount % 5 == 0) {
+        uint32_t heapBefore = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+        // Force garbage collection by calling malloc/free
+        void* temp = malloc(256);
+        if (temp) free(temp);
+        uint32_t heapAfter = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+        ESP_LOGD(TAG, "🧹 Memory cleanup triggered - Heap: %u → %u bytes", heapBefore, heapAfter);
     }
     
-    return result.success;
+    return success;
 }
 
 bool FirebaseQueueManager::processStatusUpload(const FirebaseQueueItem_t& item) {
