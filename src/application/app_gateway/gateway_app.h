@@ -87,6 +87,11 @@ private:
     sensorData simulateGatewaySensorData(); // Generate gateway sensor data
     void handleWiFiEvent(WiFiConnectionService::WiFiEvent event, int8_t rssi);
     
+    // NEW: Queue-based Firebase upload helpers (non-blocking)
+    void queueRoutingTableUpload(uint8_t priority = 2);        // Queue routing table upload
+    void queueGatewaySensorDataUpload(uint8_t priority = 2);   // Queue gateway sensor upload
+    void queueGatewayStatusUpload(uint8_t priority = 2);       // Queue gateway status upload
+    
     // NEW: Command handlers for Firebase commands
     void handleStartProvisioning(const FirebaseCommandPoller::Command& cmd);
     void handleStopProvisioning(const FirebaseCommandPoller::Command& cmd);

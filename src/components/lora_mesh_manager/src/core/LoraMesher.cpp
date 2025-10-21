@@ -315,7 +315,7 @@ void LoraMesher::initializeSchedulers() {
     int res = xTaskCreate(
         [](void* o) { static_cast<LoraMesher*>(o)->receivingRoutine(); },
         "Receiving routine",
-        4096,
+        2*4096,
         this,
         6,
         &ReceivePacket_TaskHandle);

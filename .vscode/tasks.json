@@ -5,7 +5,7 @@
 			"label": "Build Legacy Env",
 			"type": "shell",
 			"command": "platformio",
-			"args": ["run", "-e", "esp32-c3-devkitm-1"],
+			"args": ["run", "-e", "esp32-gateway"],
 			"isBackground": false,
 			"group": "build",
 			"problemMatcher": ["$platformio"],

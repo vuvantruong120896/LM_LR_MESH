@@ -10,6 +10,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+// Forward declaration to avoid circular dependency
+class FirebaseQueueManager;
+
 /**
  * @brief Firebase Client for Gateway Application
  * 
@@ -221,6 +224,79 @@ public:
      * @return Pointer to FirebaseData object
      */
     FirebaseData* getFirebaseData() { return &m_firebaseData; }
+
+    // ===== NEW: Queue-based Non-blocking Firebase Operations =====
+    
+    /**
+     * @brief Queue sensor data for upload (non-blocking)
+     * @param data Sensor data structure
+     * @param rssi Signal strength (dBm)
+     * @param snr Signal-to-noise ratio
+     * @param priority Queue priority (default: normal)
+     * @return true if queued successfully, false otherwise
+     */
+    bool queueSensorData(const sensorData& data, int8_t rssi = 0, float snr = 0.0f, uint8_t priority = 2);
+
+    /**
+     * @brief Queue gateway status for upload (non-blocking)
+     * @param connectedNodes Number of connected nodes
+     * @param totalPacketsReceived Total packets received
+     * @param totalPacketsSent Total packets sent
+     * @param wifiRssi WiFi signal strength
+     * @param freeHeap Free heap memory (bytes)
+     * @param uptimeSeconds Gateway uptime (seconds)
+     * @param priority Queue priority (default: normal)
+     * @return true if queued successfully, false otherwise
+     */
+    bool queueGatewayStatus(
+        uint16_t connectedNodes,
+        uint32_t totalPacketsReceived,
+        uint32_t totalPacketsSent,
+        int8_t wifiRssi,
+        uint32_t freeHeap,
+        uint32_t uptimeSeconds,
+        uint8_t priority = 2
+    );
+
+    /**
+     * @brief Queue routing table for upload (non-blocking)
+     * @param routingTable Vector of routing table entries
+     * @param priority Queue priority (default: normal)
+     * @return true if queued successfully, false otherwise
+     */
+    bool queueRoutingTable(const std::vector<RouteNode>& routingTable, uint8_t priority = 2);
+
+    /**
+     * @brief Queue system event for logging (non-blocking)
+     * @param eventType Event type (e.g., "node_joined", "wifi_disconnected")
+     * @param nodeId Node ID (if applicable)
+     * @param details Additional event details (JSON string)
+     * @param priority Queue priority (default: normal)
+     * @return true if queued successfully, false otherwise
+     */
+    bool queueLogEvent(
+        const String& eventType,
+        const String& nodeId = "",
+        const String& details = "",
+        uint8_t priority = 2
+    );
+
+    /**
+     * @brief Initialize Firebase queue system
+     * @return true if initialization successful, false otherwise
+     */
+    bool initializeQueue();
+
+    /**
+     * @brief Shutdown Firebase queue system
+     */
+    void shutdownQueue();
+
+    /**
+     * @brief Check if queue system is running
+     * @return true if queue is initialized and running
+     */
+    bool isQueueRunning() const;
 
 private:
     // RAII helper for mutex

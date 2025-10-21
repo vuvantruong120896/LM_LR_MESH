@@ -1,0 +1,2166 @@
+ LM_LR_MESH  pio run -e esp32-gateway -t upload --upload-port COM4 && pio device monitor -p COM4 -b 115200
+Processing esp32-gateway (platform: espressif32; framework: arduino; board: esp32doit-devkit-v1)
+--------------------------------------------------------------------------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+CONFIGURATION: https://docs.platformio.org/page/boards/espressif32/esp32doit-devkit-v1.html
+PLATFORM: Espressif 32 (6.9.0) > DOIT ESP32 DEVKIT V1
+HARDWARE: ESP32 240MHz, 320KB RAM, 4MB Flash
+DEBUG: Current (cmsis-dap) External (cmsis-dap, esp-bridge, esp-prog, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa)
+PACKAGES:
+ - framework-arduinoespressif32 @ 3.20017.0 (2.0.17)
+ - tool-esptoolpy @ 1.40501.0 (4.5.1)
+ - tool-mkfatfs @ 2.0.1
+ - tool-mklittlefs @ 1.203.210628 (2.3)
+ - tool-mkspiffs @ 2.230.0 (2.30)
+ - toolchain-xtensa-esp32 @ 8.4.0+2021r2-patch5
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 37 compatible libraries
+Scanning dependencies...
+Dependency Graph
+|-- RadioLib @ 6.6.0
+|-- ArduinoJson @ 7.4.2
+|-- Firebase ESP32 Client @ 4.4.17
+|-- NimBLE-Arduino @ 1.4.3
+|-- WiFi @ 2.0.0
+|-- Preferences @ 2.0.0
+Building in release mode
+Retrieving maximum program size .pio\build\esp32-gateway\firmware.elf
+Checking size .pio\build\esp32-gateway\firmware.elf
+Advanced Memory Usage is available via "PlatformIO Home > Project Inspect"
+RAM:   [==        ]  17.7% (used 57936 bytes from 327680 bytes)
+Flash: [======    ]  62.3% (used 1634345 bytes from 2621440 bytes)
+Configuring upload protocol...
+AVAILABLE: cmsis-dap, esp-bridge, esp-prog, espota, esptool, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa
+CURRENT: upload_protocol = esptool
+Looking for upload port...
+Using manually specified: COM4
+Uploading .pio\build\esp32-gateway\firmware.bin
+esptool.py v4.5.1
+Serial port COM4
+Connecting.....
+Chip is ESP32-D0WDR2-V3-V3 (revision v3.1)
+Features: WiFi, BT, Dual Core, 240MHz, VRef calibration in efuse, Coding Scheme None
+Crystal is 40MHz
+MAC: 64:b7:08:3c:e7:64
+Uploading stub...
+Running stub...
+Stub running...
+Changing baud rate to 460800
+Changed.
+Configuring flash size...
+Flash will be erased from 0x00001000 to 0x00005fff...
+Flash will be erased from 0x00008000 to 0x00008fff...
+Flash will be erased from 0x0000e000 to 0x0000ffff...
+Flash will be erased from 0x00010000 to 0x001a0fff...
+Compressed 17536 bytes to 12202...
+Writing at 0x00001000... (100 %)
+Wrote 17536 bytes (12202 compressed) at 0x00001000 in 0.5 seconds (effective 265.8 kbit/s)...
+Hash of data verified.
+Compressed 3072 bytes to 120...
+Writing at 0x00008000... (100 %)
+Wrote 3072 bytes (120 compressed) at 0x00008000 in 0.0 seconds (effective 502.7 kbit/s)...
+Hash of data verified.
+Compressed 8192 bytes to 47...
+Writing at 0x0000e000... (100 %)
+Wrote 8192 bytes (47 compressed) at 0x0000e000 in 0.1 seconds (effective 586.4 kbit/s)...
+Hash of data verified.
+Compressed 1640928 bytes to 1019543...
+Writing at 0x00010000... (1 %)
+Writing at 0x00020ce0... (3 %)
+Writing at 0x00029e25... (4 %)
+Writing at 0x00033fd2... (6 %)
+Writing at 0x0003fbeb... (7 %)
+Writing at 0x000480a4... (9 %)
+Writing at 0x00057169... (11 %)
+Writing at 0x00063973... (12 %)
+Writing at 0x0006940d... (14 %)
+Writing at 0x0006f825... (15 %)
+Writing at 0x00075ac6... (17 %)
+Writing at 0x0007bc12... (19 %)
+Writing at 0x00081b92... (20 %)
+Writing at 0x00087c28... (22 %)
+Writing at 0x0008d9a8... (23 %)
+Writing at 0x00093321... (25 %)
+Writing at 0x00098823... (26 %)
+Writing at 0x0009de67... (28 %)
+Writing at 0x000a3877... (30 %)
+Writing at 0x000a8b38... (31 %)
+Writing at 0x000ae6cf... (33 %)
+Writing at 0x000b3abf... (34 %)
+Writing at 0x000b90d0... (36 %)
+Writing at 0x000be933... (38 %)
+Writing at 0x000c40e0... (39 %)
+Writing at 0x000c9d40... (41 %)
+Writing at 0x000cfb39... (42 %)
+Writing at 0x000d52ea... (44 %)
+Writing at 0x000dad7c... (46 %)
+Writing at 0x000e01e4... (47 %)
+Writing at 0x000e55ec... (49 %)
+Writing at 0x000ea927... (50 %)
+Writing at 0x000efcb7... (52 %)
+Writing at 0x000f4fbd... (53 %)
+Writing at 0x000fa678... (55 %)
+Writing at 0x0010065a... (57 %)
+Writing at 0x00106472... (58 %)
+Writing at 0x0010c4c5... (60 %)
+Writing at 0x00111ed8... (61 %)
+Writing at 0x001171b9... (63 %)
+Writing at 0x0011cde8... (65 %)
+Writing at 0x00122635... (66 %)
+Writing at 0x0012780a... (68 %)
+Writing at 0x0012cc26... (69 %)
+Writing at 0x00131e62... (71 %)
+Writing at 0x00137573... (73 %)
+Writing at 0x0013cdab... (74 %)
+Writing at 0x00142961... (76 %)
+Writing at 0x0014835b... (77 %)
+Writing at 0x0014dc8c... (79 %)
+Writing at 0x00152dcf... (80 %)
+Writing at 0x00157f93... (82 %)
+Writing at 0x0015d7b6... (84 %)
+Writing at 0x0016539d... (85 %)
+Writing at 0x0016d676... (87 %)
+Writing at 0x00174d77... (88 %)
+Writing at 0x00179e0e... (90 %)
+Writing at 0x00183d1d... (92 %)
+Writing at 0x001892c1... (93 %)
+Writing at 0x0018e84c... (95 %)
+Writing at 0x001946d8... (96 %)
+Writing at 0x00199810... (98 %)
+Writing at 0x0019f408... (100 %)
+Wrote 1640928 bytes (1019543 compressed) at 0x00010000 in 23.6 seconds (effective 556.2 kbit/s)...
+Hash of data verified.
+
+Leaving...
+Hard resetting via RTS pin...
+========================================================== [SUCCESS] Took 40.78 seconds ==========================================================
+
+Environment    Status    Duration
+-------------  --------  ------------
+esp32-gateway  SUCCESS   00:00:40.782
+========================================================== 1 succeeded in 00:00:40.782 ==========================================================
+--- Terminal on COM4 | 115200 8-N-1
+--- Available filters and text transformations: colorize, debug, default, direct, esp32_exception_decoder, hexlify, log2file, nocontrol, printable, send_on_enter, time
+--- More details at https://bit.ly/pio-monitor-filters
+--- Quit: Ctrl+C | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H
+E (650) esp_core_dump_flash: No co␌f,"յ��partition found!
+E (650) esp_core_dump_flash: No core dump partition found!
+[     8][D][esp32-hal-cpu.c:244] setCpuFrequencyMhz(): PLL: 480 / 2 = 240 Mhz, APB: 80000000 Hz
+[   122][V][esp32-hal-uart.c:330] uartBegin(): UART0 baud(115200) Mode(800001c) rxPin(3) txPin(1)
+[   131][V][esp32-hal-uart.c:416] uartBegin(): UART0 not installed. Starting installation
+[   142][V][esp32-hal-uart.c:463] uartBegin(): UART0 initialization done.
+[  2156][I][main.cpp:40] setup(): [GatewayMAIN] Starting in GATEWAY MODE
+[  2163][I][gateway_app.cpp:46] setup(): [GATEWAY] === LoRaMesh Gateway Application ===
+[  2171][I][gateway_app.cpp:50] setup(): [GATEWAY] Gateway Node ID (from WiFi MAC last 2 bytes): 0xE764
+[  3681][I][provision_manager.cpp:24] isProvisioned(): [ProvisionMgr] Provisioning status: YES
+[  3690][I][gateway_app.cpp:76] setup(): [GATEWAY] ✅ Device is provisioned, continuing setup in ONLINE mode...
+[  3701][I][MeshSecurityService.cpp:642] loadSequenceFromNVS(): [MeshSecurity] NVS sequence loaded: 922454070, starting from: 922455070
+[  3714][I][MeshSecurityService.cpp:520] loadPeerTableFromNVS(): [MeshSecurity] Loaded peer table from NVS (3 entries)
+[  3725][I][MeshSecurityService.cpp:96] initialize(): [MeshSecurity] Mesh security initialized - Encryption: ON, Auth: ON, Level: 2, Sequence: 922455070
+[  3738][I][NVSStorageService.cpp:30] initialize(): [NVSStorage] NVS flash initialized successfully
+[  3748][I][NVSStorageService.cpp:525] initializeAddressPool(): [NVSStorage] Address pool already initialized, next address: 0x0002
+[  3760][I][NVSStorageService.cpp:157] loadNetworkConfig(): [NVSStorage] Network configuration loaded successfully (blob)
+[  3771][I][gateway_app.cpp:95] setup(): [GATEWAY] Loaded network config from NVS: version=1, netId=0x0001, initialized=1, timestamp=75
+[  3783][I][gateway_app.cpp:110] setup(): [GATEWAY] NetworkKey: 61D829A82BABCB2026DBDC70FB7BFD71
+[  3792][I][gateway_app.cpp:111] setup(): [GATEWAY] AuthToken: ABABABABABABABAB
+[  3799][I][NetkeyDistributionService.cpp:234] updateLocalNetworkKey(): [NetkeyDistribution] Updating local network key - Version: 1, Network ID:0x0001
+[  3813][I][MeshSecurityService.cpp:577] updateConfig(): [MeshSecurity] Updating security configuration
+[  3828][D][MeshSecurityService.cpp:677] saveSequenceToNVS(): [MeshSecurity] Sequence counter saved to NVS: 922455070
+[  3839][I][MeshSecurityService.cpp:595] updateConfig(): [MeshSecurity] Security configuration updated successfully
+[  3849][D][NetkeyDistributionService.cpp:254] updateLocalNetworkKey(): [NetkeyDistribution] Updated key (first 8 bytes): 61D829A82BABCB20...
+[  3861][I][NetkeyDistributionService.cpp:262] updateLocalNetworkKey(): [NetkeyDistribution] Local network key updated successfully with Network ID: 0x0001
+[  3876][D][MeshSecurityService.cpp:677] saveSequenceToNVS(): [MeshSecurity] Sequence counter saved to NVS: 922455070
+[  3887][I][MeshSecurityService.cpp:51] resetReplayState(): [MeshSecurity] Replay protection state reset, sequence preserved: 922455070
+[  3899][I][gateway_app.cpp:164] initializeServices(): [GATEWAY] Initializing AddressManagementService...
+[  3908][I][AddressManagementService.cpp:16] initialize(): [AddrMgmt] Initializing Address Management Service...
+[  3918][W][AddressManagementService.cpp:28] initialize(): [AddrMgmt] Address pool validation issues detected, attempting repair...
+[  3930][I][AddressManagementService.cpp:43] initialize(): [AddrMgmt] Address Management Service initialized successfully
+[  3941][I][gateway_app.cpp:168] initializeServices(): [GATEWAY] AddressManagementService initialized on attempt 1
+[  3951][I][gateway_app.cpp:184] initializeServices(): [GATEWAY] Simplified provisioning via netkey distribution - no ProvisioningService needed
+[  3964][I][provision_manager.cpp:24] isProvisioned(): [ProvisionMgr] Provisioning status: YES
+[  3973][I][gateway_app.cpp:475] setupLoRaMesher(): [GATEWAY] Setting up LoRaMesher...
+[  3980][V][LoraMesher.cpp:22] begin(): [LoRaMesher] Initializing LoraMesher v0.0.9
+[  3988][V][LoraMesher.cpp:127] initConfiguration(): [LoRaMesher] Initializing Configuration
+[  3996][V][LoraMesher.cpp:133] initializeLoRa(): [LoRaMesher] Initializing RadioLib
+[  4004][I][LoraMesher.cpp:137] initializeLoRa(): [LoRaMesher] LoRaMesher Configuration:
+[  4012][I][LoraMesher.cpp:138] initializeLoRa(): [LoRaMesher] LoRa Module: 0
+[  4019][I][LoraMesher.cpp:139] initializeLoRa(): [LoRaMesher] LoRa CS: 5
+[  4025][I][LoraMesher.cpp:140] initializeLoRa(): [LoRaMesher] LoRa IRQ: 15
+[  4032][I][LoraMesher.cpp:141] initializeLoRa(): [LoRaMesher] LoRa RST: 4
+[  4039][I][LoraMesher.cpp:142] initializeLoRa(): [LoRaMesher] LoRa IO1: 255
+[  4046][I][LoraMesher.cpp:156] initializeLoRa(): [LoRaMesher] SPI.begin(SCK:18, MISO:16, MOSI:19, CS:5);
+[  4056][V][LoraMesher.cpp:167] initializeLoRa(): [LoRaMesher] Using SX1276 module
+[  4063][V][LoraMesher.cpp:246] initializeLoRa(): [LoRaMesher] Initializing radio
+[  4086][I][LoraMesher.cpp:255] initializeLoRa(): [LoRaMesher] LoRa module initialization DONE
+[  4095][V][LoraMesher.cpp:1249] recalculateMaxTimeOnAir(): [LoRaMesher] Max Time on Air changed 169 ms
+[  4104][V][LoraMesher.cpp:314] initializeSchedulers(): [LoRaMesher] Setting up Schedulers
+[  4112][V][LoraMesher.cpp:553] sendPackets(): [LoRaMesher] Send routine started
+[  4112][V][LoraMesher.cpp:396] receivingRoutine(): [LoRaMesher] Receiving routine started
+[  4128][V][LoraMesher.cpp:654] sendHelloPacket(): [LoRaMesher] Send Hello Packet routine started
+[  4128][V][LoraMesher.cpp:715] processPackets(): [LoRaMesher] Process routine started
+[  4144][V][LoraMesher.cpp:937] routingTableManager(): [LoRaMesher] Routing Table Manager routine started
+[  4144][V][LoraMesher.cpp:998] queueManager(): [LoRaMesher] Queue Manager routine started
+[  9161][I][gateway_app.cpp:503] setupLoRaMesher(): [GATEWAY] Gateway configured as Gateway role
+[  9170][I][gateway_app.cpp:1014] createGatewayReceiveTask(): [GATEWAY] Creating gateway receive task...
+[  9179][I][gateway_app.cpp:916] processGatewayPackets(): [GATEWAY] [[G A T9E1W7A9Y]-[TIA]S[Kg]a tGeawtaeyw_aayp pp.accpkpe:t1 0proc crengeGask ayartedi
+eTask(): [GATEWAY] Gateway task created successfully, handle: 0x3ffd9ebc, stack: 8192 bytes
+[  9201][I][gateway_app.cpp:507] setupLoRaMesher(): [GATEWAY] Setting task handle 0x3ffd9ebc for gateway data
+[  9201][I][gateway_app.cpp:920] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Initial stack high water mark: 6772 bytes free
+[  9222][I][WiFiService.cpp:18] init(): [LoRaMesher] Local LoRa address (from WiFi MAC): E764
+E (9216) gpio: gpio_isr_handler_remove(482): GPIO isr service is not installed, call gpio_install_isr_service() first
+[  9232][V][LoraMesher.cpp:660] sendHelloPacket(): [LoRaMesher] Max routing nodes per packet: 23
+[  9250][I][gateway_app.cpp:926] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Initial free heap: 163192 bytes
+[  9250][V][LoraMesher.c  9250][V]987][roraMnsher.gTableMapp:1010] qer(): [LeMaMageresher] Stac [LoRaMe fres:er]852 pac
+kets to send or received
+[  9273][I][gateway_app.cpp:510] setupLoRaMesher(): [GATEWAY] LoRaMesher initialized for Gateway
+[  9281][I][gateway_app.cpp:518] setupWiFi(): [GATEWAY] Setting up WiFi connection...
+[  9291][I][gateway_app.cpp:528] setupWiFi(): [GATEWAY] Loaded WiFi SSID from provisioning: OXII
+[WiFi] RSSI threshold set to -80 dBm
+[  9319][D][WiFiGeneric.cpp:1040] _eventCallback(): Arduino Event: 0 - WIFI_READY
+[WiFi] Service initialized
+[  9402][I][gateway_app.cpp:554] setupWiFi(): [GATEWAY] Connecting to WiFi: OXII
+[  9401][V][WiFiGeneric.cpp:341] _arduino_event_cb(): STA Started
+[WiFi] Connecting to OXII...
+[  9417][D][WiFiGeneric.cpp:1040] _eventCallback(): Arduino Event: 2 - STA_START
+[  9429][V][WiFiGeneric.cpp:97] set_esp_interface_ip(): Configuring Station static IP: 0.0.0.0, MASK: 0.0.0.0, GW: 0.0.0.0
+[  9610][V][WiFiGeneric.cpp:356] _arduino_event_cb(): STA Connected: SSID: OXII, BSSID: 00:6b:8e:9d:63:92, Channel: 11, Auth: WPA_WPA2_PSK
+[  9623][D][WiFiGeneric.cpp:1040] _eventCallback(): Arduino Event: 4 - STA_CONNECTED
+[  9977][V][WiFiGeneric.cpp:370] _arduino_event_cb(): STA Got New IP:192.168.2.110
+[  9985][D][WiFiGeneric.cpp:1040] _eventCallback(): Arduino Event: 7 - STA_GOT_IP
+[  9993][D][WiFiGeneric.cpp:1103] _eventCallback(): STA IP: 192.168.2.110, MASK: 255.255.255.0, GW: 192.168.2.1
+[WiFi] Connected! IP: 192.168.2.110, RSSI: -51 dBm
+[ 10073][I][gateway_app.cpp:873] handleWiFiEvent(): [GATEWAY] ✅ WiFi CONNECTED! IP: 192.168.2.110, RSSI: -51 dBm
+[ 10273][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10852
+[ 10687][I][gateway_app.cpp:560] setupWiFi(): [GATEWAY] WiFi connected! IP: 192.168.2.110, MAC: 64:B7:08:3C:E7:64, RSSI: -51 dBm
+[ 10699][I][gateway_app.cpp:568] setupFirebase(): [GATEWAY] Setting up Firebase connection...
+[ 10709][I][gateway_app.cpp:578] setupFirebase(): [GATEWAY] User UID from provisioning: 4F0EPiGc75WVu8bZBbGKXZZVAK13
+[ 10719][I][gateway_app.cpp:582] setupFirebase(): [GATEWAY] Gateway MAC: 64:B7:08:3C:E7:64
+[Firebase] Gateway ID stored: 64:B7:08:3C:E7:64
+[Firebase] User context set: UID=4F0EPiGc75WVu8bZBbGKXZZVAK13, MAC=64:B7:08:3C:E7:64
+[Firebase] Retry config: 3 retries, 1000 ms delay
+[Firebase] Initializing...
+[Firebase] Initialized
+[Firebase] Connecting to https://kagri-iot-default-rtdb.asia-southeast1.firebasedatabase.app/:null...
+[ 10768][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 11013][V][PacketService.cpp:27] createEmptyPacket(): [LoRaMesher] Packet created with 10 bytes
+[ 11023][I][LoraMesher.cpp:455] receivingRoutine(): [LoRaMesher] 📧 Receiving LoRa packet: Size: 10 bytes RSSI: -43 SNR: 10
+[ 11039][V][LoraMesher.cpp:1040] printHeaderPacket(): [LoRaMesher] Packet received -- Size: 10 Src: CC64 Dst: FFFF Id: 0 Type: 4 Via: 0 Seq_Id: 0Num: 0
+[ 11053][I][RoutingTableService.cpp:106] processRoute(): [LoRaMesher] Route packet from CC64 with size 0, Network ID: 0x0001, RSSI: -43, SNR: 10
+[ 11066][D][RoutingTableService.cpp:356] resetTimeoutRoutingNode(): [LoRaMesher] Reset timeout for node 0xCC64: 360 seconds (Hello interval: 120s× 3)
+[ 11082][I][RoutingTableService.cpp:284] addNodeToRoutingTable(): [LoRaMesher] New route added: CC64 via CC64 metric 1, role 0, quality 0.62
+[ 11096][I][RoutingTableService.cpp:139] resetReceiveSNRRoutePacket(): [LoRaMesher] Reset Receive SNR from CC64: 10
+[ 11106][D][RoutingTableService.cpp:152] resetReceiveRSSIRoutePacket(): [LoRaMesher] Reset Receive RSSI from CC64: -43
+[ 11117][I][RoutingTableService.cpp:360] printRoutingTable(): [LoRaMesher] Current routing table:
+[ 11126][I][RoutingTableService.cpp:387] printRoutingTable(): [LoRaMesher] 0 - Addr:0xCC64 via:0xCC64 hops:1 role:0 TTL:359s SNR:10dB RSSI:-43dBmQ:0.846
+[ 11140][I][RoutingTableService.cpp:394] printRoutingTable(): [LoRaMesher] Total nodes in routing table: 1
+[Firebase] Connected successfully!
+[ 11161][I][gateway_app.cpp:608] setupFirebase(): [GATEWAY] 🔥 Firebase connected! User: 4F0EPiGc75WVu8bZBbGKXZZVAK13, Gateway: 64:B7:08:3C:E7:64
+[ 11177][I][gateway_app.cpp:611] setupFirebase(): [GATEWAY] 🚀 Initializing Firebase Queue System...
+[Firebase] Initializing queue system...
+[ 11187][I][firebase_queue.cpp:98] initialize(): [FIREBASE_QUEUE] Initializing Firebase Queue Manager...
+[ 11199][I][firebase_queue.cpp:185] workerTask(): [FIREBASE_QUEUE] 🚀 Firebase Worker Task started on CPU1
+[ 11209][I][firebase_queue.cpp:186] workerTask(): [FIREBASE_QUEUE]   Stack size: 16384 bytes
+[ 11218][I][firebase_queue.cpp:187] workerTask(): [FIREBASE_QUEUE]   Priority: 2
+[ 11226][I][firebase_queue.cpp:194] workerTask(): [FIREBASE_QUEUE] Initial stack high water mark: 14696 bytes
+[ 11235][I][firebase_queue.cpp:138] initialize(): [FIREBASE_QUEUE] ✅ Firebase Queue Manager initialized successfully
+[ 11246][I][firebase_queue.cpp:139] initialize(): [FIREBASE_QUEUE]   Queue size: 100 items
+[ 11249][V][LoraMesher.cpp:666] sendHelloPacket(): [LoRaMesher] Creating Routing Packet
+[ 11262][I][firebase_queue.cpp:141] initialize(): [FIREBASE_QUEUE]   Worker task: CPU1, Priority 2, Stack 16384 bytes
+[ 11262][V][LoraMesher.cpp:667] sendHelloPacket(): [LoRaMesher] Stack space unused after entering the task: 2644
+[ 11281][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10708
+[ 11290][V][LoraMesher.cpp:668] sendHelloPacket(): [LoRaMesher] Free heap: 54472
+[ 11297][V][PacketFactory.h:46] createPacket(): [LoRaMesher] Creating packet with 16 bytes
+[ 11306][I][PacketFactory.h:75] createPacket(): [LoRaMesher] Packet created with 16 bytes
+[ 11314][D][LoraMesher.h:796] setPackedForSend(): [LoRaMesher] Adding packet to Q_SP
+[ 11321][D][LoraMesher.h:798] setPackedForSend(): [LoRaMesher] Created packet to Q_SP
+[ 11329][I][LoraMesher.cpp:1317] addToSendOrderedAndNotify(): [LoRaMesher] Added packet to Q_SP, notifying sender task
+[ 11340][V][LoraMesher.cpp:579] sendPackets(): [LoRaMesher] Size of Send Packets Queue: 1
+[ 11340][D][LoraMesher.cpp:707] sendHelloPacket(): [LoRaMesher] Hello task waiting 120000 ms (mode: 0)
+[ 11357][V][LoraMesher.cpp:586] sendPackets(): [LoRaMesher] Send n. 0
+[ 11363][I][firebase_queue.cpp:142] initialize(): [FIREBASE_QUEUE]   Min operation interval: 500 ms
+[Firebase] ✅ Queue system initialized successfully
+[ 11372][I][gateway_app.cpp:613] setupFirebase(): [GATEWAY] ✅ Firebase Queue System initialized successfully
+[ 11387][I][gateway_app.cpp:614] setupFirebase(): [GATEWAY]   Worker task running on CPU1
+[ 11395][I][gateway_app.cpp:615] setupFirebase(): [GATEWAY]   Queue size: 100 items
+[ 11402][I][gateway_app.cpp:616] setupFirebase(): [GATEWAY]   Min operation interval: 500ms
+[ 11410][I][firebase_queue.cpp:1555] enableBatchOptimization(): [FIREBASE_QUEUE] 📦 Batch optimization enabled
+[ 11420][I][gateway_app.cpp:623] setupFirebase(): [GATEWAY] 📦 Batch optimization enabled
+[ 11429][I][firebase_queue.cpp:1391] setRetryStrategy(): [FIREBASE_QUEUE] 🔄 Retry strategy changed to: 5
+[ 11438][I][gateway_app.cpp:627] setupFirebase(): [GATEWAY] 🔄 Adaptive retry strategy enabled
+[ 11447][I][firebase_queue.cpp:1452] setQueueMode(): [FIREBASE_QUEUE] ⚙️ Queue mode changed to: 3
+[ 11456][I][firebase_queue.cpp:1483] optimizeQueueForMode(): [FIREBASE_QUEUE] 🚀 Throughput optimization enabled
+[ 11466][I][gateway_app.cpp:631] setupFirebase(): [GATEWAY] 🚀 Queue configured for throughput optimization
+[ 11476][I][firebase_queue.cpp:1560] enableQueuePersistence(): [FIREBASE_QUEUE] 💾 Queue persistence enabled
+[ 11486][I][gateway_app.cpp:635] setupFirebase(): [GATEWAY] 💾 Queue persistence enabled
+[ 11494][I][gateway_app.cpp:645] setupFirebase(): [GATEWAY] 📤 Queuing initial gateway info upload...
+[ 11504][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 5 (priority 3)
+[ 11514][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 221 ms
+[ 11523][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 5 (priority 3)
+[Firebase] ✅ Event queued (type: gateway_started, priority: 3)
+[ 11533][I][gateway_app.cpp:666] setupFirebase(): [GATEWAY] Initializing Firebase Command Poller...
+[ 11548][I][firebase_command_poller.cpp:19] FirebaseCommandPoller(): [CMD_POLLER] Command poller created
+[ 11557][I][firebase_command_poller.cpp:20] FirebaseCommandPoller(): [CMD_POLLER] User UID: 4F0EPiGc75WVu8bZBbGKXZZVAK13
+[ 11568][I][firebase_command_poller.cpp:21] FirebaseCommandPoller(): [CMD_POLLER] Gateway MAC: 64:B7:08:3C:E7:64
+[ 11578][I][firebase_command_poller.cpp:22] FirebaseCommandPoller(): [CMD_POLLER] Base path: users/4F0EPiGc75WVu8bZBbGKXZZVAK13/commands/64:B7:08:3C:E7:64
+[ 11592][I][firebase_command_poller.cpp:26] begin(): [CMD_POLLER] === Command Poller Initialized ===
+[ 11601][I][firebase_command_poller.cpp:27] begin(): [CMD_POLLER] Poll interval: 10000 ms
+[ 11609][I][firebase_command_poller.cpp:28] begin(): [CMD_POLLER] Enabled: YES
+[ 11616][I][gateway_app.cpp:673] setupFirebase(): [GATEWAY] ✅ Command poller ready - Gateway can receive commands from Mobile App
+[ 11628][I][gateway_app.cpp:1342] setupTimeSync(): [GATEWAY] Setting up Time Synchronization...
+[ 11636][I][TimeSyncService.cpp:24] initialize(): [TimeSync] Time Sync Service initialized (Mode: Gateway)
+[ 11646][I][TimeSyncService.cpp:35] syncWithNTP(): [TimeSync] Syncing time with NTP server: pool.ntp.org
+[ 11744][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 5 (attempt 1/2)
+[ 11754][D][firebase_queue.cpp:513] processLogEvent(): [FIREBASE_QUEUE] 📝 Logging event to Firebase
+[ 11980][V][LoraMesher.cpp:1040] printHeaderPacket(): [LoRaMesher] Packet send -- Size: 16 Src: E764 Dst: FFFF Id: 0 Type: 4 Via: 0 Seq_Id: 0 Num: 0
+[Firebase] Event logged: gateway_started
+[ 12191][D][firebase_queue.cpp:524] processLogEvent(): [FIREBASE_QUEUE] ✅ Event logged successfully
+[ 12203][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 12289][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10708
+[ 13297][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10708
+[ 14184][I][TimeSyncService.cpp:65] syncWithNTP(): [TimeSync] ✅ NTP sync successful! Current time: Tue Oct 21 11:13:42 2025
+
+[ 14196][I][TimeSyncService.cpp:66] syncWithNTP(): [TimeSync] Unix timestamp: 1761020022, Boot offset: 1761020008
+[ 14206][I][gateway_app.cpp:1362] setupTimeSync(): [GATEWAY] ✅ NTP sync successful - Gateway time synchronized
+[ 14216][D][TimeSyncService.cpp:109] createTimeSyncPacket(): [TimeSync] Created time sync packet: 1761020022.032 (NTP: Yes)
+[ 14227][I][gateway_app.cpp:1386] broadcastTimeSync(): [GATEWAY] 📡 Broadcasting time sync to all nodes: 1761020022.032
+[ 14238][V][LoraMesher.h:294] createPacketAndSend(): [LoRaMesher] Creating a packet for send with 8 bytes
+[ 14248][V][PacketFactory.h:46] createPacket(): [LoRaMesher] Creating packet with 17 bytes
+[ 14256][I][PacketFactory.h:75] createPacket(): [LoRaMesher] Packet created with 17 bytes
+[ 14265][V][MeshSecurityService.cpp:175] encryptPayload(): [MeshSecurity] Payload encrypted: 8 bytes -> 16 bytes
+[ 14276][V][SecurePacketService.cpp:279] authenticatePacket(): [SecurePacket] Generating MAC - offset: 29, total size: 73
+[ 14286][D][SecurePacketService.cpp:290] authenticatePacket(): [SecurePacket] Generating MAC with Network Key: 61D829A82BABCB20...
+[ 14298][D][SecurePacketService.cpp:309] authenticatePacket(): [SecurePacket] MAC generation data: 69 bytes
+[ 14305][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10660
+[ 14315][D][SecurePacketService.cpp:314] authenticatePacket(): [SecurePacket] MAC gen data (first 16 bytes): FFFF64E7 82004900 78800300 001F8CFB
+[ 14329][D][SecurePacketService.cpp:328] authenticatePacket(): [SecurePacket] Generated MAC: 18D3EC8A
+[ 14338][D][SecurePacketService.cpp:101] wrapPacket(): [SecurePacket] Packet wrapped - Original: 17 bytes, Secure: 73 bytes, Level: 2
+[ 14350][I][LoraMesher.h:345] createPacketAndSend(): [LoRaMesher] Packet encrypted and authenticated (via=0x7800 preserved)
+[ 14361][V][datapacket.h:19] operator delete(): [LoRaMesher] Deleting Data packet
+[ 14368][D][LoraMesher.h:796] setPackedForSend(): [LoRaMesher] Adding packet to Q_SP
+[ 14376][D][LoraMesher.h:798] setPackedForSend(): [LoRaMesher] Created packet to Q_SP
+[ 14383][I][LoraMesher.cpp:1317] addToSendOrderedAndNotify(): [LoRaMesher] Added packet to Q_SP, notifying sender task
+[ 14394][I][R[o u1t4i3n9g4T]a[bVl]e[SLeorrvaiMcees.hceprp.:c4p8p7:]5 7s9e]t RsoeuntdiPnagcTkaebtlse(C)h:a n[gLeodRCaaMlelsbhaecrk] : [e RaMeener]acouts ng ue:le change callback registered
+[ 14411][I][gateway_app.cpp:[1 3144]4 1s1e]t[uVp]([)L:o r[aGMAeTsEhWeArY.]c pRpe:g5i8s6t]e rseedn drPoauctkientgs (t)a:b l[eL ocRhangheralSead n1
+real-time Firebase upload
+[ 14427][I][offline_data_buffer.cpp:50] initialize(): [OfflineBuffer] ✅ NVS schema version matches: 1
+[ 14437][I][offline_data_buffer.cpp:62] initialize(): [OfflineBuffer] ✅ Offline buffer initialized: head=23, tail=23, count=0
+[ 14449][I][gateway_app.cpp:141] setup(): [GATEWAY] 📦 Offline buffer ready: 0/50 samples (0% full)
+[ 14458][I][gateway_app.cpp:147] setup(): [GATEWAY] Routing table will be built from scratch via HELLO protocol
+[ 14468][I][gateway_app.cpp:149] setup(): [GATEWAY] ✅ Gateway setup complete (provisioned mode)
+[ 14753][V][LoraMesher.cpp:1040] printHeaderPacket(): [LoRaMesher] Packet send -- Size: 73 Src: E764 Dst: FFFF Id: 0 Type: 130 Via: 7800 Seq_Id: 128 Num: 3
+[ 15077][I][provision_manager.cpp:24] isProvisioned(): [ProvisionMgr] Provisioning status: YES
+[ 15085][I][gateway_app.cpp:215] loop(): [GATEWAY] Provision status: PROVISIONED
+[ 15094][I][gateway_app.cpp:354] loop(): [GATEWAY] 📡 Initial routing table upload (post-reboot)
+[ 15103][I][gateway_app.cpp:357] loop(): [GATEWAY] 📡 Initial routing table upload (post-reboot)
+[ 15112][I][gateway_app.cpp:1911] queueRoutingTableUpload(): [GATEWAY] 📡 Queuing routing table (1 nodes, priority 3)
+[ 15123][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 4 (priority 3)
+[ 15134][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 4 (attempt 1/3)
+[ 15144][D][firebase_queue.cpp:490] processRoutingTableUpload(): [FIREBASE_QUEUE] 🗺️ Uploading routing table to Firebase
+[Firebase] Routing table JSON (pretty print):
+{
+  "nodes": {
+    "0xCC64": {
+      "address": "0xCC64",
+      "via": "0xCC64",
+      "metric[ 15158][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 4 (priority 3)
+": 1,
+      "role": 0,
+      "rssi": -43,
+      "snr": 10,
+      "last_seen": 1761020022
+    }
+  },
+  "node_count": 1,
+  "updated_at": 1761020022
+}
+[ 15196][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[Firebase] ✅ Routing table queued (1 nodes, priority: 3)
+[ 15202][D][gateway_app.cpp:1918] queueRoutingTableUpload(): [GATEWAY] ✅ Routing table queued successfully
+[ 15217][I][gateway_app.cpp:379] loop(): [GATEWAY] 📊 Initial Gateway sensor data upload (post-reboot)
+[ 15226][I][gateway_app.cpp:382] loop(): [GATEWAY] 📊 Initial Gateway sensor data upload (post-reboot)
+[ 15236][I][gateway_app.cpp:1409] simulateGatewaySensorData(): [GATEWAY] ✅ Gateway sensor using synced timestamp: 1761020023 (Unix time)
+[ 15260][I][gateway_app.cpp:1429] simulateGatewaySensorData(): [GATEWAY] 🌱 Soil sensor data: Moisture=56.6%, Temp=29.9°C, pH=7.32,[ 15315][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10660
+ EC=2.47 mS/cm
+[ 15331][I][gateway_app.cpp:1431] simulateGatewaySensorData(): [GATEWAY]    NPK: N=235, P=117, K=117 mg/kg
+[ 15437][I][gateway_app.cpp:1945] queueGatewaySensorDataUpload(): [GATEWAY] 🏠 Queuing Gateway sensor data (priority 3)
+[ 15448][I][gateway_app.cpp:1953] queueGatewaySensorDataUpload(): [GATEWAY] 🌱 Gateway Soil - Counter: 1, Moisture: 56.6%, Temp: 29.9°C, pH: 7.32, Batt: 4.00V
+[ 15902][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 1 (priority 3)
+[Firebase] ✅ Sensor data queued (node: 0xE764, priority: 3)
+[ 15913][D][gateway_app.cpp:1971] queueGatewaySensorDataUpload(): [GATEWAY] ✅ Gateway sensor data queued successfully
+[Firebase] Routing table uploaded (1 nodes)
+[ 15955][D][firebase_queue.cpp:504] processRoutingTableUpload(): [FIREBASE_QUEUE] ✅ Routing table uploaded (158 bytes)
+[ 15970][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 15990][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 1 (priority 3)
+[ 16001][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 480 ms
+[ 16128][D][firebase_command_poller.cpp:45] poll(): [CMD_POLLER] Polling for pending commands...
+[ 16137][D][firebase_command_poller.cpp:63] fetchPendingCommands(): [CMD_POLLER] Fetching from: users/4F0EPiGc75WVu8bZBbGKXZZVAK13/commands/64:B7:08:3C:E7:64/pending
+[ 16153][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 16323][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10660
+[ 16489][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 1 (attempt 1/4)
+[ 16499][D][firebase_queue.cpp:450] processSensorUpload(): [FIREBASE_QUEUE] 📡 Uploading sensor data to Firebase
+[Firebase] Soil sensor data - Moisture: 56.6%, Temp: 29.9°C, pH: 7.32, EC: 2.47 mS/cm
+[Firebase] Sensor data JSON (node 0xE764, type: soil_sensor):
+{
+  "deviceType": "soil_sensor",
+  "counter": 1,
+  "battery": 4,
+  "timestamp": 1761020024,
+  "rssi": -50,
+  "snr": 10,
+  "soilMoisture": 56.6,
+  "soilTemperature": 29.9,
+  "pH": 7.32,
+  "ec": 2.47,
+  "nitrogen": 234.7,
+  "phosphorus": 117.2,
+  "potassium": 116.8
+}
+[Firebase] Upload error - Path: nodes/4F0EPiGc75WVu8bZBbGKXZZVAK13/64:B7:08:3C:E7:64/0xE764/latest_data, Error:
+[Firebase] Upload fai[ 16572][D][firebase_command_poller.cpp:68] fetchPendingCommands(): [CMD_POLLER] No pending commands (or error: )
+led (attempt 1/3), retrying in 1000 ms...
+[ 16598][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-53, heap=60432, uptime=16
+[ 16613][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 16623][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 16738][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-53, heap=60804, uptime=16
+[ 16753][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 16763][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 16879][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-53, heap=60804, uptime=16
+[ 16894][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 16904][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 17020][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-53, heap=60804, uptime=17
+[ 17035][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 17045][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 17160][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=60804, uptime=17
+[ 17175][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 17185][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 17301][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=60804, uptime=17
+[ 17316][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 17326][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 17331][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10660
+[ 17449][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=60804, uptime=17
+[ 17464][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 17474][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 17590][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=60[ 17598][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+804, uptime=17
+[ 17611][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 17621][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 17749][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-51, heap=45836, uptime=17
+[ 17838][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 17849][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 18103][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-52, heap=60580, uptime=18
+[ 18118][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 18128][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 18176][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 18310][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-51, heap=45476, uptime=18
+[ 18330][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[ 18348][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10660
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 18413][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 18592][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-51, heap=60144, uptime=18
+[ 18607][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 18618][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Sensor data uploaded for node 0xE764 (RSSI: -50 dBm, SNR: 10.0)
+[ 18641][D][firebase_queue.cpp:459] processSensorUpload(): [FIREBASE_QUEUE] ✅ Sensor data uploaded (212 bytes)
+[ 18657][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 18678][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 18689][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 18734][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-57, heap=60716, uptime=18
+[ 18749][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 18759][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 18874][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-57, heap=60716, uptime=18
+[ 18888][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 18898][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 19014][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=60716, uptime=19
+[ 19029][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 19039][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 19155][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=60716, uptime=19
+[ 19170][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[ 19176][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 19190][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -53,
+  "firebase_connected": true,
+  "uptime_seconds": 16,
+  "free_heap": 60432,
+  "timestamp": 1761020027
+}
+[ 19219][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 19231][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 19356][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10660
+[ 19376][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-51, heap=48276, uptime=19
+[ 19462][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 19544][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 16 uptime)
+[ 19681][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 19696][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 19716][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 19727][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 480 ms
+[ 19737][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=60488, uptime=19
+[ 19752][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 19762][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 19877][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-52, heap=60488, uptime=19
+[ 19892][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 19902][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 20018][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-52, heap=60488, uptime=20
+[ 20033][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 20043][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 20159][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=60488, uptime=20
+[ 20174][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 20184][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 20215][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 20225][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -53,
+  "firebase_connected": true,
+  "uptime_seconds": 16,
+  "free_heap": 60804,
+  "timestamp": 1761020028
+}
+[ 20255][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 20300][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=57496, uptime=20
+[ 20323][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[ 20365][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10624
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 20388][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 20575][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=48200, uptime=20
+[ 20661][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 20672][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 16 uptime)
+[ 20714][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 20729][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 20750][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 20761][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 20788][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-51, heap=60264, uptime=20
+[ 20803][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 20813][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 20929][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-51, heap=60264, uptime=20
+[ 20944][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 20954][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 21069][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-52, heap=60264, uptime=21
+[ 21084][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 21094][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 21210][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-52, heap=60264, uptime=21
+[ 21225][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 21235][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 21248][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 21260][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -53,
+  "firebase_connected": true,
+  "uptime_seconds": 16,
+  "free_heap": 60804,
+  "timestamp": 1761020029
+}
+[ 21290][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 21373][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10624
+[ 21426][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-51, heap=45444, uptime=21
+[ 21445][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 21528][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 21708][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=59580, uptime=21
+[ 21723][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 21734][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 16 uptime)
+[ 21753][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 21768][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 21789][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 21800][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 21850][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=60040, uptime=21
+[ 21865][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 21875][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 21990][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=60040, uptime=21
+[ 22005][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 22015][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 22131][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=60040, uptime=22
+[ 22146][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 22156][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 22272][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-51, heap=60040, uptime=22
+[ 22287][D][f[ 22287][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 22298][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "irebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+wifi_rssi": -53,
+  "firebase_connected": true,
+  "uptime_seconds": 17,
+  "free_heap": 60804,
+  "timestamp": 1761020030
+}
+[ 22337][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 22349][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 22381][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10624
+[ 22491][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=45184, uptime=22
+[ 22584][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 22660][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 17 uptime)
+[ 22800][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 22815][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 22833][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=5[ 22835][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 22857][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 468 ms
+9816, uptime=22
+[ 22867][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 22877][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 22994][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-51, heap=59816, uptime=22
+[ 23008][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 23018][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 23134][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-51, heap=59816, uptime=23
+[ 23149][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 23159][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 23274][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=59816, uptime=23
+[ 23289][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 23299][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 23333][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 23343][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 17,
+  "free_heap": 60804,
+  "timestamp": 1761020031
+}
+[ 23373][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 23389][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10624
+[ 23415][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-58, heap=57352, uptime=23
+[ 23440][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 23508][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 23702][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-52, heap=47532, uptime=23
+[ 23789][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 23800][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 17 uptime)
+[ 23845][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 23860][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 23881][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 23892][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 23916][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=59592, uptime=23
+[ 23931][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 23941][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 24057][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=59592, uptime=24
+[ 24072][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 24082][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 24198][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-49, heap=59592, uptime=24
+[ 24213][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 24223][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 24339][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=59592, uptime=24
+[ 24354][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 24364][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 24379][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 24389][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[ 24397][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10624
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 17,
+  "free_heap": 60804,
+  "timestamp": 1761020032
+}
+[ 24427][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 24492][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-49, heap=47776, uptime=24
+[ 24560][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 24578][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 24832][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=48804, uptime=24
+[ 24847][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 24858][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 17 uptime)
+[ 24885][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 24900][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 24921][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 24932][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 24974][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-48, heap=59368, uptime=24
+[ 24989][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 24999][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 25114][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-49, heap=59368, uptime=25
+[ 25129][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 25139][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 25256][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-49, heap=59368, uptime=25
+[ 25271][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 25281][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 25396][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=59368, uptime=25
+[ 25407][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10624
+[ 25419][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[ 25419][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 25438][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 17,
+  "free_heap": 60804,
+  "timestamp": 1761020033
+}
+[ 25469][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 25480][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 25619][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-51, heap=44524, uptime=25
+[ 25792][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 25868][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 17 uptime)
+[ 25935][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 25950][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 25970][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 25981][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 480 ms
+[ 25991][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-49, heap=59144, uptime=25
+[ 26005][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 26016][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 26130][D][firebase_command_poller.cpp:45] poll(): [CMD_POLLER] Polling for pending commands...
+[ 26139][D][firebase_command_poller.cpp:63] fetchPendingCommands(): [CMD_POLLER] Fetching from: users/4F0EPiGc75WVu8bZBbGKXZZVAK13/commands/64:B7:08:3C:E7:64/pending
+[ 26155][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 26418][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10624
+[ 26469][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 26480][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 17,
+  "free_heap": 60804,
+  "timestamp": 1761020034
+}
+[ 26555][D][firebase_command_poller.cpp:76] fetchPendingCommands(): [CMD_POLLER] Pending queue is empty
+[ 26565][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=58320, uptime=26
+[ 26580][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 26591][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 17 uptime)
+[ 26604][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 26621][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 26641][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 26652][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 26733][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-50, heap=58772, uptime=26
+[ 26748][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 26758][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 26873][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-57, heap=58772, uptime=26
+[ 26888][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 26898][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 27014][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-57, heap=58772, uptime=27
+[ 27029][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 27039][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 27139][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 27149][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -51,
+  "firebase_connected": true,
+  "uptime_seconds": 17,
+  "free_heap": 45836,
+  "timestamp": 1761020034
+}
+[ 27179][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 27192][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-49, heap=56316, uptime=27
+[ 27208][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 27218][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 27416][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-48, heap=44868, uptime=27
+[ 27426][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10624
+[ 27498][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 27583][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 17 uptime)
+[ 27636][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 27652][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 27672][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 27683][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 27698][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-49, heap=58548, uptime=27
+[ 27713][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 27723][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 27839][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-49, heap=58548, uptime=27
+[ 27854][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 27864][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 27980][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-49, heap=58548, uptime=27
+[ 27995][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 28005][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 28035][V][PacketService.cpp:27] createEmptyPacket(): [LoRaMesher] Packet created with 105 bytes
+[ 28045][I][LoraMesher.cpp:455] receivingRoutine(): [LoRaMesher] 📧 Receiving LoRa packet: Size: 105 bytes RSSI: -53 SNR: 10
+[ 28060][V][LoraMesher.cpp:1040] printHeaderPacket(): [LoRaMesher] Packet received -- Size: 105 Src: 4F70 Dst: E764 Id: 55 Type: 130 Via: E764 Seq_Id: 128 Num: 3
+[ 28075][D][LoraMesher.cpp:773] processPackets(): [LoRaMesher] Secure packet for me (dst=0xE764), decrypting...
+[ 28085][V][SecurePacketService.cpp:127] unwrapPacket(): [SecurePacket] Allocating original packet: header=9, payload=54, total=63
+[ 28097][V][SecurePacketService.cpp:351] verifyPacketAuthentication(): [SecurePacket] MAC offset: 29, Total size: 105
+[ 28107][V][SecurePacketService.cpp:358] verifyPacketAuthentication(): [SecurePacket] Before MAC: 29 bytes, After MAC: 72 bytes
+[ 28119][D][SecurePacketService.cpp:364] verifyPacketAuthentication(): [SecurePacket] Using Network Key: 61D829A82BABCB20...
+[ 28120][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-49, heap=58296, uptime=28
+[ 28145][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[ 28145][D][SecurePacketService.cpp:371] verifyPacketAuthentication(): [SecurePacket] Packet header (first 16 bytes): 64E7704F 82376964 E7800300 00EE87F8
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 28168][D][SecurePacketService.cpp:393] verifyPacketAuthentication():[ Se168ePD][et] wata fo281AC][D]cuireiose_101ue.tes:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 28191][D][SecurePacketService.cpp:398] verifyPacketAuthentication(): [SecurePacket] MAC calc data (first 16 bytes): 64E7704F 823[69819E78D][00 eue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": [ 28214][D][SecurePacketService.cpp:413] verifyPacketAuthentication(): [SecurePackep.cExp201ed quC:e4ate13yStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -52,
+  "firebase_connected": true,
+  "uptime_seconds": 18,
+  "free_heap": 60580,
+  "timestamp": 1761020036
+}
+[ 28251][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 28259][D][SecurePacketService.cpp:418] verifyPacketAuthentication(): [SecurePacket] Received MAC: 445A1395
+[ 28269][D][SecurePacketService.cpp:429] verifyPacketAuthentication(): [SecurePacket] DEBUG: Skipping MAC verification due to DEBUG_SKIP_MAC_VERIFICATION flag
+[ 28284][V][SecurePacketService.cpp:436] verifyPacketAuthentication(): [SecurePacket] MAC verification successful
+[ 28295][V][SecurePacketService.cpp:202] unwrapPacket(): [SecurePacket] Decryption: payload=54, encrypted=64, buffer=64
+[ 28307][V][MeshSecurityService.cpp:252] decryptPayload(): [MeshSecurity] Payload decrypted: 64 bytes -> 52 bytes
+[ 28318][V][SecurePacketService.cpp:222] unwrapPacket(): [SecurePacket] Decrypted size: 52 bytes, adjusted original size: 61
+[ 28329][D][SecurePacketService.cpp:229] unwrapPacket(): [SecurePacket] Packet unwrapped - Secure: 105 bytes, Original: 61 bytes
+[ 28341][I][LoraMesher.cpp:781] processPackets(): [LoRaMesher] Packet decrypted successfully
+[ 28349][D][LoraMesher.cpp:784] processPackets(): [LoRaMesher] Free heap before createQueuePacket: 36600 bytes
+[ 28360][D][LoraMesher.cpp:807] processPackets(): [LoRaMesher] Decrypted packet queued successfully (free heap: 36556)
+[ 28370][V][LoraMesher.cpp:1144] processDataPacket(): [LoRaMesher] Data packet from 4F70 for me
+[ 28379][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=0, tx=0, rssi=-49, heap=41808, uptime=28
+[ 28395][V][LoraMesher.cpp:1180] processDataPacketForMe(): [LoRaMesher] Data Packet received
+[ 28404][I][gateway_app.cpp:932] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Processing gateway packets...
+[ 28439][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10624
+[ 28482][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 28494][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 28615][D][gateway_app.cpp:948] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Processing received mesh packet
+[ 28626][D][gateway_app.cpp:949] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Queue size: 1
+[ 28636][I][gateway_app.cpp:727] uploadToFirebase(): [GATEWAY] ☁️ Uploading sensor data from node 0x4F70 to Firebase
+[ 28648][I][gateway_app.cpp:734] uploadToFirebase(): [GATEWAY] 🌱 Soil Sensor - Counter: 1, Moisture: 73.3%, Temp: 27.3°C, pH: 5.62, Batt: 3.76V
+[ 28663][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 1 (priority 2)
+[Firebase] ✅ Sensor data queued (node: 0x4F70, priority: 2)
+[ 28674][D][gateway_app.cpp:752] uploadToFirebase(): [GATEWAY] 📤 Queued sensor data from node 0x4F70
+[ 28688][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=0, rssi=-49, heap=57656, uptime=28
+[Firebase] Gateway status uploaded (1 nodes, 18 uptime)
+[ 28702][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 28718][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 28729][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 28739][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 28755][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 474 ms
+[ 28739][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 28875][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=1, rssi=-49, heap=57960, uptime=28
+[ 28888][I][gateway_app.cpp:770] uploadToFirebase(): [GATEWAY] ✅ Upload queued/successful
+[ 28898][D][gateway_app.cpp:977] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Stack high water mark after upload: 6116 bytes free
+[ 28910][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 28920][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 29036][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=1, rssi=-48, heap=57988, uptime=29
+[ 29051][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 29061][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 29177][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=1, rssi=-48, heap=57988, uptime=29
+[ 29192][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 29202][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 29237][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 29247][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -51,
+  "firebase_connected": true,
+  "uptime_seconds": 18,
+  "free_heap": 45476,
+  "timestamp": 1761020037
+}
+[ 29277][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 29318][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=1, rssi=-48, heap=55256, uptime=29
+[ 29344][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 29414][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 29447][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10624
+[ 29603][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=1, rssi=-49, heap=45696, uptime=29
+[ 29689][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 29699][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 18 uptime)
+[ 29742][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 29757][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 29778][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 29789][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 29816][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=1, rssi=-49, heap=57764, uptime=29
+[ 29831][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 29841][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 29957][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=1, rssi=-49, heap=57764, uptime=29
+[ 29972][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 29982][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 30097][I][gateway_app.cpp:239] loop(): [GATEWAY] [MEMORY] Free heap: 57764 bytes (min: 57764), Largest block: 36852 bytes, Uptime: 0 min
+[ 30111][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=1, rssi=-49, heap=57764, uptime=30
+[ 30125][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 30135][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 30251][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=1, rssi=-48, heap=57764, uptime=30
+[ 30266][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 30276][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 30291][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "[ 30276][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+wifi_rssi": -51,
+  "firebase_connected": true,
+  "uptime_seconds": 18,
+  "free_heap": 60144,
+  "timestamp": 1761020038
+}
+[ 30331][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 30456][I][LoraMesher.cpp:956] routingTableManager(): [LoRaMesher] === Periodic Routing Table Display (every 30s) ===
+[ 30473][D][LoraMesher.cpp:957] routingTableManager(): [LoRaMesher] Stack free: 10624 bytes, Heap free: 36076 bytes
+[ 30484][I][RoutingTableService.cpp:360] printRoutingTable(): [LoRaMesher] Current routing table:
+[ 30493][I][RoutingTableService.cpp:387] printRoutingTable(): [LoRaMesher] 0 - Addr:0xCC64 via:0xCC64 hops:1 role:0 TTL:340s SNR:10dB RSSI:-43dBmQ:0.846
+[ 30508][I][RoutingTableService.cpp:394] printRoutingTable(): [LoRaMesher] Total nodes in routing table: 1
+[ 30517][D][LoraMesher.cpp:971] routingTableManager(): [LoRaMesher] Routing table print completed successfully
+[ 30527][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 30568][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=1, rssi=-49, heap=43224, uptime=30
+[ 30648][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 30725][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 18 uptime)
+[ 30793][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 30808][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 30819][I][firebase_queue.cpp:245] workerTask(): [FIREBASE_QUEUE] 📊 Firebase Worker Stats:
+[ 30827][I][firebase_queue.cpp:246] workerTask(): [FIREBASE_QUEUE]   Processed: 15 operations
+[ 30836][I][firebase_queue.cpp:247] workerTask(): [FIREBASE_QUEUE]   Stack free: 9428 bytes
+[ 30844][I][firebase_queue.cpp:248] workerTask(): [FIREBASE_QUEUE]   Queue usage: 63/100
+[ 30852][I][firebase_queue.cpp:249] workerTask(): [FIREBASE_QUEUE]   Running on CPU: 1
+[ 30861][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=1, rssi=-57, heap=57272, uptime=30
+[ 30870][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 30886][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 432 ms
+[ 30895][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 30905][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 31021][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=1, rssi=-57, heap=57272, uptime=31
+[ 31036][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 31046][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 31162][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=1, rssi=-57, heap=57272, uptime=31
+[ 31176][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 31186][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 31302][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=1, rssi=-48, heap=57272, uptime=31
+[ 31317][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 31327][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 31342][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "[ 31355][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+wifi_rssi": -57,
+  "firebase_connected": true,
+  "uptime_seconds": 18,
+  "free_heap": 60716,
+  "timestamp": 1761020039
+}
+[ 31382][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 31535][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 31567][V][PacketService.cpp:27] createEmptyPacket(): [LoRaMesher] Packet created with 105 bytes
+[ 31577][I][LoraMesher.cpp:455] receivingRoutine(): [LoRaMesher] 📧 Receiving LoRa packet: Size: 105 bytes RSSI: -42 SNR: 10
+[ 31592][V][LoraMesher.cpp:1040] printHeaderPacket(): [LoRaMesher] Packet received -- Size: 105 Src: CC64 Dst: E764 Id: 51 Type: 130 Via: E764 Seq_Id: 128 Num: 3
+[ 31607][D][LoraMesher.cpp:773] processPackets(): [LoRaMesher] Secure packet for me (dst=0xE764), decrypting...
+[ 31617][V][SecurePacketService.cpp:127] unwrapPacket(): [SecurePacket] Allocating original packet: header=9, payload=54, total=63
+[ 31629][V][SecurePacketService.cpp:351] verifyPacketAuthentication(): [SecurePacket] MAC offset: 29, Total size: 105
+[ 31639][V][SecurePacketService.cpp:358] verifyPacketAuthentication(): [SecurePacket] Before MAC: 29 bytes, After MAC: 72 bytes
+[ 31651][D][SecurePacketService.cpp:364] verifyPacketAuthentication(): [SecurePacket] Using Network Key: 61D829A82BABCB20...
+[ 31662][D][SecurePacketService.cpp:371] verifyPacketAuthentication(): [SecurePacket] Packet header (first 16 bytes): 64E764CC 82336964 E7800300 006A84F8
+[ 31676][D][SecurePacketService.cpp:393] verifyPacketAuthentication(): [SecurePacket] Data for MAC calculation: 101 bytes
+[ 31687][D][SecurePacketService.cpp:398] verifyPacketAuthentication(): [SecurePacket] MAC calc data (first 16 bytes): 64E764CC 82336964 E7800300 006A84F8
+[ 31701][D][SecurePacketService.cpp:413] verifyPacketAuthentication(): [SecurePacket] Expected MAC: 6DE4714A
+[ 31711][D][SecurePacketService.cpp:418] verifyPacketAuthentication(): [SecurePacket] Received MAC: 6DE4714A
+[ 31721][D][SecurePacketService.cpp:429] verifyPacketAuthentication(): [SecurePacket] DEBUG: Skipping MAC verification due to DEBUG_SKIP_MAC_VERIFICATION flag
+[ 31735][V][SecurePacketService.cpp:436] verifyPacketAuthentication(): [SecurePacket] MAC verification successful
+[ 31745][V][SecurePacketService.cpp:202] unwrapPacket(): [SecurePacket] Decryption: payload=54, encrypted=64, buffer=64
+[ 31757][V][MeshSecurityService.cpp:252] decryptPayload(): [MeshSecurity] Payload decrypted: 64 bytes -> 52 bytes
+[ 31767][V][SecurePacketService.cpp:222] unwrapPacket(): [SecurePacket] Decrypted size: 52 bytes, adjusted original size: 61
+[ 31778][D][SecurePacketService.cpp:229] unwrapPacket(): [SecurePacket] Packet unwrapped - Secure: 105 bytes, Original: 61 bytes
+[ 31789][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=1, tx=1, rssi=-50, heap=40588, uptime=31
+[ 31805][I][LoraMesher.cpp:781] processPackets(): [LoRaMesher] Packet decrypted successfully
+[ 31814][D][LoraMesher.cpp:784] processPackets(): [LoRaMesher] Free heap before createQueuePacket: 33508 bytes
+[ 31825][D][LoraMesher.cpp:807] processPackets(): [LoRaMesher] Decrypted packet queued successfully (free heap: 33272)
+[ 31837][V][LoraMesher.cpp:1144] processDataPacket(): [LoRaMesher] Data packet from CC64 for me
+[ 31845][V][LoraMesher.cpp:1180] processDataPacketForMe(): [LoRaMesher] Data Packet received
+[ 31895][I][gateway_app.cpp:932] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Processing gateway packets...
+[ 31906][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 31978][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 18 uptime)
+[ 32118][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 32133][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 32153][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 32164][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 32165][D][gateway_app.cpp:948] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Processing received mesh packet
+[ 32183][D][gateway_app.cpp:949] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Queue size: 1
+[ 32192][I][gateway_app.cpp:727] uploadToFirebase(): [GATEWAY] ☁️ Uploading sensor data from node 0xCC64 to Firebase
+[ 32203][I][gateway_app.cpp:734] uploadToFirebase(): [GATEWAY] 🌱 Soil Sensor - Counter: 1, Moisture: 73.3%, Temp: 27.3°C, pH: 5.62, Batt: 3.76V
+[ 32217][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 1 (priority 2)
+[Firebase] ✅ Sensor data queued (node: 0xCC64, priority: 2)
+[ 32227][D][gateway_app.cpp:752] uploadToFirebase(): [GATEWAY] 📤 Queued sensor data from node 0xCC64
+[ 32243][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=2, tx=2, rssi=-49, heap=57196, uptime=32
+[ 32258][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 32268][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 32384][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=2, tx=2, rssi=-49, heap=57196, uptime=32
+[ 32399][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 32409][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 32441][I][gateway_app.cpp:770] uploadToFirebase(): [GATEWAY] ✅ Upload queued/successful
+[ 32450][D][gateway_app.cpp:977] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Stack high water mark after upload: 6116 bytes free
+[ 32525][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=2, tx=2, rssi=-49, heap=57232, uptime=32
+[ 32540][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[ 32543][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 32558][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 32626][V][PacketService.cpp:27] createEmptyPacket(): [LoRaMesher] Packet created with 105 bytes
+[ 32636][I][LoraMesher.cpp:455] receivingRoutine(): [LoRaMesher] 📧 Receiving LoRa packet: Size: 105 bytes RSSI: -55 SNR: 10
+[ 32651][V][LoraMesher.cpp:1040] printHeaderPacket(): [LoRaMesher] Packet received -- Size: 105 Src: 9F8 Dst: E764 Id: 55 Type: 130 Via: E764 Seq_Id: 128 Num: 3
+[ 32666][D][LoraMesher.cpp:773] processPackets(): [LoRaMesher] Secure packet for me (dst=0xE764), decrypting...
+[ 32670][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 32685][V][SecurePacketService.cpp:127] unwrapPacket(): [SecurePacket] Allocating original packet: header=9, payload=54, total=63
+32685][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_node[ 32708][V][SecurePacketsService.cpp:351] verifyPacketAuthentication"(): [SecurePacket] MAC offset: 29, Total size: 105
+: 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -57,
+  "firebase_connected": true,
+  "uptime_seconds": 18,
+  "free_heap": 60716,
+  "timestamp": 1761020040
+}
+[ 32740][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 32748][V][SecurePacketService.cpp:358] verifyPacketAuthentication(): [SecurePacket] Before MAC: 29 bytes, After MAC: 72 bytes
+[ 32751][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=2, tx=2, rssi=-49, heap=54876, uptime=32
+[ 32774][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[ 32774][D][SecurePacketService.cpp:364] verifyPacketAuthentication(): [SecurePacket] Using Network Key: 61D829A82BABCB20...
+[ 32795][D][SecurePacketService.cpp:371] verifyPacketAuthentication(): [SecurePacket] Packet header (first 16 bytes): 64E7F809 82376964 E7800300 009087F8
+[ 32810][D][SecurePacketService.cpp:393] verifyPacketAuthentication(): [SecurePacket] Data for MAC calculation: 101 bytes
+[ 32821][D][SecurePacketService.cpp:398] verifyPacketAuthentication(): [SecurePacket] MAC calc data (first 16 bytes): 64E7F809 82376964 E7800300 009087F8
+[ 32836][D][SecurePacketService.cpp:413] verifyPacketAuthentication(): [SecurePacket] Expected MAC: 5FBC24A9
+[ 32846][D][SecurePacketService.cpp:418] verifyPacketAuthentication(): [SecurePacket] Received MAC: 5FBC24A9
+[ 32856][D][SecurePacketService.cpp:429] verifyPacketAuthentication(): [SecurePacket] DEBUG: Skipping MAC verification due to DEBUG_SKIP_MAC_VERIFICATION flag
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 32871][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 32885][V][SecurePacketService.cpp:436] verifyPacketAuthentication(): [SecurePacket] MAC verification successful
+[ 32896][V][SecurePacketService.cpp:202] unwrapPacket(): [SecurePacket] Decryption: payload=54, encrypted=64, buffer=64
+[ 32908][V][MeshSecurityService.cpp:252] decryptPayload(): [MeshSecurity] Payload decrypted: 64 bytes -> 52 bytes
+[ 32918][V][SecurePacketService.cpp:222] unwrapPacket(): [SecurePacket] Decrypted size: 52 bytes, adjusted original size: 61
+[ 32929][D][SecurePacketService.cpp:229] unwrapPacket(): [SecurePacket] Packet unwrapped - Secure: 105 bytes, Original: 61 bytes
+[ 32941][I][LoraMesher.cpp:781] processPackets(): [LoRaMesher] Packet decrypted successfully
+[ 32950][D][LoraMesher.cpp:784] processPackets(): [LoRaMesher] Free heap before createQueuePacket: 33448 bytes
+[ 32960][D][LoraMesher.cpp:807] processPackets(): [LoRaMesher] Decrypted packet queued successfully (free heap: 33416)
+[ 32975][V][LoraMesher.cpp:1144] processDataPacket(): [LoRaMesher] Data packet from 9F8 for me
+[ 32988][V][LoraMesher.cpp:1180] processDataPacketForMe(): [LoRaMesher] Data Packet received
+[ 33041][I][gateway_app.cpp:932] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Processing gateway packets...
+[ 33137][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=2, tx=2, rssi=-49, heap=46540, uptime=33
+[ 33152][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 33163][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 18 uptime)
+[ 33190][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 33205][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 33226][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 33237][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 33279][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=2, tx=2, rssi=-49, heap=57128, uptime=33
+[ 33294][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 33304][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 33337][D][gateway_app.cpp:948] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Processing received mesh packet
+[ 33347][D][gateway_app.cpp:949] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Queue size: 1
+[ 33356][I][gateway_app.cpp:727] uploadToFirebase(): [GATEWAY] ☁️ Uploading sensor data from node 0x09F8 to Firebase
+[ 33367][I][gateway_app.cpp:734] uploadToFirebase(): [GATEWAY] 🌱 Soil Sensor - Counter: 1, Moisture: 73.3%, Temp: 27.3°C, pH: 5.62, Batt: 3.76V
+[ 33381][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 1 (priority 2)
+[Firebase] ✅ Sensor data queued (node: 0x09F8, priority: 2)
+[ 33391][D][gateway_app.cpp:752] uploadToFirebase(): [GATEWAY] 📤 Queued sensor data from node 0x09F8
+[ 33419][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57156, uptime=33
+[ 33434][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 33444][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 33557][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 33560][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57156, uptime=33
+[ 33580][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 33590][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 33605][I][gateway_app.cpp:770] uploadToFirebase(): [GATEWAY] ✅ Upload queued/successful
+[ 33614][D][gateway_app.cpp:977] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Stack high water mark after upload: 6116 bytes free
+[ 33724][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 33734][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 19,
+  "free_heap": 60716,
+  "timestamp": 1761020041
+}
+[ 33764][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 33777][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=54992, uptime=33
+[ 33793][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 33803][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 33998][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-50, heap=43536, uptime=33
+[ 34079][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 34166][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 19 uptime)
+[ 34219][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 34235][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 34255][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 34266][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 34282][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-50, heap=57200, uptime=34
+[ 34297][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 34307][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 34423][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-50, heap=57200, uptime=34
+[ 34438][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 34448][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 34564][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-48, heap=57200, uptime=34
+[ 34579][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[ 34580][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 34597][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 34712][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-48, heap=57200, uptime=34
+[ 34727][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 34737][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 34753][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 34763][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 19,
+  "free_heap": 60716,
+  "timestamp": 1761020042
+}
+[ 34793][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 34860][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=45616, uptime=34
+[ 34942][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 35029][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 35206][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=56748, uptime=35
+[ 35221][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 35232][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 19 uptime)
+[ 35253][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 35269][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 35289][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 35300][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 35348][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57200, uptime=35
+[ 35363][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 35373][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 35488][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-48, heap=57200, uptime=35
+[ 35503][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 35513][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 35596][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 35630][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-48, heap=57200, uptime=35
+[ 35645][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 35655][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 35771][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-48, heap=57200, uptime=35
+[ 35785][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[ 35787][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 35805][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -51,
+  "firebase_connected": true,
+  "uptime_seconds": 19,
+  "free_heap": 48276,
+  "timestamp": 1761020043
+}
+[ 35835][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 35847][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 35970][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=42608, uptime=35
+[ 35990][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 36073][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 19 uptime)
+[ 36295][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 36310][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 36330][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 36341][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 480 ms
+[ 36449][D][firebase_command_poller.cpp:45] poll(): [CMD_POLLER] Polling for pending commands...
+[ 36458][D][firebase_command_poller.cpp:63] fetchPendingCommands(): [CMD_POLLER] Fetching from: users/4F0EPiGc75WVu8bZBbGKXZZVAK13/commands/64:B7:08:3C:E7:64/pending
+[ 36474][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 36610][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 36829][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 36839][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 19,
+  "free_heap": 60488,
+  "timestamp": 1761020044
+}
+[Firebase] Upload error - Path: gateways/4F0EPiGc75WVu8bZBbGKXZZVAK13/64:B7:08:3C:E7:64/status, Error:
+[Firebase] Upload failed (att[ 36885][D][firebase_command_poller.cpp:68] fetchPendingCommands(): [CMD_POLLER] No pending commands (or error: )
+empt 1/3), retrying in 1000 ms...
+[ 36910][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-50, heap=56740, uptime=36
+[ 36925][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 36935][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 37051][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57112, uptime=37
+[ 37066][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 37076][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 37191][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57112, uptime=37
+[ 37206][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 37216][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 37331][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57112, uptime=37
+[ 37345][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 37355][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 37471][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57112, uptime=37
+[ 37486][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 37496][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 37612][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57112, uptime=37
+[ 37623][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 37634][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 37644][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 37760][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-56, heap=57112, uptime=37
+[ 37775][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 37785][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 37901][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-56, heap=57112, uptime=37
+[ 37910][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 37922][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 37932][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 38052][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-50, heap=42468, uptime=38
+[ 38072][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 38164][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 38337][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-50, heap=56740, uptime=38
+[ 38352][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 38363][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 19 uptime)
+[ 38385][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 38400][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 38421][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 38432][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 38479][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57192, uptime=38
+[ 38493][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 38504][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 38619][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-57, heap=57192, uptime=38
+[ 38634][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[ 38634][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 38652][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 38767][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-57, heap=57192, uptime=38
+[ 38782][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 38792][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 38908][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-57, heap=57192, uptime=38
+[ 38919][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 38933][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -52,
+  "firebase_connected": true,
+  "uptime_seconds": 19,
+  "free_heap": 60488,
+  "timestamp": 1761020046
+}
+[ 38963][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 38974][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 38984][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 39115][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=44776, uptime=39
+[ 39279][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 39367][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[Firebase] Gateway status uploaded (1 nodes, 19 uptime)
+[ 39420][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 39436][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 39456][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 39467][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 39483][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-50, heap=57192, uptime=39
+[ 39498][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 39508][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 39625][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-50, heap=57192, uptime=39
+[ 39639][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+oraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212✅ Gateway status queued [ 39ess][lly
+[ 39772][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57192, uptime=39
+[ 39787][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 39797][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 39911][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57192, uptime=39
+[ 39926][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 39936][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 39954][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 39964][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -52,
+  "firebase_connected": true,
+  "uptime_seconds": 20,
+  "free_heap": 60488,
+  "timestamp": 1761020047
+}
+[ 39994][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 40059][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=45568, uptime=40
+[ 40125][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 40145][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 40397][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-57, heap=46596, uptime=40
+[ 40413][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 40423][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[Firebase] Gateway status uploaded (1 nodes, 20 uptime)
+[ 40450][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 40465][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 40486][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 40497][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 40538][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57192, uptime=40
+[ 40553][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 40563][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 40671][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 40679][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57192, uptime=40
+[ 40694][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 40704][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 40818][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57192, uptime=40
+[ 40833][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 40843][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 40957][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57192, uptime=40
+[ 40972][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 40982][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 40984][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 41005][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 20,
+  "free_heap": 60488,
+  "timestamp": 1761020048
+}
+[ 41035][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 41179][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, [ 41234][V][PacketService.cpp:27] createEmptyPacket(): [LoRaMesher] Packet created with 105 bytes
+[ 41244][I][LoraMesher.cpp:455] receivingRoutine(): [LoRaMesher] 📧 Receiving LoRa packet: Size: 105 bytes RSSI: -41 SNR: 10
+[ 41260][V][LoraMesher.cpp:1040] printHeaderPacket(): [LoRaMesher] Packet received -- Size: 105 Src: CC64 Dst: E764 Id: 57 Type: 130 Via: E764 Seq_Id: 128 Num: 3
+rssi=-50, heap=42540, uptime=41
+[ 41277][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)[ 41288][D][LoraMesher.cpp:773] processPackets(): [LoRaMesher] Secure packet for me (dst=0xE764), decrypting...
+[ 41299][V][SecurePacketService.cpp:127] unwrapPacket(): [SecurePacket] Allocating original packet: header=9, payload=54, total=63
+[ 41311][V][SecurePacketService.cpp:351] verifyPacketAuthentication(): [SecurePacket] MAC offset: 29, Total size: 105
+[ 41322][V][SecurePacketService.cpp:358] verifyPacketAuthentication(): [SecurePacket] Before MAC: 29 bytes, After MAC: 72 bytes
+[ 41333][D][SecurePacketService.cpp:364] verifyPacketAuthentication(): [SecurePacket] Using Network Key: 61D829A82BABCB20...
+
+[ 41344][D][SecurePacketService.cpp:371] verifyPacketAuthentication(): [SecurePacket] Packet header (first 16 bytes): 64E764CC 82396964 E7800300 006B84F8
+[ 41359][D][SecurePacketService.cpp:393] verifyPacketAuthentication(): [SecurePacket] Data for MAC calculation: 101 bytes
+[ 41370][D][SecurePacketService.cpp:398] verifyPacketAuthentication(): [SecurePacket] MAC calc data (first 16 bytes): 64E764CC 82396964 E7800300 006B84F8
+[ 41385][D][SecurePacketService.cpp:413] verifyPacketAuthentication(): [SecurePacket] Expected MAC: A39A2CF5
+[ 41394][D][SecurePacketService.cpp:418] verifyPacketAuthentication(): [SecurePacket] Received MAC: A39A2CF5
+[ 41406][D][SecurePacketService.cpp:429] verifyPacketAuthentication(): [SecurePacket] DEBUG: Skipping MAC verification due to DEBUG_SKIP_MAC_VERIFICATION flag
+[Firebase] ❌ Failed to queue gateway status
+[ 41421][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway statu[ 41434][V][SecurePacketService.cpp:436] verifyPacketAuthentication(): [SecurePacket] MAC verification successful
+s
+[ 41445][V][SecurePacketService.cpp:202] unwrapPacket(): [SecurePacket] Decryption: payload=54, encrypted=64, buffer=64
+[ 41457][V][MeshSecurityService.cpp:252] decryptPayload(): [MeshSecurity] Payload decrypted: 64 bytes -> 52 bytes
+[ 41469][V][SecurePacketService.cpp:222] unwrapPacket(): [SecurePacket] Decrypted size: 52 bytes, adjusted original size: 61
+[ 41480][D][SecurePacketService.cpp:229] unwrapPacket(): [SecurePacket] Packet unwrapped - Secure: 105 bytes, Original: 61 bytes
+[Firebase] Gateway status uploaded (1 nodes, 20 uptime)
+[ 41489][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 41506][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 41517][I][LoraMesher.cpp:781] processPackets(): [LoRaMesher] Packet decrypted successfully
+[ 41526][D][LoraMesher.cpp:784] processPackets(): [LoRaMesher] Free heap before createQueuePacket: 45508 bytes
+[ 41527][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 41546][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 471 ms
+[ 41546][D][LoraMesher.cpp:807] processPackets(): [LoRaMesher] Decrypted packet queued successfully (free heap: 45476)
+[ 41566][V][LoraMesher.cpp:1144] processDataPacket(): [LoRaMesher] Data packet from CC64 for me
+[ 41568][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-48, heap=56896, uptime=41
+[ 41590][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[ 41590][V][LoraMesher.cpp:1180] processDataPacketForMe(): [LoRaMesher] Data Packet received
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 41608][I][gateway_app.cpp:932] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Processing gateway packets...
+[ 41608][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 41704][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 41734][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=3, tx=3, rssi=-49, heap=57084, uptime=41
+[ 41749][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 41759][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 41824][D][gateway_app.cpp:948] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Processing received mesh packet
+[ 41834][D][gateway_app.cpp:949] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Queue size: 1
+[ 41843][D][gateway_app.cpp:722] uploadToFirebase(): [GATEWAY] ⚠️ Duplicate sensor data detected from node 0xCC64 (counter: 1) - skipping
+[ 41856][D][gateway_app.cpp:977] processGatewayPackets(): [GATEWAY] [GATEWAY-TASK] Stack high water mark after upload: 6116 bytes free
+[ 41873][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=41
+[ 41888][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 41898][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 42012][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=42
+[ 42027][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 42037][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 42051][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "[ 42037][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 20,
+  "free_heap": 57496,
+  "timestamp": 1761020049
+}
+[ 42090][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 42220][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-57, heap=42796, uptime=42
+[ 42240][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 42332][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 42497][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=56728, uptime=42
+[ 42512][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 42522][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[Firebase] Gateway status uploaded (1 nodes, 20 uptime)
+[ 42540][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 42556][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 42576][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 42587][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 42638][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=42
+[ 42653][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 42663][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 42712][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 42778][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=42
+[ 42793][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 42803][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 42917][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=42
+[ 42932][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 42942][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 43056][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=43
+[ 43071][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[ 43074][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 43090][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 20,
+  "free_heap": 48200,
+  "timestamp": 1761020050
+}
+[ 43120][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[Firebase] ❌ Failed to queue gateway status
+[ 43132][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 43260][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=43512, uptime=43
+[ 43278][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 43366][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[Firebase] Gateway status uploaded (1 nodes, 20 uptime)
+[ 43420][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 43435][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 43455][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 43466][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 43480][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=43
+[ 43495][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 43505][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 43621][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=43
+[ 43636][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 43646][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 43720][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 43760][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=43
+[ 43775][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 43785][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 43899][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=43
+[ 43914][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 43924][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 43953][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 43963][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -51,
+  "firebase_connected": true,
+  "uptime_seconds": 20,
+  "free_heap": 60264,
+  "timestamp": 1761020051
+}
+[ 43993][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 44038][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=54408, uptime=44
+[ 44061][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 44139][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 44385][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-51, heap=46336, uptime=44
+[ 44402][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 44412][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[Firebase] Gateway status uploaded (1 nodes, 20 uptime)
+[ 44451][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 44466][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 44487][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 44498][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 44527][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=44
+[ 44542][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 44552][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 44668][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=44
+[ 44683][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 44693][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 44728][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 44807][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=44
+[ 44822][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 44832][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 44946][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=44
+[ 44961][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 44971][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 44985][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 44995][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -51,
+  "firebase_connected": true,
+  "uptime_seconds": 20,
+  "free_heap": 60264,
+  "timestamp": 1761020052
+}
+[ 45025][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 45093][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=45560, uptime=45
+[ 45177][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 45264][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 45441][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=56728, uptime=45
+[ 45457][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 45467][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[Firebase] Gateway status uploaded (1 nodes, 20 uptime)
+[ 45487][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 45503][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 45523][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 45534][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 45582][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=45
+[ 45597][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 45607][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 45723][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=45
+[ 45736][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 45745][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 45755][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 45870][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=45
+[ 45885][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 45895][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 46009][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=46
+[ 46021][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 46034][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -52,
+  "firebase_connected": true,
+  "uptime_seconds": 21,
+  "free_heap": 60264,
+  "timestamp": 1761020053
+}
+[ 46064][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 46075][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 46086][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 46202][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-51, heap=42436, uptime=46
+[ 46222][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 46306][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 46484][D][firebase_command_poller.cpp:45] poll(): [CMD_POLLER] Polling for pending commands...
+[ 46494][D][firebase_command_poller.cpp:63] fetchPendingCommands(): [CMD_POLLER] Fetching from: users/4F0EPiGc75WVu8bZBbGKXZZVAK13/commands/64:B7:08:3C:E7:64/pending
+[ 46510][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[Firebase] Gateway status uploaded (1 nodes, 21 uptime)
+[ 46528][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 46543][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 46563][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 46574][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 46745][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 46961][D][firebase_command_poller.cpp:68] fetchPendingCommands(): [CMD_POLLER] No pending commands (or error: path not exist)
+[ 46973][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57004, uptime=46
+[ 46988][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 46999][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 47062][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 47072][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -52,
+  "firebase_connected": true,
+  "uptime_seconds": 21,
+  "free_heap": 60264,
+  "timestamp": 1761020054
+}
+[ 47103][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 47116][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=55088, uptime=47
+[ 47131][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 47141][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 47334][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=43520, uptime=47
+[ 47419][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 47500][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[Firebase] Gateway status uploaded (1 nodes, 21 uptime)
+[ 47554][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 47569][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 47589][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 47600][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 47614][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=47
+[ 47629][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 47639][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 47756][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49,  4ap=6]19][Loptiesh47.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 47776][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 47786][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 47900][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=47
+[ 47915][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 47925][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 48039][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=48
+[ 48054][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 48064][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 48087][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 48097][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -51,
+  "firebase_connected": true,
+  "uptime_seconds": 21,
+  "free_heap": 45444,
+  "timestamp": 1761020055
+}
+[ 48127][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 48193][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=45580, uptime=48
+[ 48260][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 48278][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 48537][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=46596, uptime=48
+[ 48553][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 48563][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[Firebase] Gateway status uploaded (1 nodes, 21 uptime)
+[ 48590][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 48605][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 48626][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 48637][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 48677][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=54788, uptime=48
+[ 48692][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 48702][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 48776][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 48818][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=48
+[ 48833][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 48843][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 48957][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=48
+[ 48972][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 48982][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 49096][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-51, heap=57192, uptime=49
+[ 49111][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 49121][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 49124][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 49144][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 21,
+  "free_heap": 59580,
+  "timestamp": 1761020056
+}
+[ 49174][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 49302][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-48, heap=42452, uptime=49
+[ 49322][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 49405][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 49578][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=56740, uptime=49
+[ 49593][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 49603][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[Firebase] Gateway status uploaded (1 nodes, 21 uptime)
+[ 49621][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 49637][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 49657][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 49668][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 49719][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=49
+[ 49734][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 49744][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 49784][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 49859][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=49
+[ 49874][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 49884][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 49998][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=49
+[ 50013][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 50023][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 50137][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=50
+[ 50152][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[ 50155][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 50171][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 21,
+  "free_heap": 60040,
+  "timestamp": 1761020057
+}
+[ 50202][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[Firebase] ❌ Failed to queue gateway status
+[ 50213][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 50358][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=42556, uptime=50
+[ 50530][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 50605][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[Firebase] Gateway status uploaded (1 nodes, 21 uptime)
+[ 50675][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 50690][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 50710][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 50721][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 50731][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=50
+[ 50746][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 50757][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 50792][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 50872][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=50
+[ 50887][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 50897][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 51011][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=51
+[ 51026][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 51036][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 51150][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=51
+[ 51165][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 51175][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 51208][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 51218][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 21,
+  "free_heap": 60040,
+  "timestamp": 1761020059
+}
+[ 51248][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 51289][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=54616, uptime=51
+[ 51314][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 51382][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 51567][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=45108, uptime=51
+[ 51652][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 51663][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[Firebase] Gateway status uploaded (1 nodes, 21 uptime)
+[ 51705][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 51720][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 51741][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 51752][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 51778][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-51, heap=57192, uptime=51
+[ 51793][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[ 51800][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 51811][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 51927][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-51, heap=57192, uptime=51
+[ 51942][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 51952][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 52066][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-48, heap=57192, uptime=52
+[ 52081][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 52091][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 52205][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-48, heap=57192, uptime=52
+[ 52220][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 52230][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 52239][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 52253][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 22,
+  "free_heap": 60040,
+  "timestamp": 1761020060
+}
+[ 52283][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 52419][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=40732, uptime=52
+[ 52522][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 52534][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 52705][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-48, heap=56532, uptime=52
+[ 52720][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 52731][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[Firebase] Gateway status uploaded (1 nodes, 22 uptime)
+[ 52754][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 52770][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 52790][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 52801][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 52811][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 52846][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=52
+[ 52861][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 52871][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 52986][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=52
+[ 53001][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 53011][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 53125][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=53
+[ 53140][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 53150][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 53264][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=57192, uptime=53
+[ 53279][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[ 53288][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 53298][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -51,
+  "firebase_connected": true,
+  "uptime_seconds": 22,
+  "free_heap": 60040,
+  "timestamp": 1761020061
+}
+[ 53328][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[Firebase] ❌ Failed to queue gateway status
+[ 53340][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 53485][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-49, heap=42564, uptime=53
+[ 53655][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 53731][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[Firebase] Gateway status uploaded (1 nodes, 22 uptime)
+[ 53800][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 53815][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 53819][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 53843][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 53854][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 53864][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-51, heap=57192, uptime=53
+[ 53879][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 53889][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 54004][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-51, heap=57192, uptime=54
+[ 54019][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 54029][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 54143][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-51, heap=57192, uptime=54
+[ 54158][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 54168][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 54282][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-52, heap=57192, uptime=54
+[ 54297][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 54307][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 54341][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 54351][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 22,
+  "free_heap": 45184,
+  "timestamp": 1761020062
+}
+[ 54381][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 54421][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=54944, uptime=54
+[ 54447][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 54530][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 54740][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-48, heap=45124, uptime=54
+[ 54814][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 54829][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 54833][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[Firebase] Gateway status uploaded (1 nodes, 22 uptime)
+[ 54882][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 54898][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 54918][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 54929][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 54951][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=54
+[ 54966][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 54976][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 55092][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=55
+[ 55107][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 55117][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 55230][I][gateway_app.cpp:390] loop(): [GATEWAY] 📊 Periodic Gateway sensor data collection
+[ 55239][I][gateway_app.cpp:1409] simulateGatewaySensorData(): [GATEWAY] ✅ Gateway sensor using synced timestamp: 1761020063 (Unix time)
+[ 55251][I][gateway_app.cpp:1429] simulateGatewaySensorData(): [GATEWAY] 🌱 Soil sensor data: Moisture=26.5%, Temp=26.3°C, pH=7.88, EC=0.31 mS/cm
+[ 55265][I][gateway_app.cpp:1431] simulateGatewaySensorData(): [GATEWAY]    NPK: N=219, P=53, K=114 mg/kg
+[ 55275][I][gateway_app.cpp:1945] queueGatewaySensorDataUpload(): [GATEWAY] 🏠 Queuing Gateway sensor data (priority 2)
+[ 55286][I][gateway_app.cpp:1953] queueGatewaySensorDataUpload(): [GATEWAY] 🌱 Gateway Soil - Counter: 2, Moisture: 26.5%, Temp: 26.3°C, pH: 7.88, Batt: 4.22V
+[ 55301][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 2)
+[Firebase] ❌ Failed to queue sensor data (node: 0xE764)
+[ 55311][W][gateway_app.cpp:1973] queueGatewaySensorDataUpload(): [GATEWAY] ❌ Failed to queue gateway sensor data
+[ 55327][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-53, heap=57192, uptime=55
+[ 55342][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 55352][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 55416][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 55426][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -50,
+  "firebase_connected": true,
+  "uptime_seconds": 22,
+  "free_heap": 59816,
+  "timestamp": 1761020063
+}
+[ 55456][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 55778][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=45124, uptime=55
+[ 55850][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+[ 55870][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 55881][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[Firebase] Gateway status uploaded (1 nodes, 22 uptime)
+[ 55923][D][firebase_queue.cpp:481] processStatusUpload(): [FIREBASE_QUEUE] ✅ Gateway status uploaded (196 bytes)
+[ 55938][D][firebase_queue.cpp:318] processQueueItem(): [FIREBASE_QUEUE] ✅ Firebase operation completed successfully
+[ 55959][D][firebase_queue.cpp:203] workerTask(): [FIREBASE_QUEUE] 📥 Processing Firebase operation: 3 (priority 1)
+[ 55970][D][firebase_queue.cpp:211] workerTask(): [FIREBASE_QUEUE] ⏳ Rate limiting: waiting 479 ms
+[ 55996][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=55
+[ 56011][D][firebase_queue.cpp:647] enqueue(): [FIREBASE_QUEUE] 📥 Enqueued Firebase operation 3 (priority 1)
+[Firebase] ✅ Gateway status queued (nodes: 1, priority: 1)
+[ 56021][D][gateway_app.cpp:2012] queueGatewayStatusUpload(): [GATEWAY] ✅ Gateway status queued successfully
+[ 56137][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=56
+[ 56152][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 56162][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 56276][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=56
+[ 56291][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 56301][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 56415][I][gateway_app.cpp:2002] queueGatewayStatusUpload(): [GATEWAY] 📊 Queuing Gateway status (priority 1): nodes=1, rx=4, tx=3, rssi=-50, heap=57192, uptime=56
+[ 56430][E][firebase_queue.cpp:638] enqueue(): [FIREBASE_QUEUE] ❌ Queue full, dropping new item (priority 1)
+[Firebase] ❌ Failed to queue gateway status
+[ 56440][W][gateway_app.cpp:2014] queueGatewayStatusUpload(): [GATEWAY] ❌ Failed to queue gateway status
+[ 56457][D][firebase_queue.cpp:266] processQueueItem(): [FIREBASE_QUEUE] Processing operation 3 (attempt 1/3)
+[ 56467][D][firebase_queue.cpp:468] processStatusUpload(): [FIREBASE_QUEUE] 📊 Uploading gateway status to Firebase
+[Firebase] Gateway status JSON:
+{
+  "connected_nodes": 1,
+  "total_packets_received": 0,
+  "total_packets_sent": 0,
+  "wifi_connected": true,
+  "wifi_rssi": -51,
+  "firebase_connected": true,
+  "uptime_seconds": 22,
+  "free_heap": 59816,
+  "timestamp": 1761020064
+}
+[ 56497][V][WiFiClientImpl.h:317] tcpConnect(): Starting socket
+[ 56561][D][firebase_command_poller.cpp:45] poll(): [CMD_POLLER] Polling for pending commands...
+[ 56627][D][firebase_command_poller.cpp:63] fetchPendingCommands(): [CMD_POLLER] Fetching from: users/4F0EPiGc75WVu8bZBbGKXZZVAK13/commands/64:B7:08:3C:E7:64/pending
+[ 56858][V][LoraMesher.cpp:987] routingTableManager(): [LoRaMesher] Stack free: 10212
+ vuvan   LM_LR_MESH   LM_LR_MESH_VER_1.0.0 ≡  ?2 ~7                                                                in pwsh at 11:14:25

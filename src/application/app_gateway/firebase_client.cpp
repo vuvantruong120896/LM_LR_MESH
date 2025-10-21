@@ -1,4 +1,5 @@
 #include "firebase_client.h"
+#include "firebase_queue.h"  // Include queue system
 #include "TimeSyncService.h"
 #include <time.h>
 #include <esp_task_wdt.h>
@@ -813,4 +814,160 @@ void FirebaseClient::updateUploadStats(bool success, size_t payloadSize, uint32_
     } else {
         m_stats.failedUploads++;
     }
+}
+
+// ===== NEW: Queue-based Non-blocking Firebase Operations =====
+
+bool FirebaseClient::initializeQueue() {
+    Serial.println("[Firebase] Initializing queue system...");
+    
+    // Initialize the queue manager with this Firebase client
+    bool success = FIREBASE_QUEUE().initialize(this);
+    
+    if (success) {
+        Serial.println("[Firebase] ✅ Queue system initialized successfully");
+    } else {
+        Serial.println("[Firebase] ❌ Failed to initialize queue system");
+    }
+    
+    return success;
+}
+
+void FirebaseClient::shutdownQueue() {
+    Serial.println("[Firebase] Shutting down queue system...");
+    FIREBASE_QUEUE().shutdown();
+}
+
+bool FirebaseClient::isQueueRunning() const {
+    return FIREBASE_QUEUE().isRunning();
+}
+
+bool FirebaseClient::queueSensorData(const sensorData& data, int8_t rssi, float snr, uint8_t priority) {
+    if (!isQueueRunning()) {
+        Serial.println("[Firebase] Queue not running, falling back to direct upload");
+        // Fallback to direct upload if queue is not available
+        auto result = uploadSensorData(data, rssi, snr);
+        return result.success;
+    }
+    
+    // Convert priority to enum
+    FirebasePriority_t queuePriority;
+    switch (priority) {
+        case 1: queuePriority = FIREBASE_PRIORITY_LOW; break;
+        case 3: queuePriority = FIREBASE_PRIORITY_HIGH; break;
+        case 4: queuePriority = FIREBASE_PRIORITY_URGENT; break;
+        default: queuePriority = FIREBASE_PRIORITY_NORMAL; break;
+    }
+    
+    bool success = FIREBASE_QUEUE().enqueueSensorData(data, rssi, snr, queuePriority);
+    
+    if (success) {
+        Serial.printf("[Firebase] ✅ Sensor data queued (node: 0x%04X, priority: %d)\n", data.nodeId, priority);
+    } else {
+        Serial.printf("[Firebase] ❌ Failed to queue sensor data (node: 0x%04X)\n", data.nodeId);
+    }
+    
+    return success;
+}
+
+bool FirebaseClient::queueGatewayStatus(
+    uint16_t connectedNodes,
+    uint32_t totalPacketsReceived,
+    uint32_t totalPacketsSent,
+    int8_t wifiRssi,
+    uint32_t freeHeap,
+    uint32_t uptimeSeconds,
+    uint8_t priority
+) {
+    if (!isQueueRunning()) {
+        Serial.println("[Firebase] Queue not running, falling back to direct upload");
+        // Fallback to direct upload if queue is not available
+        auto result = uploadGatewayStatus(connectedNodes, totalPacketsReceived, 
+                                         totalPacketsSent, wifiRssi, freeHeap, uptimeSeconds);
+        return result.success;
+    }
+    
+    // Convert priority to enum
+    FirebasePriority_t queuePriority;
+    switch (priority) {
+        case 1: queuePriority = FIREBASE_PRIORITY_LOW; break;
+        case 3: queuePriority = FIREBASE_PRIORITY_HIGH; break;
+        case 4: queuePriority = FIREBASE_PRIORITY_URGENT; break;
+        default: queuePriority = FIREBASE_PRIORITY_NORMAL; break;
+    }
+    
+    bool success = FIREBASE_QUEUE().enqueueGatewayStatus(
+        connectedNodes, totalPacketsReceived, totalPacketsSent,
+        wifiRssi, freeHeap, uptimeSeconds, queuePriority
+    );
+    
+    if (success) {
+        Serial.printf("[Firebase] ✅ Gateway status queued (nodes: %d, priority: %d)\n", connectedNodes, priority);
+    } else {
+        Serial.println("[Firebase] ❌ Failed to queue gateway status");
+    }
+    
+    return success;
+}
+
+bool FirebaseClient::queueRoutingTable(const std::vector<RouteNode>& routingTable, uint8_t priority) {
+    if (!isQueueRunning()) {
+        Serial.println("[Firebase] Queue not running, falling back to direct upload");
+        // Fallback to direct upload if queue is not available
+        auto result = uploadRoutingTable(routingTable);
+        return result.success;
+    }
+    
+    // Convert priority to enum
+    FirebasePriority_t queuePriority;
+    switch (priority) {
+        case 1: queuePriority = FIREBASE_PRIORITY_LOW; break;
+        case 3: queuePriority = FIREBASE_PRIORITY_HIGH; break;
+        case 4: queuePriority = FIREBASE_PRIORITY_URGENT; break;
+        default: queuePriority = FIREBASE_PRIORITY_NORMAL; break;
+    }
+    
+    bool success = FIREBASE_QUEUE().enqueueRoutingTable(routingTable, queuePriority);
+    
+    if (success) {
+        Serial.printf("[Firebase] ✅ Routing table queued (%d nodes, priority: %d)\n", 
+                     routingTable.size(), priority);
+    } else {
+        Serial.println("[Firebase] ❌ Failed to queue routing table");
+    }
+    
+    return success;
+}
+
+bool FirebaseClient::queueLogEvent(
+    const String& eventType,
+    const String& nodeId,
+    const String& details,
+    uint8_t priority
+) {
+    if (!isQueueRunning()) {
+        Serial.println("[Firebase] Queue not running, falling back to direct upload");
+        // Fallback to direct upload if queue is not available
+        auto result = logEvent(eventType, nodeId, details);
+        return result.success;
+    }
+    
+    // Convert priority to enum
+    FirebasePriority_t queuePriority;
+    switch (priority) {
+        case 1: queuePriority = FIREBASE_PRIORITY_LOW; break;
+        case 3: queuePriority = FIREBASE_PRIORITY_HIGH; break;
+        case 4: queuePriority = FIREBASE_PRIORITY_URGENT; break;
+        default: queuePriority = FIREBASE_PRIORITY_NORMAL; break;
+    }
+    
+    bool success = FIREBASE_QUEUE().enqueueLogEvent(eventType, nodeId, details, queuePriority);
+    
+    if (success) {
+        Serial.printf("[Firebase] ✅ Event queued (type: %s, priority: %d)\n", eventType.c_str(), priority);
+    } else {
+        Serial.printf("[Firebase] ❌ Failed to queue event: %s\n", eventType.c_str());
+    }
+    
+    return success;
 }

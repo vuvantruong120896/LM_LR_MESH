@@ -30,7 +30,7 @@ Phase 2 (Firmware) is now fully implemented and compiled successfully!
 ```bash
 # 1. Flash the firmware
 cd d:\Projects\Lora\LM_LR_MESH
-platformio run -e esp32-c3-devkitm-1 -t upload -t monitor
+platformio run -e esp32-gateway -t upload -t monitor
 
 # 2. Wait for Gateway to connect to Firebase
 # Look for logs: "Firebase initialized successfully"

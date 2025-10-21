@@ -1,4 +1,5 @@
 #include "gateway_app.h"
+#include "firebase_queue.h"  // Include Firebase queue system
 #include "components/lora_mesh_manager/src/services/RoutingTableService.h"
 #include "mesh_security_config.h"
 #include <esp_log.h>
@@ -276,24 +277,36 @@ void GatewayApp::loop() {
                     sensorData data;
                     
                     if (OfflineDataBuffer::getOldestData(nodeId, data)) {
-                        // CRITICAL: Reset watchdog before Firebase upload
-                        esp_task_wdt_reset();
+                        // NEW: Use queue for non-blocking upload (no watchdog resets needed)
+                        bool success = false;
                         
-                        // Upload to Firebase with RSSI/SNR = 0 (stale data)
-                        auto result = firebaseClient->uploadSensorData(data, 0, 0.0f);
+                        if (firebaseClient->isQueueRunning()) {
+                            // Queue-based upload (non-blocking, runs on CPU1)
+                            success = firebaseClient->queueSensorData(data, 0, 0.0f, 2); // Normal priority
+                            ESP_LOGD(TAG, "📤 Queued buffered data from %s", nodeId.c_str());
+                        } else {
+                            // Fallback to direct upload (blocking)
+                            ESP_LOGD(TAG, "📤 Direct upload buffered data from %s", nodeId.c_str());
+                            
+                            // CRITICAL: Reset watchdog before Firebase upload (fallback only)
+                            esp_task_wdt_reset();
+                            
+                            auto result = firebaseClient->uploadSensorData(data, 0, 0.0f);
+                            success = result.success;
+                            
+                            // CRITICAL: Reset watchdog after Firebase upload (fallback only)
+                            esp_task_wdt_reset();
+                        }
                         
-                        // CRITICAL: Reset watchdog after Firebase upload
-                        esp_task_wdt_reset();
-                        
-                        if (result.success) {
-                            // Remove from buffer after successful upload
+                        if (success) {
+                            // Remove from buffer after successful queue or upload
                             OfflineDataBuffer::removeOldest();
                             uploaded++;
                             bufferedCount--;
                             ESP_LOGD(TAG, "✅ Synced buffered data from %s", nodeId.c_str());
                         } else {
                             // Failed to upload, keep in buffer and retry later
-                            ESP_LOGW(TAG, "❌ Failed to sync buffered data: %s", result.errorMessage.c_str());
+                            ESP_LOGW(TAG, "❌ Failed to sync buffered data from %s", nodeId.c_str());
                             break; // Stop trying for this cycle
                         }
                     }
@@ -340,10 +353,9 @@ void GatewayApp::loop() {
     if (gatewayState.firebaseConnected && !firstRoutingTableUploadDone) {
         ESP_LOGI(TAG, "📡 Initial routing table upload (post-reboot)");
         
-        // CRITICAL: Reset watchdog before Firebase operation
-        esp_task_wdt_reset();
-        
-        uploadRoutingTable();
+        // NEW: Use queue for non-blocking routing table upload
+        ESP_LOGI(TAG, "📡 Initial routing table upload (post-reboot)");
+        queueRoutingTableUpload(3); // High priority for initial upload
         gatewayState.lastRoutingTableUpload = currentTime;
         firstRoutingTableUploadDone = true;
     }
@@ -352,10 +364,8 @@ void GatewayApp::loop() {
         (currentTime - gatewayState.lastRoutingTableUpload >= GATEWAY_ROUTING_TABLE_INTERVAL)) {
         ESP_LOGI(TAG, "⏰ Periodic backup routing table upload");
         
-        // CRITICAL: Reset watchdog before Firebase operation
-        esp_task_wdt_reset();
-        
-        uploadRoutingTable();
+        // NEW: Use queue for non-blocking routing table upload
+        queueRoutingTableUpload(2); // Normal priority for periodic upload
         // Always update timestamp even if upload fails to prevent rapid retries
         gatewayState.lastRoutingTableUpload = currentTime;
     }
@@ -368,10 +378,9 @@ void GatewayApp::loop() {
     if (gatewayState.firebaseConnected && !firstUploadDone) {
         ESP_LOGI(TAG, "📊 Initial Gateway sensor data upload (post-reboot)");
         
-        // CRITICAL: Reset watchdog before Firebase operation
-        esp_task_wdt_reset();
-        
-        uploadGatewaySensorData();
+        // NEW: Use queue for non-blocking gateway sensor upload
+        ESP_LOGI(TAG, "📊 Initial Gateway sensor data upload (post-reboot)");
+        queueGatewaySensorDataUpload(3); // High priority for initial upload
         lastSensorUpload = currentTime;
         firstUploadDone = true;
     }
@@ -380,10 +389,8 @@ void GatewayApp::loop() {
         (currentTime - lastSensorUpload >= GATEWAY_SENSOR_INTERVAL)) {
         ESP_LOGI(TAG, "📊 Periodic Gateway sensor data collection");
         
-        // CRITICAL: Reset watchdog before Firebase operation
-        esp_task_wdt_reset();
-        
-        uploadGatewaySensorData();
+        // NEW: Use queue for non-blocking gateway sensor upload
+        queueGatewaySensorDataUpload(2); // Normal priority for periodic upload
         lastSensorUpload = currentTime;
     }
 
@@ -458,8 +465,13 @@ void GatewayApp::loop() {
         }
     }
 
-    // Upload gateway status periodically (every 60 seconds)
-    uploadGatewayStatusPeriodic();
+    // Upload gateway status every 60 seconds (use queue for non-blocking)
+    static uint32_t lastStatusUploadTime = 0;
+    const uint32_t STATUS_UPLOAD_INTERVAL = 60000; // 60 seconds
+    if (currentTime - lastStatusUploadTime >= STATUS_UPLOAD_INTERVAL) {
+        queueGatewayStatusUpload(1); // Low priority for periodic status
+        lastStatusUploadTime = currentTime;
+    }
 
     delay(100); // Main loop delay
 }
@@ -600,19 +612,60 @@ void GatewayApp::setupFirebase() {
         ESP_LOGI(TAG, "🔥 Firebase connected! User: %s, Gateway: %s", 
                  userUID.c_str(), gatewayMAC.c_str());
 
-        // Upload initial gateway info
-        auto result = firebaseClient->updateGatewayInfo(
-            gatewayMAC,
-            wifiService->getLocalIP(),
-            "1.0.0"  // Firmware version
-        );
-
-        if (result.success) {
-            ESP_LOGI(TAG, "Gateway info uploaded to Firebase");
+        // NEW: Initialize Firebase Queue System on CPU1
+        ESP_LOGI(TAG, "🚀 Initializing Firebase Queue System...");
+        if (firebaseClient->initializeQueue()) {
+            ESP_LOGI(TAG, "✅ Firebase Queue System initialized successfully");
+            ESP_LOGI(TAG, "  Worker task running on CPU1");
+            ESP_LOGI(TAG, "  Queue size: 100 items");
+            ESP_LOGI(TAG, "  Min operation interval: 500ms");
+            
+            // Phase 3: Configure advanced features
+            FirebaseQueueManager& queueManager = FirebaseQueueManager::getInstance();
+            
+            // Enable batch optimization for better throughput (using available method)
+            queueManager.enableBatchOptimization(true);
+            ESP_LOGI(TAG, "📦 Batch optimization enabled");
+            
+            // Set adaptive retry strategy for intelligent retry handling
+            queueManager.setRetryStrategy(RETRY_STRATEGY_ADAPTIVE);
+            ESP_LOGI(TAG, "🔄 Adaptive retry strategy enabled");
+            
+            // Configure for throughput optimization mode
+            queueManager.setQueueMode(QUEUE_MODE_THROUGHPUT_OPTIMIZED);
+            ESP_LOGI(TAG, "🚀 Queue configured for throughput optimization");
+            
+            // Enable queue persistence for reliability (using available method)
+            queueManager.enableQueuePersistence(true);
+            ESP_LOGI(TAG, "💾 Queue persistence enabled");
+            
+        } else {
+            ESP_LOGE(TAG, "❌ Failed to initialize Firebase Queue System");
+            ESP_LOGW(TAG, "   Will fall back to direct Firebase calls (blocking)");
         }
 
-        // Log gateway started event
-        firebaseClient->logEvent("gateway_started", "", "");
+        // Upload initial gateway info (use queue if available)
+        if (firebaseClient->isQueueRunning()) {
+            // Queue-based upload (non-blocking)
+            ESP_LOGI(TAG, "📤 Queuing initial gateway info upload...");
+            firebaseClient->queueLogEvent("gateway_started", gatewayMAC, 
+                                         "Gateway initialized with queue system", 3); // High priority
+        } else {
+            // Direct upload (blocking - fallback)
+            ESP_LOGI(TAG, "📤 Direct upload of initial gateway info...");
+            auto result = firebaseClient->updateGatewayInfo(
+                gatewayMAC,
+                wifiService->getLocalIP(),
+                "1.0.0"  // Firmware version
+            );
+            
+            if (result.success) {
+                ESP_LOGI(TAG, "Gateway info uploaded to Firebase");
+            }
+            
+            // Log gateway started event
+            firebaseClient->logEvent("gateway_started", "", "");
+        }
         
         // NEW: Create and initialize command poller
         ESP_LOGI(TAG, "Initializing Firebase Command Poller...");
@@ -695,18 +748,31 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
                     break;
             }
 
-            // CRITICAL: Reset watchdog before Firebase upload (can take 8-15 seconds)
-            esp_task_wdt_reset();
+            // NEW: Use queue for non-blocking sensor upload (no watchdog resets needed!)
+            bool success = false;
             
-            auto result = firebaseClient->uploadSensorData(*s, rssi, snr);
-            
-            // CRITICAL: Reset watchdog after Firebase upload completes
-            esp_task_wdt_reset();
+            if (firebaseClient->isQueueRunning()) {
+                // Queue-based upload (non-blocking, runs on CPU1)
+                success = firebaseClient->queueSensorData(*s, rssi, snr, 2); // Normal priority
+                ESP_LOGD(TAG, "📤 Queued sensor data from node %s", nodeIdStr);
+            } else {
+                // Fallback to direct upload (blocking)
+                ESP_LOGW(TAG, "📤 Queue not available, using direct upload (blocking)");
+                
+                // CRITICAL: Reset watchdog before Firebase upload (fallback only)
+                esp_task_wdt_reset();
+                
+                auto result = firebaseClient->uploadSensorData(*s, rssi, snr);
+                success = result.success;
+                
+                // CRITICAL: Reset watchdog after Firebase upload (fallback only)
+                esp_task_wdt_reset();
+            }
 
-            if (result.success) {
+            if (success) {
                 gatewayState.packetsUploaded++;
                 led_pattern_message(); // Flash LED on successful upload
-                ESP_LOGI(TAG, "✅ Upload successful (%d bytes)", result.payloadSize);
+                ESP_LOGI(TAG, "✅ Upload queued/successful");
                 
                 // Update last processed counter for this node
                 lastProcessedCounter[sourceNode] = s->counter;
@@ -715,7 +781,7 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
                 
                 // Buffer data when upload fails (network issue, Firebase error, etc.)
                 // This covers: WiFi connected but no internet, Firebase overload, API errors
-                ESP_LOGW(TAG, "❌ Firebase upload failed: %s", result.errorMessage.c_str());
+                ESP_LOGW(TAG, "❌ Firebase queue/upload failed");
                 ESP_LOGI(TAG, "📦 Buffering data to NVS for later sync...");
                 
                 if (OfflineDataBuffer::addData(String(nodeIdStr), *s)) {
@@ -988,8 +1054,8 @@ void GatewayApp::onRoutingTableChanged() {
         return;
     }
 
-    ESP_LOGI(TAG, "🔄 Routing table changed - triggering immediate Firebase upload");
-    instance->uploadRoutingTable();
+    ESP_LOGI(TAG, "🔄 Routing table changed - triggering immediate Firebase queue upload");
+    instance->queueRoutingTableUpload(3); // High priority for immediate changes
 }
 
 // REMOVED: Old UART callback functions - no longer used in WiFi+Firebase architecture
@@ -1809,4 +1875,152 @@ void GatewayApp::updateProvisioningProgress() {
     
     ESP_LOGD(TAG, "📊 Provisioning progress: %d nodes, %u ms remaining",
              gatewayState.nodesDiscoveredDuringProvisioning, timeRemaining);
+}
+
+// ===== NEW: Queue-based Firebase Upload Helpers =====
+
+void GatewayApp::queueRoutingTableUpload(uint8_t priority) {
+    if (!firebaseClient || !gatewayState.firebaseConnected) {
+        ESP_LOGD(TAG, "Firebase not available for routing table upload");
+        return;
+    }
+
+    // Access routing table from RoutingTableService
+    LM_LinkedList<RouteNode>* rtList = RoutingTableService::routingTableList;
+    if (!rtList) {
+        ESP_LOGW(TAG, "Routing table is null");
+        return;
+    }
+
+    rtList->setInUse();
+    size_t tableSize = rtList->getLength();
+
+    // Convert LinkedList to vector for Firebase upload
+    std::vector<RouteNode> routingTable;
+    routingTable.reserve(tableSize);
+
+    if (rtList->moveToStart()) {
+        do {
+            RouteNode* node = rtList->getCurrent();
+            if (node) {
+                routingTable.push_back(*node);
+            }
+        } while (rtList->next());
+    }
+
+    rtList->releaseInUse();
+
+    if (routingTable.size() == 0) {
+        ESP_LOGI(TAG, "📡 Queuing EMPTY routing table to clear Firebase data");
+    } else {
+        ESP_LOGI(TAG, "📡 Queuing routing table (%d nodes, priority %d)", routingTable.size(), priority);
+    }
+
+    // Queue the upload (non-blocking)
+    if (firebaseClient->isQueueRunning()) {
+        bool success = firebaseClient->queueRoutingTable(routingTable, priority);
+        if (success) {
+            ESP_LOGD(TAG, "✅ Routing table queued successfully");
+        } else {
+            ESP_LOGW(TAG, "❌ Failed to queue routing table");
+        }
+    } else {
+        // Fallback to direct upload
+        ESP_LOGW(TAG, "Queue not available, using direct routing table upload");
+        uploadRoutingTable();
+    }
+}
+
+void GatewayApp::queueGatewaySensorDataUpload(uint8_t priority) {
+    if (!firebaseClient || !gatewayState.firebaseConnected) {
+        ESP_LOGD(TAG, "Firebase not available for gateway sensor upload");
+        return;
+    }
+
+    // Generate gateway sensor data
+    sensorData gatewaySensor = simulateGatewaySensorData();
+    
+    // Get WiFi RSSI for Gateway sensor data
+    int8_t wifiRssi = wifiService ? wifiService->getRSSI() : -90;
+    float gatewaySnr = 10.0f;  // Fixed SNR value for Gateway data
+    
+    char nodeIdStr[16];
+    snprintf(nodeIdStr, sizeof(nodeIdStr), "0x%04X", gatewaySensor.nodeId);
+
+    ESP_LOGI(TAG, "🏠 Queuing Gateway sensor data (priority %d)", priority);
+    
+    // Log Gateway sensor data
+    switch (gatewaySensor.deviceType) {
+        case DeviceType::SOIL_SENSOR:
+            ESP_LOGI(TAG, "🌱 Gateway Soil - Counter: %u, Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, Batt: %.2fV",
+                     gatewaySensor.counter, gatewaySensor.data.soil.soilMoisture, 
+                     gatewaySensor.data.soil.soilTemperature, gatewaySensor.data.soil.pH,
+                     gatewaySensor.battery);
+            break;
+        case DeviceType::ENV_SENSOR:
+            ESP_LOGI(TAG, "🌡️ Gateway Env - Counter: %u, Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV",
+                     gatewaySensor.counter, gatewaySensor.data.environment.temperature, 
+                     gatewaySensor.data.environment.humidity, gatewaySensor.battery);
+            break;
+        default:
+            ESP_LOGI(TAG, "📊 Gateway - Counter: %u, Type: %s, Batt: %.2fV",
+                     gatewaySensor.counter, deviceTypeToString(gatewaySensor.deviceType), 
+                     gatewaySensor.battery);
+            break;
+    }
+
+    // Queue the upload (non-blocking)
+    if (firebaseClient->isQueueRunning()) {
+        bool success = firebaseClient->queueSensorData(gatewaySensor, wifiRssi, gatewaySnr, priority);
+        if (success) {
+            ESP_LOGD(TAG, "✅ Gateway sensor data queued successfully");
+        } else {
+            ESP_LOGW(TAG, "❌ Failed to queue gateway sensor data");
+        }
+    } else {
+        // Fallback to direct upload
+        ESP_LOGW(TAG, "Queue not available, using direct gateway sensor upload");
+        uploadGatewaySensorData();
+    }
+}
+
+void GatewayApp::queueGatewayStatusUpload(uint8_t priority) {
+    if (!firebaseClient || !gatewayState.firebaseConnected) {
+        ESP_LOGD(TAG, "Firebase not available for gateway status upload");
+        return;
+    }
+
+    // Collect metrics
+    uint16_t connectedNodes = 0;
+    LM_LinkedList<RouteNode>* rtList = RoutingTableService::routingTableList;
+    if (rtList) {
+        connectedNodes = rtList->getLength();
+    }
+    
+    uint32_t totalPacketsReceived = gatewayState.totalMeshPackets;
+    uint32_t totalPacketsSent = gatewayState.packetsUploaded;
+    int8_t wifiRssi = WiFi.RSSI();
+    uint32_t freeHeap = ESP.getFreeHeap();
+    uint32_t uptimeSeconds = millis() / 1000;
+    
+    ESP_LOGI(TAG, "📊 Queuing Gateway status (priority %d): nodes=%u, rx=%u, tx=%u, rssi=%d, heap=%u, uptime=%u",
+             priority, connectedNodes, totalPacketsReceived, totalPacketsSent, wifiRssi, freeHeap, uptimeSeconds);
+
+    // Queue the upload (non-blocking)
+    if (firebaseClient->isQueueRunning()) {
+        bool success = firebaseClient->queueGatewayStatus(
+            connectedNodes, totalPacketsReceived, totalPacketsSent,
+            wifiRssi, freeHeap, uptimeSeconds, priority
+        );
+        
+        if (success) {
+            ESP_LOGD(TAG, "✅ Gateway status queued successfully");
+        } else {
+            ESP_LOGW(TAG, "❌ Failed to queue gateway status");
+        }
+    } else {
+        // Fallback to direct upload
+        ESP_LOGW(TAG, "Queue not available, using direct gateway status upload");
+        uploadGatewayStatusPeriodic();
+    }
 }
