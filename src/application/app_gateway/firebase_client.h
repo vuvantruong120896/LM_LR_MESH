@@ -56,8 +56,10 @@ public:
         uint32_t successfulUploads;     ///< Successful uploads
         uint32_t failedUploads;         ///< Failed uploads
         uint32_t totalBytesUploaded;    ///< Total bytes uploaded
-        uint32_t lastUploadTime;        ///< Last upload timestamp (millis)
+    uint32_t lastUploadTime;        ///< Last upload timestamp (seconds since epoch, NTP if available)
         float averageUploadTime;        ///< Average upload time (ms)
+        uint32_t slowOperationCount;    ///< Count of operations > 8s
+        uint32_t maxOperationTime;      ///< Longest operation time (ms)
     };
 
     /**

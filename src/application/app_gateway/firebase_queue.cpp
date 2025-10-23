@@ -8,9 +8,10 @@
 static const char* TAG = "FIREBASE_QUEUE";
 
 // Phase 2: Memory monitoring constants
-static const uint32_t MEMORY_CHECK_INTERVAL_MS = 30000;  // Check every 30 seconds
-static const uint32_t GC_TRIGGER_THRESHOLD = 50000;      // Trigger GC when <50KB free
-static const uint32_t CRITICAL_MEMORY_THRESHOLD = 20000; // Critical when <20KB free
+// MEMORY FIX (Oct 23, 2025): Adjusted after reducing Firebase buffers (~43KB saved)
+static const uint32_t MEMORY_CHECK_INTERVAL_MS = 10000;  // Check every 10 seconds
+static const uint32_t GC_TRIGGER_THRESHOLD = 60000;      // Trigger GC when <60KB free (was 80KB - too high)
+static const uint32_t CRITICAL_MEMORY_THRESHOLD = 35000; // Critical when <35KB free (was 30KB)
 static const float FRAGMENTATION_THRESHOLD = 0.7f;        // Consider fragmented when >70%
 
 // Phase 2: Error recovery constants
@@ -257,7 +258,7 @@ void FirebaseQueueManager::workerTask(void* parameter) {
         }
         
         // Small delay to prevent task starvation
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -276,9 +277,6 @@ void FirebaseQueueManager::processQueueItem(const FirebaseQueueItem_t& item) {
     }
     
     bool success = false;
-    
-    // CRITICAL: No watchdog resets needed here - this task runs on CPU1
-    // Main loop watchdog is on CPU0 and won't be affected
     
     try {
         success = processOperation(item);

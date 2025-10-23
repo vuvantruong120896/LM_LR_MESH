@@ -98,6 +98,15 @@ private:
     void handleAssignNetkey(const FirebaseCommandPoller::Command& cmd);
     void updateProvisioningProgress();  // Update provisioning progress to Firebase
     
+    // NEW: Netkey distribution worker (runs on CPU1 to avoid blocking CPU0)
+    struct NetkeyDistributionTask {
+        FirebaseCommandPoller::Command cmd;
+        NetworkConfig config;
+        bool* completed;
+    };
+    static void netkeyDistributionWorker(void* parameter);
+    TaskHandle_t m_netkeyWorkerHandle = nullptr;
+    
     // Static callbacks
     static void onNetkeyUpdated(const uint8_t* newKey, uint8_t version);
     static void onRoutingTableChanged();  // Called when routing table changes (add/remove nodes)

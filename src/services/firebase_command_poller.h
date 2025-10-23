@@ -42,12 +42,21 @@ public:
     FirebaseCommandPoller(FirebaseData* fbdo, const String& userUID, const String& gatewayMAC);
     
     /**
-     * @brief Initialize command poller
+     * @brief Destructor - stops polling task
      */
-    void begin();
+    ~FirebaseCommandPoller();
     
     /**
-     * @brief Poll for pending commands (call in main loop every 5-10 seconds)
+     * @brief Initialize command poller and start dedicated polling task
+     * @param stackSize Task stack size (default: 8192 bytes)
+     * @param priority Task priority (default: 1)
+     * @param coreId Core to pin task (default: 1 = CPU1, same as Firebase queue worker)
+     */
+    void begin(uint32_t stackSize = 8192, uint8_t priority = 1, int coreId = 1);
+    
+    /**
+     * @brief Poll for pending commands (now runs in dedicated task)
+     * @note Legacy method - kept for compatibility but now runs in separate task
      */
     void poll();
     
@@ -130,11 +139,29 @@ private:
     Command m_currentCommand;       // Current command being processed
     bool m_hasCommand;              // Flag: has command to process
     uint32_t m_lastPoll;            // Last poll timestamp
-    uint32_t m_pollInterval;        // Poll interval in milliseconds
+    uint32_t m_pollInterval;        // Poll interval in milliseconds (default: 10s)
     bool m_enabled;                 // Polling enabled flag
     
+    // Circuit breaker & health monitoring (Oct 23, 2025)
+    uint8_t m_consecutiveFailures;  // Count of consecutive failures
+    uint32_t m_cooldownUntilMs;     // Cooldown end time (millis)
+    uint32_t m_minHeapThreshold;    // Min heap before skipping network ops (default: 25KB)
+    uint8_t m_maxConsecutiveFailures; // Max failures before cooldown (default: 3)
+    uint32_t m_cooldownBaseMs;      // Base cooldown duration (default: 30s)
+    String m_firebaseHost;          // Firebase host for DNS pre-check
+    
+    // Task management
+    TaskHandle_t m_pollingTaskHandle; // FreeRTOS task handle
+    bool m_taskRunning;             // Task running flag
+    
     /**
-     * @brief Fetch pending commands from Firebase
+     * @brief Static task entry point for FreeRTOS
+     * @param parameter Pointer to FirebaseCommandPoller instance
+     */
+    static void pollingTask(void* parameter);
+    
+    /**
+     * @brief Fetch pending commands from Firebase with circuit breaker protection
      * @return true if command found
      */
     bool fetchPendingCommands();
@@ -151,6 +178,34 @@ private:
      * @brief Cleanup old completed/failed commands (keep last 10)
      */
     void cleanupOldCommands();
+    
+    /**
+     * @brief DNS pre-check before network operations
+     * @return true if DNS resolution succeeds
+     */
+    bool dnsPreCheck();
+    
+    /**
+     * @brief Check if enough heap available for network ops
+     * @return true if heap above threshold
+     */
+    bool heapCheck();
+    
+    /**
+     * @brief Handle failure with circuit breaker logic
+     */
+    void handleFailure();
+    
+    /**
+     * @brief Handle success - reset circuit breaker
+     */
+    void handleSuccess();
+    
+    /**
+     * @brief Check if in cooldown period
+     * @return true if in cooldown
+     */
+    bool isInCooldown();
 };
 
 #endif // FIREBASE_COMMAND_POLLER_H

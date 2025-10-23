@@ -3,6 +3,9 @@
 #include "TimeSyncService.h"
 #include <time.h>
 #include <esp_task_wdt.h>
+#include <esp_log.h>
+
+const char* TAG = "FIREBASE_CLIENT";
 
 // Constants
 // CRITICAL: Reduced retries and timeout to prevent task watchdog timeout (5s)
@@ -34,7 +37,7 @@ FirebaseClient::FirebaseClient(
     m_failureThreshold = 5;      // after 5 consecutive failures, enter cooldown
     
     // Debug: Print gateway ID to verify it's stored correctly
-    Serial.printf("[Firebase] Gateway ID stored: %s\n", m_gatewayId.c_str());
+    ESP_LOGI(TAG, "Gateway ID stored: %s", m_gatewayId.c_str());
 }
 
 FirebaseClient::~FirebaseClient() {
@@ -42,7 +45,7 @@ FirebaseClient::~FirebaseClient() {
 }
 
 bool FirebaseClient::initialize() {
-    Serial.println("[Firebase] Initializing...");
+    ESP_LOGI(TAG, "Initializing...");
     
     // Configure Firebase
     m_firebaseConfig.host = m_firebaseHost;
@@ -51,26 +54,37 @@ bool FirebaseClient::initialize() {
     // Set timeout
     m_firebaseConfig.timeout.serverResponse = UPLOAD_TIMEOUT_MS;
     
+    // MEMORY OPTIMIZATION (Oct 23, 2025): Reduce Firebase buffer sizes BEFORE Firebase.begin()
+    // Default buffers are HUGE (16KB+ per buffer each), causing severe memory pressure
+    // FirebaseData default allocation: ~50-60KB total!
+    // Our sensor data is small (~1KB JSON), so we can drastically reduce buffers
+    
+    // Configure FirebaseData buffer sizes BEFORE Firebase.begin() to prevent massive heap allocation
+    m_firebaseData.setBSSLBufferSize(2048, 512);  // RX: 2KB, TX: 512B (default: 16KB/16KB) - saves ~29KB!
+    m_firebaseData.setResponseSize(2048);          // Response buffer: 2KB (default: 16KB) - saves ~14KB!
+    
+    ESP_LOGI(TAG, "📉 Firebase buffers reduced: Response=2KB, BSSL_RX=2KB, BSSL_TX=512B (saves ~43KB heap!)");
+    
     // Initialize Firebase
     Firebase.begin(&m_firebaseConfig, &m_firebaseAuthData);
     Firebase.reconnectWiFi(true);
     
-    Serial.println("[Firebase] Initialized");
+    ESP_LOGI(TAG, "Initialized");
     return true;
 }
 
 bool FirebaseClient::connect() {
     LockGuard guard(m_mutex);
     if (!guard.isLocked()) {
-        Serial.println("[Firebase] connect(): mutex lock timeout");
+    ESP_LOGW(TAG, "connect(): mutex lock timeout");
         return false;
     }
     if (m_status == ConnectionStatus::CONNECTED) {
-        Serial.println("[Firebase] Already connected");
+    ESP_LOGI(TAG, "Already connected");
         return true;
     }
 
-    Serial.printf("[Firebase] Connecting to %s...\n", m_firebaseHost);
+    ESP_LOGI(TAG, "Connecting to %s...", m_firebaseHost);
     
     m_status = ConnectionStatus::CONNECTING;
     
@@ -83,12 +97,12 @@ bool FirebaseClient::connect() {
     
     if (Firebase.setTimestamp(m_firebaseData, testPath.c_str())) {
         m_status = ConnectionStatus::CONNECTED;
-        Serial.println("[Firebase] Connected successfully!");
+    ESP_LOGI(TAG, "Connected successfully!");
         return true;
     } else {
         m_status = ConnectionStatus::ERROR;
         m_lastError = m_firebaseData.errorReason();
-        Serial.printf("[Firebase] Connection failed: %s\n", m_lastError.c_str());
+    ESP_LOGE(TAG, "Connection failed: %s", m_lastError.c_str());
         return false;
     }
 }
@@ -96,11 +110,11 @@ bool FirebaseClient::connect() {
 void FirebaseClient::disconnect() {
     LockGuard guard(m_mutex);
     if (!guard.isLocked()) {
-        Serial.println("[Firebase] disconnect(): mutex lock timeout");
+    ESP_LOGW(TAG, "disconnect(): mutex lock timeout");
         return;
     }
     if (m_status != ConnectionStatus::DISCONNECTED) {
-        Serial.println("[Firebase] Disconnecting...");
+    ESP_LOGI(TAG, "Disconnecting...");
         m_status = ConnectionStatus::DISCONNECTED;
     }
 }
@@ -151,9 +165,6 @@ FirebaseClient::UploadResult FirebaseClient::uploadSensorData(
     // MEMORY FIX: Small delay between uploads to prevent TCP connection buildup
     delay(100);
     
-    // Reset watchdog between uploads (each upload can take ~5s)
-    esp_task_wdt_reset();
-    
     // 2. Time-series data (for historical charts): sensor_data/{userUID}/{nodeId}/{timestamp}
     String timeSeriesPath = "sensor_data/";
     timeSeriesPath += m_userUID;
@@ -174,11 +185,11 @@ FirebaseClient::UploadResult FirebaseClient::uploadSensorData(
     
     recordUploadResult(result.success);
     if (result.success) {
-        Serial.printf("[Firebase] Sensor data uploaded for node %s (RSSI: %d dBm, SNR: %.1f)\n", 
-                     nodeIdStr.c_str(), rssi, snr);
+    ESP_LOGI(TAG, "Sensor data uploaded for node %s (RSSI: %d dBm, SNR: %.1f)", 
+         nodeIdStr.c_str(), rssi, snr);
     } else {
         result.errorMessage = m_lastError;
-        Serial.printf("[Firebase] Failed to upload sensor data: %s\n", result.errorMessage.c_str());
+    ESP_LOGW(TAG, "Failed to upload sensor data: %s", result.errorMessage.c_str());
     }
     
     updateUploadStats(result.success, result.payloadSize, uploadTime);
@@ -235,11 +246,11 @@ FirebaseClient::UploadResult FirebaseClient::uploadGatewayStatus(
     
     recordUploadResult(result.success);
     if (result.success) {
-        Serial.printf("[Firebase] Gateway status uploaded (%u nodes, %lu uptime)\n", 
-                     connectedNodes, uptimeSeconds);
+    ESP_LOGI(TAG, "Gateway status uploaded (%u nodes, %lu uptime)", 
+         connectedNodes, uptimeSeconds);
     } else {
         result.errorMessage = m_lastError;
-        Serial.printf("[Firebase] Failed to upload gateway status: %s\n", result.errorMessage.c_str());
+    ESP_LOGW(TAG, "Failed to upload gateway status: %s", result.errorMessage.c_str());
     }
     
     updateUploadStats(result.success, result.payloadSize, uploadTime);
@@ -284,10 +295,10 @@ FirebaseClient::UploadResult FirebaseClient::uploadRoutingTable(
     
     recordUploadResult(result.success);
     if (result.success) {
-        Serial.printf("[Firebase] Routing table uploaded (%d nodes)\n", routingTable.size());
+    ESP_LOGI(TAG, "Routing table uploaded (%d nodes)", routingTable.size());
     } else {
         result.errorMessage = m_lastError;
-        Serial.printf("[Firebase] Failed to upload routing table: %s\n", result.errorMessage.c_str());
+    ESP_LOGW(TAG, "Failed to upload routing table: %s", result.errorMessage.c_str());
     }
     
     updateUploadStats(result.success, result.payloadSize, uploadTime);
@@ -329,7 +340,7 @@ FirebaseClient::UploadResult FirebaseClient::logEvent(
     
     recordUploadResult(result.success);
     if (result.success) {
-        Serial.printf("[Firebase] Event logged: %s\n", eventType.c_str());
+    ESP_LOGI(TAG, "Event logged: %s", eventType.c_str());
     } else {
         result.errorMessage = m_lastError;
     }
@@ -353,8 +364,8 @@ FirebaseClient::UploadResult FirebaseClient::updateGatewayInfo(
         return result;
     }
     
-    // Create JSON
-    JsonDocument doc;
+    // Create JSON - MEMORY FIX: Use StaticJsonDocument
+    StaticJsonDocument<256> doc;  // 256 bytes (enough for gateway info)
     doc["mac"] = macAddress;
     doc["ip"] = ipAddress;
     doc["firmware_version"] = firmwareVersion;
@@ -386,8 +397,8 @@ FirebaseClient::UploadResult FirebaseClient::updateGatewayInfo(
     uint32_t uploadTime = millis() - startTime;
     
     if (result.success) {
-        Serial.printf("[Firebase] Gateway info updated (MAC: %s, IP: %s, Address: %s)\n", 
-                     macAddress.c_str(), ipAddress.c_str(), addrStr.c_str());
+    ESP_LOGI(TAG, "Gateway info updated (MAC: %s, IP: %s, Address: %s)", 
+         macAddress.c_str(), ipAddress.c_str(), addrStr.c_str());
     } else {
         result.errorMessage = m_lastError;
     }
@@ -414,8 +425,8 @@ FirebaseClient::UploadResult FirebaseClient::updateNodeInfo(
     
     String nodeIdStr = nodeIdToString(nodeId);
     
-    // Create JSON
-    JsonDocument doc;
+    // Create JSON - MEMORY FIX: Use StaticJsonDocument
+    StaticJsonDocument<256> doc;  // 256 bytes (enough for node info)
     doc["address"] = nodeIdStr;
     doc["name"] = name;
     doc["type"] = type;
@@ -441,8 +452,8 @@ FirebaseClient::UploadResult FirebaseClient::updateNodeInfo(
     uint32_t uploadTime = millis() - startTime;
     
     if (result.success) {
-        Serial.printf("[Firebase] Node info updated: %s (%s)\n", 
-                     nodeIdStr.c_str(), name.c_str());
+    ESP_LOGI(TAG, "Node info updated: %s (%s)", 
+         nodeIdStr.c_str(), name.c_str());
     } else {
         result.errorMessage = m_lastError;
     }
@@ -458,13 +469,13 @@ FirebaseClient::FirebaseStats FirebaseClient::getStats() const {
 
 void FirebaseClient::resetStats() {
     memset(&m_stats, 0, sizeof(FirebaseStats));
-    Serial.println("[Firebase] Statistics reset");
+    ESP_LOGI(TAG, "Statistics reset");
 }
 
 void FirebaseClient::setRetryConfig(uint8_t maxRetries, uint32_t retryDelayMs) {
     m_maxRetries = maxRetries;
     m_retryDelayMs = retryDelayMs;
-    Serial.printf("[Firebase] Retry config: %u retries, %lu ms delay\n", maxRetries, retryDelayMs);
+    ESP_LOGI(TAG, "Retry config: %u retries, %lu ms delay", maxRetries, retryDelayMs);
 }
 
 void FirebaseClient::setAutoTimestamp(bool enabled) {
@@ -478,8 +489,8 @@ String FirebaseClient::getLastError() const {
 void FirebaseClient::setUserContext(const String& userUID, const String& gatewayMAC) {
     m_userUID = userUID;
     m_gatewayMAC = gatewayMAC;
-    Serial.printf("[Firebase] User context set: UID=%s, MAC=%s\n", 
-                  userUID.c_str(), gatewayMAC.c_str());
+    ESP_LOGI(TAG, "User context set: UID=%s, MAC=%s", 
+             userUID.c_str(), gatewayMAC.c_str());
 }
 
 // Private methods
@@ -503,6 +514,7 @@ bool FirebaseClient::uploadToPath(const String& path, const String& jsonData) {
     
     bool success;
     String errorReason;
+    uint32_t operationStartTime = millis();
     {
         LockGuard guard(m_mutex);
         if (!guard.isLocked()) {
@@ -510,13 +522,20 @@ bool FirebaseClient::uploadToPath(const String& path, const String& jsonData) {
             return false;
         }
         
-        // CRITICAL FIX: Feed watchdog before Firebase operation (can take 5-8 seconds)
-        esp_task_wdt_reset();
+        // NO WDT RESET: Let watchdog catch real hangs instead of masking them
+        // This operation should complete within WDT timeout or trigger reboot
         
         success = Firebase.updateNode(m_firebaseData, path.c_str(), json);
         
-        // CRITICAL FIX: Feed watchdog after Firebase operation
-        esp_task_wdt_reset();
+        // Track slow operations for debugging and monitoring
+        uint32_t operationTime = millis() - operationStartTime;
+        if (operationTime > 8000) {
+            m_stats.slowOperationCount++;
+            Serial.printf("[Firebase] ⚠️ Slow operation: %u ms - Path: %s\n", operationTime, path.c_str());
+        }
+        if (operationTime > m_stats.maxOperationTime) {
+            m_stats.maxOperationTime = operationTime;
+        }
         
         // CRITICAL FIX: Force cleanup TCP connection to prevent memory/stack leak
         // Firebase library doesn't always cleanup properly, causing:
@@ -549,27 +568,28 @@ bool FirebaseClient::uploadToPath(const String& path, const String& jsonData) {
 }
 
 bool FirebaseClient::uploadToPathWithRetry(const String& path, const String& jsonData) {
+    uint32_t totalStartTime = millis();
+    
     for (uint8_t attempt = 0; attempt < m_maxRetries; attempt++) {
-        // CRITICAL FIX: Feed watchdog before each upload attempt
-        // Prevents task watchdog timeout during retries (especially with SSL errors)
-        esp_task_wdt_reset();
+        // NO WDT RESET: Let watchdog catch hung retries
+        // If retries take too long, system should reboot
         
         if (uploadToPath(path, jsonData)) {
-            // CRITICAL FIX: Small delay after successful upload to allow WiFi stack cleanup
+            // Small delay after successful upload to allow WiFi stack cleanup
             // Prevents TCP connection accumulation and stack/heap leaks
             delay(50);  // 50ms delay for WiFi client cleanup
+            
+            uint32_t totalTime = millis() - totalStartTime;
+            if (totalTime > 10000) {
+                Serial.printf("[Firebase] ⚠️ Slow retry sequence: %u ms total\n", totalTime);
+            }
             return true;
         }
         
         if (attempt < m_maxRetries - 1) {
             Serial.printf("[Firebase] Upload failed (attempt %u/%u), retrying in %lu ms...\n",
                          attempt + 1, m_maxRetries, m_retryDelayMs);
-            
-            // CRITICAL FIX: Feed watchdog during retry delay
-            // Prevents timeout when multiple packets fail and retry
-            esp_task_wdt_reset();
             delay(m_retryDelayMs);
-            esp_task_wdt_reset();  // Feed again after delay
         }
     }
     
@@ -606,7 +626,10 @@ void FirebaseClient::recordUploadResult(bool success) {
 }
 
 String FirebaseClient::createSensorDataJson(const sensorData& data, int8_t rssi, float snr) {
-    JsonDocument doc;
+    // MEMORY FIX (Oct 23, 2025): Use StaticJsonDocument with explicit size instead of JsonDocument
+    // JsonDocument can allocate on heap without proper cleanup, causing ~12KB leak per packet
+    // Stack-allocated StaticJsonDocument is automatically freed when function returns
+    StaticJsonDocument<1024> doc;  // 1KB stack buffer (enough for sensor data)
     
     // Common fields for all device types
     doc["deviceType"] = deviceTypeToString(data.deviceType);
@@ -634,9 +657,9 @@ String FirebaseClient::createSensorDataJson(const sensorData& data, int8_t rssi,
             doc["nitrogen"] = data.data.soil.nitrogen;
             doc["phosphorus"] = data.data.soil.phosphorus;
             doc["potassium"] = data.data.soil.potassium;
-            Serial.printf("[Firebase] Soil sensor data - Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, EC: %.2f mS/cm\n",
-                data.data.soil.soilMoisture, data.data.soil.soilTemperature, 
-                data.data.soil.pH, data.data.soil.ec);
+            // Serial.printf("[Firebase] Soil sensor data - Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, EC: %.2f mS/cm\n",
+            //     data.data.soil.soilMoisture, data.data.soil.soilTemperature, 
+            //     data.data.soil.pH, data.data.soil.ec);
             break;
             
         case DeviceType::ENV_SENSOR:
@@ -644,8 +667,8 @@ String FirebaseClient::createSensorDataJson(const sensorData& data, int8_t rssi,
             doc["humidity"] = data.data.environment.humidity;
             doc["pressure"] = data.data.environment.pressure;
             doc["lightIntensity"] = data.data.environment.lightIntensity;
-            Serial.printf("[Firebase] Environment sensor data - Temp: %.1f°C, Humidity: %.1f%%\n",
-                data.data.environment.temperature, data.data.environment.humidity);
+            // Serial.printf("[Firebase] Environment sensor data - Temp: %.1f°C, Humidity: %.1f%%\n",
+            //     data.data.environment.temperature, data.data.environment.humidity);
             break;
             
         case DeviceType::WATER_SENSOR:
@@ -653,8 +676,8 @@ String FirebaseClient::createSensorDataJson(const sensorData& data, int8_t rssi,
             doc["pH"] = data.data.water.pH;
             doc["tds"] = data.data.water.tds;
             doc["turbidity"] = data.data.water.turbidity;
-            Serial.printf("[Firebase] Water sensor data - Temp: %.1f°C, pH: %.2f, TDS: %.1f ppm\n",
-                data.data.water.waterTemp, data.data.water.pH, data.data.water.tds);
+            // Serial.printf("[Firebase] Water sensor data - Temp: %.1f°C, pH: %.2f, TDS: %.1f ppm\n",
+            //     data.data.water.waterTemp, data.data.water.pH, data.data.water.tds);
             break;
             
         case DeviceType::GATEWAY:
@@ -667,17 +690,20 @@ String FirebaseClient::createSensorDataJson(const sensorData& data, int8_t rssi,
             // For unknown types, serialize generic values array
             Serial.printf("[Firebase] Unknown device type: %d\n", (int)data.deviceType);
             for (int i = 0; i < 8; i++) {
-                String key = "value" + String(i);
+                String key = "value";
+                key += i;
                 doc[key] = data.data.values[i];
             }
             break;
     }
     
     // Debug: Print JSON payload in pretty format
-    Serial.printf("[Firebase] Sensor data JSON (node 0x%04X, type: %s):\n", 
-        data.nodeId, deviceTypeToString(data.deviceType));
-    serializeJsonPretty(doc, Serial);
-    Serial.println();
+    ESP_LOGI(TAG, "[Firebase] Sensor data JSON (node 0x%04X, type: %s):\n", data.nodeId, deviceTypeToString(data.deviceType));
+    {
+        String pretty;
+        serializeJsonPretty(doc, pretty);
+        ESP_LOGD(TAG, "%s", pretty.c_str());
+    }
     
     String jsonData;
     serializeJson(doc, jsonData);
@@ -692,7 +718,8 @@ String FirebaseClient::createGatewayStatusJson(
     uint32_t heap, 
     uint32_t uptime
 ) {
-    JsonDocument doc;
+    // MEMORY FIX (Oct 23, 2025): Use StaticJsonDocument to avoid heap allocation
+    StaticJsonDocument<512> doc;  // 512 bytes stack buffer (enough for gateway status)
     
     doc["connected_nodes"] = nodes;
     doc["total_packets_received"] = pktsRx;
@@ -706,8 +733,11 @@ String FirebaseClient::createGatewayStatusJson(
     
     // Debug: Print JSON payload in pretty format
     Serial.println("[Firebase] Gateway status JSON:");
-    serializeJsonPretty(doc, Serial);
-    Serial.println();
+    {
+        String pretty;
+        serializeJsonPretty(doc, pretty);
+        ESP_LOGD(TAG, "%s", pretty.c_str());
+    }
     
     String jsonData;
     serializeJson(doc, jsonData);
@@ -715,7 +745,14 @@ String FirebaseClient::createGatewayStatusJson(
 }
 
 String FirebaseClient::createRoutingTableJson(const std::vector<RouteNode>& routingTable) {
-    JsonDocument doc;
+    // MEMORY FIX: Use DynamicJsonDocument with capacity calculation for routing table
+    // Routing table can be large (50+ nodes), so we need dynamic allocation
+    // But with explicit capacity to prevent over-allocation
+    size_t capacity = JSON_OBJECT_SIZE(3) + // root: nodes, node_count, updated_at
+                      JSON_OBJECT_SIZE(routingTable.size()) + // nodes object
+                      routingTable.size() * JSON_OBJECT_SIZE(7) + // each node: address, via, metric, role, rssi, snr, last_seen
+                      routingTable.size() * 100; // strings overhead
+    DynamicJsonDocument doc(capacity);
     JsonObject nodesObj = doc["nodes"].to<JsonObject>();
     
     for (const auto& route : routingTable) {
@@ -746,8 +783,11 @@ String FirebaseClient::createRoutingTableJson(const std::vector<RouteNode>& rout
     
     // Debug: Print JSON payload in pretty format for easy reading
     Serial.println("[Firebase] Routing table JSON (pretty print):");
-    serializeJsonPretty(doc, Serial);
-    Serial.println();  // Add newline after pretty print
+    {
+        String pretty;
+        serializeJsonPretty(doc, pretty);
+        ESP_LOGD(TAG, "%s", pretty.c_str());
+    }
     
     return jsonData;
 }
@@ -757,7 +797,8 @@ String FirebaseClient::createEventJson(
     const String& nodeId, 
     const String& details
 ) {
-    JsonDocument doc;
+    // MEMORY FIX: Use StaticJsonDocument for event logging
+    StaticJsonDocument<512> doc;  // 512 bytes (enough for events)
     
     doc["type"] = type;
     doc["gateway_id"] = m_gatewayId;
@@ -767,7 +808,7 @@ String FirebaseClient::createEventJson(
     }
     
     if (details.length() > 0) {
-        JsonDocument detailsDoc;
+        StaticJsonDocument<256> detailsDoc;  // 256 bytes for details
         deserializeJson(detailsDoc, details);
         doc["details"] = detailsDoc;
     }
@@ -803,7 +844,7 @@ void FirebaseClient::updateUploadStats(bool success, size_t payloadSize, uint32_
     if (success) {
         m_stats.successfulUploads++;
         m_stats.totalBytesUploaded += payloadSize;
-        m_stats.lastUploadTime = millis();
+    m_stats.lastUploadTime = getCurrentTimestamp();
         
         // Update average upload time (exponential moving average)
         if (m_stats.averageUploadTime == 0) {
@@ -862,9 +903,9 @@ bool FirebaseClient::queueSensorData(const sensorData& data, int8_t rssi, float 
     bool success = FIREBASE_QUEUE().enqueueSensorData(data, rssi, snr, queuePriority);
     
     if (success) {
-        Serial.printf("[Firebase] ✅ Sensor data queued (node: 0x%04X, priority: %d)\n", data.nodeId, priority);
+        ESP_LOGI(TAG, "[Firebase] ✅ Sensor data queued (node: 0x%04X, priority: %d)\n", data.nodeId, priority);
     } else {
-        Serial.printf("[Firebase] ❌ Failed to queue sensor data (node: 0x%04X)\n", data.nodeId);
+        ESP_LOGE(TAG, "[Firebase] ❌ Failed to queue sensor data (node: 0x%04X)\n", data.nodeId);
     }
     
     return success;

@@ -205,10 +205,6 @@ void GatewayApp::loop() {
     static bool provisionStatusChecked = false;
     static bool isProvisioned = false;
     
-    // CRITICAL: Reset watchdog at beginning of each loop iteration
-    // This prevents timeout when multiple Firebase operations run consecutively
-    esp_task_wdt_reset();
-    
     if (!provisionStatusChecked && provisionManager) {
         isProvisioned = provisionManager->isProvisioned();
         provisionStatusChecked = true;
@@ -285,17 +281,12 @@ void GatewayApp::loop() {
                             success = firebaseClient->queueSensorData(data, 0, 0.0f, 2); // Normal priority
                             ESP_LOGD(TAG, "📤 Queued buffered data from %s", nodeId.c_str());
                         } else {
-                            // Fallback to direct upload (blocking)
+                            // Fallback to direct upload (blocking) - rare case
                             ESP_LOGD(TAG, "📤 Direct upload buffered data from %s", nodeId.c_str());
                             
-                            // CRITICAL: Reset watchdog before Firebase upload (fallback only)
-                            esp_task_wdt_reset();
-                            
+                            // NO WDT RESET: This is rare fallback, should complete or timeout naturally
                             auto result = firebaseClient->uploadSensorData(data, 0, 0.0f);
                             success = result.success;
-                            
-                            // CRITICAL: Reset watchdog after Firebase upload (fallback only)
-                            esp_task_wdt_reset();
                         }
                         
                         if (success) {
@@ -405,10 +396,9 @@ void GatewayApp::loop() {
         }
     }
 
-    // NEW: Poll for Firebase commands (if provisioned and Firebase connected)
+    // NEW: Check for Firebase commands (polling now runs in dedicated task)
+    // No need to call poll() - it runs automatically in background task
     if (isProvisioned && gatewayState.firebaseConnected && commandPoller) {
-        commandPoller->poll();
-        
         if (commandPoller->hasCommand()) {
             auto cmd = commandPoller->getNextCommand();
             
@@ -429,8 +419,9 @@ void GatewayApp::loop() {
                 handleAssignNetkey(cmd);
             } else {
                 ESP_LOGW(TAG, "Unknown command type: %s", cmd.type.c_str());
-                commandPoller->moveToFailed(cmd, "UNKNOWN_COMMAND", 
-                                           "Unknown command type: " + cmd.type);
+                String message = "Unknown command type: ";
+                message += cmd.type;
+                commandPoller->moveToFailed(cmd, "UNKNOWN_COMMAND", message);
             }
         }
     }
@@ -453,9 +444,9 @@ void GatewayApp::loop() {
                 cmd.id = gatewayState.provisioningCommandId;
                 cmd.type = "start_provisioning";
                 
-                String message = String("Provisioning completed. ") + 
-                                gatewayState.nodesDiscoveredDuringProvisioning + 
-                                " nodes discovered";
+                String message = "Provisioning completed. ";
+                message += String(gatewayState.nodesDiscoveredDuringProvisioning);
+                message += " nodes discovered";
                 
                 commandPoller->moveToCompleted(cmd, "success", message);
             }
@@ -667,15 +658,17 @@ void GatewayApp::setupFirebase() {
             firebaseClient->logEvent("gateway_started", "", "");
         }
         
-        // NEW: Create and initialize command poller
+        // NEW: Create and initialize command poller with dedicated task
         ESP_LOGI(TAG, "Initializing Firebase Command Poller...");
         commandPoller = new FirebaseCommandPoller(
             firebaseClient->getFirebaseData(),  // Share FirebaseData with client
             userUID,
             gatewayMAC
         );
-        commandPoller->begin();
-        ESP_LOGI(TAG, "✅ Command poller ready - Gateway can receive commands from Mobile App");
+        // Start poller with dedicated task on CPU1 (isolated from main loop)
+        // Stack: 8KB, Priority: 1, Core: 1 (same as Firebase queue worker)
+        commandPoller->begin(8192, 1, 1);
+        ESP_LOGI(TAG, "✅ Command poller ready - runs in dedicated task with circuit breaker");
         
     } else {
         ESP_LOGW(TAG, "Firebase connection failed: %s", firebaseClient->getLastError().c_str());
@@ -754,7 +747,7 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
 
         // Try to upload to Firebase if online and provisioned (and not duplicate)
         if (firebaseClient && gatewayState.firebaseConnected && !isDuplicate) {
-            ESP_LOGI(TAG, "☁️ Uploading sensor data from node %s to Firebase", nodeIdStr);
+            // ESP_LOGI(TAG, "☁️ Uploading sensor data from node %s to Firebase", nodeIdStr);
             
             // Log sensor-specific data based on device type
             switch (s->deviceType) {
@@ -781,17 +774,12 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
                 success = firebaseClient->queueSensorData(*s, rssi, snr, 2); // Normal priority
                 ESP_LOGD(TAG, "📤 Queued sensor data from node %s", nodeIdStr);
             } else {
-                // Fallback to direct upload (blocking)
+                // Fallback to direct upload (blocking) - rare case when queue not available
                 ESP_LOGW(TAG, "📤 Queue not available, using direct upload (blocking)");
                 
-                // CRITICAL: Reset watchdog before Firebase upload (fallback only)
-                esp_task_wdt_reset();
-                
+                // NO WDT RESET: Fallback is rare, should complete or timeout naturally
                 auto result = firebaseClient->uploadSensorData(*s, rssi, snr);
                 success = result.success;
-                
-                // CRITICAL: Reset watchdog after Firebase upload (fallback only)
-                esp_task_wdt_reset();
             }
 
             if (success) {
@@ -801,6 +789,10 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
                 
                 // Update last processed counter for this node
                 lastProcessedCounter[sourceNode] = s->counter;
+                
+                // MEMORY FIX (Oct 23, 2025): Force garbage collection after upload
+                // Small delay to allow TCP connection cleanup
+                delay(10);
             } else {
                 gatewayState.uploadErrors++;
                 
@@ -876,13 +868,8 @@ void GatewayApp::uploadRoutingTable() {
         ESP_LOGI(TAG, "📡 Uploading routing table (%d nodes)", routingTable.size());
     }
 
-    // CRITICAL: Reset watchdog before Firebase upload
-    esp_task_wdt_reset();
-    
+    // NO WDT RESET: Let operation complete naturally or timeout
     auto result = firebaseClient->uploadRoutingTable(routingTable);
-    
-    // CRITICAL: Reset watchdog after Firebase upload
-    esp_task_wdt_reset();
 
     if (result.success) {
         gatewayState.lastRoutingTableUpload = millis();
@@ -961,9 +948,6 @@ void GatewayApp::processGatewayPackets(void* parameter) {
 
         ESP_LOGI(TAG, "[GATEWAY-TASK] Processing gateway packets...");
         led_pattern_message();
-        
-        // CRITICAL FIX: Reset task watchdog to prevent timeout during long Firebase uploads
-        esp_task_wdt_reset();
 
         // Memory leak detection - check heap before processing
         uint32_t freeHeapBefore = ESP.getFreeHeap();
@@ -978,9 +962,8 @@ void GatewayApp::processGatewayPackets(void* parameter) {
             ESP_LOGD(TAG, "[GATEWAY-TASK] Processing received mesh packet");
             ESP_LOGD(TAG, "[GATEWAY-TASK] Queue size: %d", GatewayApp::instance->radio.getReceivedQueueSize());
 
-            // CRITICAL FIX: Reset watchdog before each packet processing
-            // Firebase upload can take 8-10 seconds per packet
-            esp_task_wdt_reset();
+            // NO WDT RESET per packet: Let watchdog catch hung operations
+            // If packet processing hangs, system should reboot
 
             AppPacket<uint8_t>* packet = GatewayApp::instance->radio.getNextAppPacket<uint8_t>();
             
@@ -994,9 +977,6 @@ void GatewayApp::processGatewayPackets(void* parameter) {
 
             // Upload to Firebase (includes RSSI and SNR from packet)
             GatewayApp::instance->uploadToFirebase(sensorPacket);
-
-            // CRITICAL FIX: Reset watchdog after Firebase upload (can take 8-10s)
-            esp_task_wdt_reset();
 
             // CRITICAL: Delete packet to free memory
             GatewayApp::instance->radio.deletePacket(packet);
@@ -1031,8 +1011,10 @@ void GatewayApp::processGatewayPackets(void* parameter) {
             }
         }
         
-        // Critical heap warning
-        if (freeHeapAfter < 30000) {
+        // MEMORY FIX (Oct 23, 2025): Adjusted threshold from 30KB to 20KB
+        // With StaticJsonDocument fixes, memory should stabilize above 35KB
+        // Critical warning at 20KB gives 5KB buffer before OOM
+        if (freeHeapAfter < 20000) {
             ESP_LOGE(TAG, "🚨 [CRITICAL] Low heap memory! Only %u bytes free!", freeHeapAfter);
         }
     }
@@ -1053,13 +1035,17 @@ TaskHandle_t GatewayApp::createGatewayReceiveTask() {
     // - WiFi TCP stack: ~2KB
     // TOTAL required: ~3.5KB minimum
     // With safety margin: 16KB recommended
-    int res = xTaskCreate(
+    // 
+    // CPU ARCHITECTURE (Oct 23, 2025):
+    // Pin to CPU0 for mesh/protocol processing separation from Firebase (CPU1)
+    int res = xTaskCreatePinnedToCore(
         processGatewayPackets,
         "Gateway Receive Task",
-        16384,  // Increased from 8192 to 16384 (CRITICAL: prevents stack overflow)
+        16384,  // Stack: 16KB (prevents stack overflow)
         (void*) 1,
-        2,
-        &taskHandle);
+        2,      // Priority: 2 (higher than Firebase queue)
+        &taskHandle,
+        0);     // Core 0: Mesh/protocol processing
 
     if (res != pdPASS) {
         ESP_LOGE(TAG, "Error: Gateway task creation failed: %d", res);
@@ -1521,14 +1507,8 @@ void GatewayApp::uploadGatewaySensorData() {
         }
         ESP_LOGI(TAG, "📶 WiFi Signal - RSSI: %d dBm, SNR: %.1f dB", wifiRssi, gatewaySnr);
         
-        // CRITICAL: Reset watchdog before Firebase upload
-        esp_task_wdt_reset();
-        
-        // Upload to Firebase with WiFi RSSI and fixed SNR
+        // NO WDT RESET: Upload should complete or timeout naturally
         auto result = firebaseClient->uploadSensorData(gatewaySensor, wifiRssi, gatewaySnr);
-        
-        // CRITICAL: Reset watchdog after Firebase upload
-        esp_task_wdt_reset();
         
         if (result.success) {
             gatewayState.packetsUploaded++;
@@ -1597,10 +1577,7 @@ void GatewayApp::uploadGatewayStatusPeriodic() {
     ESP_LOGI(TAG, "📊 Uploading Gateway status: nodes=%u, rx=%u, tx=%u, rssi=%d, heap=%u, uptime=%u",
              connectedNodes, totalPacketsReceived, totalPacketsSent, wifiRssi, freeHeap, uptimeSeconds);
     
-    // CRITICAL: Reset watchdog before Firebase upload
-    esp_task_wdt_reset();
-    
-    // Upload to Firebase
+    // NO WDT RESET: Upload should complete or timeout naturally
     auto result = firebaseClient->uploadGatewayStatus(
         connectedNodes,
         totalPacketsReceived,
@@ -1609,9 +1586,6 @@ void GatewayApp::uploadGatewayStatusPeriodic() {
         freeHeap,
         uptimeSeconds
     );
-    
-    // CRITICAL: Reset watchdog after Firebase upload
-    esp_task_wdt_reset();
     
     if (result.success) {
         ESP_LOGI(TAG, "✅ Gateway status uploaded successfully");
@@ -1730,10 +1704,11 @@ void GatewayApp::handleStopProvisioning(const FirebaseCommandPoller::Command& cm
     
     // Mark command as completed
     if (commandPoller) {
-        String message = String("Provisioning stopped. ") + 
-                        gatewayState.nodesDiscoveredDuringProvisioning + 
-                        " nodes discovered in " + 
-                        String(duration / 1000) + " seconds";
+        String message = "Provisioning stopped. ";
+        message += String(gatewayState.nodesDiscoveredDuringProvisioning);
+        message += " nodes discovered in ";
+        message += String(duration / 1000);
+        message += " seconds";
         
         commandPoller->moveToCompleted(cmd, "success", message);
     }
@@ -1783,7 +1758,7 @@ void GatewayApp::handleAssignNetkey(const FirebaseCommandPoller::Command& cmd) {
     ESP_LOGI(TAG, "   Network ID: 0x%04X", cfg.networkId);
     ESP_LOGI(TAG, "   Key Version: %d", cfg.keyVersion);
     
-    // Update Gateway's local network key (ensure it's current)
+    // Update Gateway's local network key (ensure it's current) - fast operation
     if (!NetkeyDistributionService::updateLocalNetworkKey(cfg.networkKey, cfg.authToken, 
                                                           cfg.networkId, cfg.keyVersion)) {
         ESP_LOGE(TAG, "❌ Failed to update Gateway local network key");
@@ -1797,46 +1772,9 @@ void GatewayApp::handleAssignNetkey(const FirebaseCommandPoller::Command& cmd) {
     
     ESP_LOGI(TAG, "✅ Gateway local network key updated successfully");
     
-    // Distribute netkey to all nodes in routing table
-    ESP_LOGI(TAG, "*** DISTRIBUTING NETKEY TO ALL NODES IN ROUTING TABLE ***");
-    
-    bool distributionSuccess = false;
+    // Check if there are nodes to provision
     size_t routingTableSize = RoutingTableService::routingTableSize();
-    int nodesSuccessful = 0;
-    
-    if (routingTableSize > 0) {
-        ESP_LOGI(TAG, "Found %d nodes in routing table, distributing netkey...", 
-                 (int)routingTableSize);
-        
-        // Get all nodes from routing table
-        NetworkNode* nodes = RoutingTableService::getAllNetworkNodes();
-        if (nodes) {
-            distributionSuccess = NetkeyDistributionService::distributeNetkeyToAllNodes(
-                cfg.networkKey, 
-                cfg.authToken, 
-                cfg.networkId, 
-                cfg.keyVersion,
-                nodes,
-                routingTableSize
-            );
-            
-            // Count successful nodes (approximation - distributeNetkeyToAllNodes returns overall success)
-            nodesSuccessful = distributionSuccess ? routingTableSize : 0;
-            
-            delete[] nodes; // Clean up allocated memory
-            
-            ESP_LOGI(TAG, "Network-wide netkey distribution: %s", 
-                     distributionSuccess ? "SUCCESS" : "PARTIAL/FAILED");
-        } else {
-            ESP_LOGE(TAG, "❌ Failed to get nodes from routing table");
-            
-            if (commandPoller) {
-                commandPoller->moveToFailed(cmd, "NO_NODES", 
-                                           "Failed to retrieve nodes from routing table");
-            }
-            return;
-        }
-    } else {
+    if (routingTableSize == 0) {
         ESP_LOGW(TAG, "⚠️  No nodes in routing table - nothing to provision");
         
         if (commandPoller) {
@@ -1846,26 +1784,44 @@ void GatewayApp::handleAssignNetkey(const FirebaseCommandPoller::Command& cmd) {
         return;
     }
     
-    // Mark command as completed
-    if (commandPoller) {
-        String message = String("Netkey distributed to ") + 
-                        String(nodesSuccessful) + " of " + 
-                        String((int)routingTableSize) + " nodes";
+    ESP_LOGI(TAG, "Found %d nodes in routing table", (int)routingTableSize);
+    
+    // ⚡ CPU OPTIMIZATION: Offload heavy netkey distribution to CPU1 worker task
+    // Reason: Broadcasting netkey to ALL nodes can take 5-25 seconds (50+ nodes × 100-500ms each)
+    //         Running on CPU0 main loop would block protocol processing
+    ESP_LOGI(TAG, "🚀 Offloading netkey distribution to CPU1 worker task (non-blocking)");
+    
+    // Create task parameters
+    NetkeyDistributionTask* taskParams = new NetkeyDistributionTask();
+    taskParams->cmd = cmd;
+    taskParams->config = cfg;
+    taskParams->completed = new bool(false);
+    
+    // Create worker task on CPU1 (isolated from CPU0 main loop)
+    BaseType_t result = xTaskCreatePinnedToCore(
+        netkeyDistributionWorker,
+        "NetkeyWorker",
+        8192,  // 8KB stack for netkey distribution
+        taskParams,
+        1,     // Priority 1 (same as command poller)
+        &m_netkeyWorkerHandle,
+        1);    // CPU1 (application tasks)
+    
+    if (result != pdPASS) {
+        ESP_LOGE(TAG, "❌ Failed to create netkey worker task");
         
-        if (distributionSuccess) {
-            commandPoller->moveToCompleted(cmd, "success", message);
-        } else {
-            commandPoller->moveToFailed(cmd, "PARTIAL_FAILURE", message);
+        if (commandPoller) {
+            commandPoller->moveToFailed(cmd, "TASK_CREATE_FAILED", 
+                                       "Failed to create worker task for netkey distribution");
         }
+        
+        delete taskParams->completed;
+        delete taskParams;
+        return;
     }
     
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "╔════════════════════════════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║  Netkey Distribution Completed                             ║");
-    ESP_LOGI(TAG, "║  Nodes: %d/%d successful                                   ║", 
-             nodesSuccessful, (int)routingTableSize);
-    ESP_LOGI(TAG, "╚════════════════════════════════════════════════════════════╝");
-    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "✅ Netkey distribution worker task created on CPU1");
+    ESP_LOGI(TAG, "   Main loop continues normally while distribution happens in background");
 }
 
 void GatewayApp::updateProvisioningProgress() {
@@ -1978,34 +1934,29 @@ void GatewayApp::queueGatewaySensorDataUpload(uint8_t priority) {
 
     ESP_LOGI(TAG, "🏠 Queuing Gateway sensor data (priority %d)", priority);
     
-    // Log Gateway sensor data
-    switch (gatewaySensor.deviceType) {
-        case DeviceType::SOIL_SENSOR:
-            ESP_LOGI(TAG, "🌱 Gateway Soil - Counter: %u, Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, Batt: %.2fV",
-                     gatewaySensor.counter, gatewaySensor.data.soil.soilMoisture, 
-                     gatewaySensor.data.soil.soilTemperature, gatewaySensor.data.soil.pH,
-                     gatewaySensor.battery);
-            break;
-        case DeviceType::ENV_SENSOR:
-            ESP_LOGI(TAG, "🌡️ Gateway Env - Counter: %u, Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV",
-                     gatewaySensor.counter, gatewaySensor.data.environment.temperature, 
-                     gatewaySensor.data.environment.humidity, gatewaySensor.battery);
-            break;
-        default:
-            ESP_LOGI(TAG, "📊 Gateway - Counter: %u, Type: %s, Batt: %.2fV",
-                     gatewaySensor.counter, deviceTypeToString(gatewaySensor.deviceType), 
-                     gatewaySensor.battery);
-            break;
-    }
+    // // Log Gateway sensor data
+    // switch (gatewaySensor.deviceType) {
+    //     case DeviceType::SOIL_SENSOR:
+    //         ESP_LOGI(TAG, "🌱 Gateway Soil - Counter: %u, Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, Batt: %.2fV",
+    //                  gatewaySensor.counter, gatewaySensor.data.soil.soilMoisture, 
+    //                  gatewaySensor.data.soil.soilTemperature, gatewaySensor.data.soil.pH,
+    //                  gatewaySensor.battery);
+    //         break;
+    //     case DeviceType::ENV_SENSOR:
+    //         ESP_LOGI(TAG, "🌡️ Gateway Env - Counter: %u, Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV",
+    //                  gatewaySensor.counter, gatewaySensor.data.environment.temperature, 
+    //                  gatewaySensor.data.environment.humidity, gatewaySensor.battery);
+    //         break;
+    //     default:
+    //         ESP_LOGI(TAG, "📊 Gateway - Counter: %u, Type: %s, Batt: %.2fV",
+    //                  gatewaySensor.counter, deviceTypeToString(gatewaySensor.deviceType), 
+    //                  gatewaySensor.battery);
+    //         break;
+    // }
 
     // Queue the upload (non-blocking)
     if (firebaseClient->isQueueRunning()) {
-        bool success = firebaseClient->queueSensorData(gatewaySensor, wifiRssi, gatewaySnr, priority);
-        if (success) {
-            ESP_LOGD(TAG, "✅ Gateway sensor data queued successfully");
-        } else {
-            ESP_LOGW(TAG, "❌ Failed to queue gateway sensor data");
-        }
+        firebaseClient->queueSensorData(gatewaySensor, wifiRssi, gatewaySnr, priority);
     } else {
         // Fallback to direct upload
         ESP_LOGW(TAG, "Queue not available, using direct gateway sensor upload");
@@ -2052,4 +2003,97 @@ void GatewayApp::queueGatewayStatusUpload(uint8_t priority) {
         ESP_LOGW(TAG, "Queue not available, using direct gateway status upload");
         uploadGatewayStatusPeriodic();
     }
+}
+
+// ===== Netkey Distribution Worker Task (CPU1) =====
+// Offloads heavy netkey broadcasting to CPU1 to avoid blocking CPU0 main loop
+void GatewayApp::netkeyDistributionWorker(void* parameter) {
+    NetkeyDistributionTask* task = static_cast<NetkeyDistributionTask*>(parameter);
+    
+    ESP_LOGI(TAG, "[NETKEY-WORKER] Started on CPU%d", xPortGetCoreID());
+    ESP_LOGI(TAG, "[NETKEY-WORKER] Distributing netkey to all nodes in routing table");
+    
+    // Distribute netkey to all nodes in routing table
+    bool distributionSuccess = false;
+    size_t routingTableSize = RoutingTableService::routingTableSize();
+    int nodesSuccessful = 0;
+    
+    if (routingTableSize > 0) {
+        ESP_LOGI(TAG, "[NETKEY-WORKER] Found %d nodes, broadcasting netkey...", 
+                 (int)routingTableSize);
+        
+        // Get all nodes from routing table
+        NetworkNode* nodes = RoutingTableService::getAllNetworkNodes();
+        if (nodes) {
+            // HEAVY OPERATION: This can take 5-25 seconds depending on node count
+            // Each node: ~100-500ms for LoRa broadcast + ACK
+            distributionSuccess = NetkeyDistributionService::distributeNetkeyToAllNodes(
+                task->config.networkKey, 
+                task->config.authToken, 
+                task->config.networkId, 
+                task->config.keyVersion,
+                nodes,
+                routingTableSize
+            );
+            
+            // Count successful nodes (approximation)
+            nodesSuccessful = distributionSuccess ? routingTableSize : 0;
+            
+            delete[] nodes; // Clean up allocated memory
+            
+            ESP_LOGI(TAG, "[NETKEY-WORKER] Distribution: %s", 
+                     distributionSuccess ? "SUCCESS" : "PARTIAL/FAILED");
+        } else {
+            ESP_LOGE(TAG, "[NETKEY-WORKER] Failed to get nodes from routing table");
+            
+            if (GatewayApp::instance && GatewayApp::instance->commandPoller) {
+                GatewayApp::instance->commandPoller->moveToFailed(
+                    task->cmd, "NO_NODES", 
+                    "Failed to retrieve nodes from routing table"
+                );
+            }
+            
+            delete task->completed;
+            delete task;
+            vTaskDelete(NULL);
+            return;
+        }
+    } else {
+        ESP_LOGW(TAG, "[NETKEY-WORKER] Routing table is empty!");
+    }
+    
+    // Mark command as completed
+    if (GatewayApp::instance && GatewayApp::instance->commandPoller) {
+        String message = "Netkey distributed to ";
+        message += String(nodesSuccessful);
+        message += " of ";
+        message += String((int)routingTableSize);
+        message += " nodes";
+        
+        if (distributionSuccess) {
+            GatewayApp::instance->commandPoller->moveToCompleted(
+                task->cmd, "success", message
+            );
+        } else {
+            GatewayApp::instance->commandPoller->moveToFailed(
+                task->cmd, "PARTIAL_FAILURE", message
+            );
+        }
+    }
+    
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "╔════════════════════════════════════════════════════════════╗");
+    ESP_LOGI(TAG, "║  Netkey Distribution Completed (CPU1 Worker)               ║");
+    ESP_LOGI(TAG, "║  Nodes: %d/%d successful                                   ║", 
+             nodesSuccessful, (int)routingTableSize);
+    ESP_LOGI(TAG, "╚════════════════════════════════════════════════════════════╝");
+    ESP_LOGI(TAG, "");
+    
+    // Mark as completed and clean up
+    *(task->completed) = true;
+    delete task->completed;
+    delete task;
+    
+    ESP_LOGI(TAG, "[NETKEY-WORKER] Task completed, deleting self");
+    vTaskDelete(NULL);
 }

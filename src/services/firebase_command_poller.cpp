@@ -1,6 +1,8 @@
 #include "firebase_command_poller.h"
 #include <esp_log.h>
 #include <ArduinoJson.h>
+#include <WiFi.h>
+#include <esp_heap_caps.h>
 
 static const char* TAG = "CMD_POLLER";
 
@@ -11,7 +13,15 @@ FirebaseCommandPoller::FirebaseCommandPoller(FirebaseData* fbdo, const String& u
       m_hasCommand(false), 
       m_lastPoll(0),
       m_pollInterval(10000),  // Poll every 10 seconds
-      m_enabled(true) {
+      m_enabled(true),
+      m_consecutiveFailures(0),
+      m_cooldownUntilMs(0),
+      m_minHeapThreshold(25600),  // 25 KB minimum
+      m_maxConsecutiveFailures(3),
+      m_cooldownBaseMs(30000),    // 30 seconds base cooldown
+      m_firebaseHost(""),         // Will be extracted from Firebase config
+      m_pollingTaskHandle(nullptr),
+      m_taskRunning(false) {
     
     // Build base path: users/{uid}/commands/{mac}
     m_basePath = String("users/") + userUID + "/commands/" + gatewayMAC;
@@ -20,41 +30,135 @@ FirebaseCommandPoller::FirebaseCommandPoller(FirebaseData* fbdo, const String& u
     ESP_LOGI(TAG, "User UID: %s", userUID.c_str());
     ESP_LOGI(TAG, "Gateway MAC: %s", gatewayMAC.c_str());
     ESP_LOGI(TAG, "Base path: %s", m_basePath.c_str());
+    
+    // Extract Firebase host for DNS checks (assuming standard Firebase host format)
+    // This is a simplified approach - in production you might get it from config
+    m_firebaseHost = String(userUID).substring(0, userUID.indexOf("-")) + ".firebaseio.com";
 }
 
-void FirebaseCommandPoller::begin() {
+FirebaseCommandPoller::~FirebaseCommandPoller() {
+    // Stop polling task
+    if (m_pollingTaskHandle != nullptr) {
+        m_taskRunning = false;
+        vTaskDelay(pdMS_TO_TICKS(200)); // Give task time to exit
+        vTaskDelete(m_pollingTaskHandle);
+        m_pollingTaskHandle = nullptr;
+        ESP_LOGI(TAG, "Command poller task stopped");
+    }
+}
+
+void FirebaseCommandPoller::begin(uint32_t stackSize, uint8_t priority, int coreId) {
     ESP_LOGI(TAG, "=== Command Poller Initialized ===");
     ESP_LOGI(TAG, "Poll interval: %u ms", m_pollInterval);
     ESP_LOGI(TAG, "Enabled: %s", m_enabled ? "YES" : "NO");
+    ESP_LOGI(TAG, "Circuit breaker: max failures=%u, cooldown=%u ms", 
+             m_maxConsecutiveFailures, m_cooldownBaseMs);
+    ESP_LOGI(TAG, "Min heap threshold: %u bytes", m_minHeapThreshold);
+    
+    // Create dedicated polling task
+    m_taskRunning = true;
+    BaseType_t result = xTaskCreatePinnedToCore(
+        pollingTask,
+        "CmdPoller",
+        stackSize,
+        this,           // Pass this instance as parameter
+        priority,
+        &m_pollingTaskHandle,
+        coreId
+    );
+    
+    if (result == pdPASS) {
+        ESP_LOGI(TAG, "✅ Command polling task started on core %d (stack: %u, priority: %u)",
+                 coreId, stackSize, priority);
+        ESP_LOGI(TAG, "   Network operations isolated from main loop");
+    } else {
+        ESP_LOGE(TAG, "❌ Failed to create command polling task!");
+        m_taskRunning = false;
+    }
+}
+
+void FirebaseCommandPoller::pollingTask(void* parameter) {
+    FirebaseCommandPoller* poller = static_cast<FirebaseCommandPoller*>(parameter);
+    ESP_LOGI(TAG, "[POLLER-TASK] Command polling task started");
+    
+    // Stack monitoring
+    UBaseType_t stackHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
+    ESP_LOGI(TAG, "[POLLER-TASK] Initial stack: %u bytes free", stackHighWaterMark);
+    
+    while (poller->m_taskRunning) {
+        if (!poller->m_enabled) {
+            vTaskDelay(pdMS_TO_TICKS(1000)); // Sleep 1s if disabled
+            continue;
+        }
+        
+        uint32_t now = millis();
+        
+        // Check poll interval
+        if (now - poller->m_lastPoll < poller->m_pollInterval) {
+            vTaskDelay(pdMS_TO_TICKS(500)); // Sleep 500ms and check again
+            continue;
+        }
+        
+        poller->m_lastPoll = now;
+        
+        // Check circuit breaker cooldown
+        if (poller->isInCooldown()) {
+            uint32_t remainingMs = poller->m_cooldownUntilMs - now;
+            ESP_LOGW(TAG, "[CIRCUIT-BREAKER] In cooldown for %u more seconds", remainingMs / 1000);
+            vTaskDelay(pdMS_TO_TICKS(5000)); // Check every 5s during cooldown
+            continue;
+        }
+        
+        // Pre-flight checks
+        if (!poller->heapCheck()) {
+            ESP_LOGW(TAG, "[HEAP-GUARD] Insufficient heap, skipping poll");
+            poller->handleFailure();
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            continue;
+        }
+        
+        if (!poller->dnsPreCheck()) {
+            ESP_LOGW(TAG, "[DNS-CHECK] DNS resolution failed, skipping poll");
+            poller->handleFailure();
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            continue;
+        }
+        
+        ESP_LOGD(TAG, "Polling for pending commands...");
+        
+        // Fetch commands with timeout protection
+        if (poller->fetchPendingCommands()) {
+            ESP_LOGI(TAG, "✅ Found pending command!");
+            ESP_LOGI(TAG, "  ID: %s", poller->m_currentCommand.id.c_str());
+            ESP_LOGI(TAG, "  Type: %s", poller->m_currentCommand.type.c_str());
+            ESP_LOGI(TAG, "  Priority: %d", poller->m_currentCommand.priority);
+            poller->handleSuccess();
+        }
+        
+        // Stack monitoring (warn if low)
+        stackHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
+        if (stackHighWaterMark < 1024) {
+            ESP_LOGW(TAG, "⚠️ [POLLER-TASK] Low stack: %u bytes", stackHighWaterMark);
+        }
+        
+        // Yield to other tasks
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    
+    ESP_LOGI(TAG, "[POLLER-TASK] Command polling task exiting");
+    vTaskDelete(NULL);
 }
 
 void FirebaseCommandPoller::poll() {
-    if (!m_enabled) {
-        return;
-    }
-    
-    uint32_t now = millis();
-    
-    // Poll at configured interval
-    if (now - m_lastPoll < m_pollInterval) {
-        return;
-    }
-    
-    m_lastPoll = now;
-    
-    ESP_LOGD(TAG, "Polling for pending commands...");
-    
-    if (fetchPendingCommands()) {
-        ESP_LOGI(TAG, "✅ Found pending command!");
-        ESP_LOGI(TAG, "  ID: %s", m_currentCommand.id.c_str());
-        ESP_LOGI(TAG, "  Type: %s", m_currentCommand.type.c_str());
-        ESP_LOGI(TAG, "  Priority: %d", m_currentCommand.priority);
-    }
+    // Legacy method - now handled by dedicated task
+    // Keep for backward compatibility but log warning
+    ESP_LOGW(TAG, "poll() called directly - polling now runs in dedicated task");
 }
 
 bool FirebaseCommandPoller::fetchPendingCommands() {
     if (!m_fbdo) {
         ESP_LOGE(TAG, "Firebase data object is null!");
+        handleFailure();
         return false;
     }
     
@@ -64,8 +168,20 @@ bool FirebaseCommandPoller::fetchPendingCommands() {
     
     // Get all pending commands
     if (!Firebase.getJSON(*m_fbdo, pendingPath.c_str())) {
-        // Not an error - just no pending commands
-        ESP_LOGD(TAG, "No pending commands (or error: %s)", m_fbdo->errorReason().c_str());
+        String errorReason = m_fbdo->errorReason();
+        
+        // Distinguish between "no data" (normal) vs network/TLS errors
+        if (errorReason.indexOf("connection") >= 0 || 
+            errorReason.indexOf("SSL") >= 0 ||
+            errorReason.indexOf("timeout") >= 0 ||
+            errorReason.indexOf("refused") >= 0) {
+            // Network/TLS error - trigger circuit breaker
+            ESP_LOGW(TAG, "Network/TLS error: %s", errorReason.c_str());
+            handleFailure();
+        } else {
+            // Likely just no pending commands - not a failure
+            ESP_LOGD(TAG, "No pending commands (or benign error: %s)", errorReason.c_str());
+        }
         return false;
     }
     
@@ -288,4 +404,83 @@ void FirebaseCommandPoller::cleanupOldCommands() {
     // - Keep only last 10 completed commands
     // - Delete failed commands older than 1 hour
     ESP_LOGD(TAG, "Command cleanup not yet implemented");
+}
+
+bool FirebaseCommandPoller::dnsPreCheck() {
+    // Simple DNS check using WiFi.hostByName
+    // This is a fast check (typically <1s) compared to full TCP/TLS connection
+    
+    if (m_firebaseHost.isEmpty()) {
+        ESP_LOGD(TAG, "[DNS-CHECK] No host configured, skipping");
+        return true; // Allow if not configured
+    }
+    
+    IPAddress ip;
+    int result = WiFi.hostByName(m_firebaseHost.c_str(), ip);
+    
+    if (result == 1) {
+        ESP_LOGD(TAG, "[DNS-CHECK] ✅ %s -> %s", m_firebaseHost.c_str(), ip.toString().c_str());
+        return true;
+    } else {
+        ESP_LOGW(TAG, "[DNS-CHECK] ❌ Failed to resolve %s", m_firebaseHost.c_str());
+        return false;
+    }
+}
+
+bool FirebaseCommandPoller::heapCheck() {
+    uint32_t freeHeap = esp_get_free_heap_size();
+    uint32_t minFreeHeap = heap_caps_get_minimum_free_size(MALLOC_CAP_DEFAULT);
+    
+    ESP_LOGD(TAG, "[HEAP-CHECK] Free: %u bytes, Min: %u bytes, Threshold: %u bytes",
+             freeHeap, minFreeHeap, m_minHeapThreshold);
+    
+    if (freeHeap < m_minHeapThreshold) {
+        ESP_LOGW(TAG, "[HEAP-GUARD] ⚠️ Low heap: %u < %u bytes", freeHeap, m_minHeapThreshold);
+        return false;
+    }
+    
+    return true;
+}
+
+void FirebaseCommandPoller::handleFailure() {
+    m_consecutiveFailures++;
+    
+    ESP_LOGW(TAG, "[CIRCUIT-BREAKER] Failure #%u (max: %u)", 
+             m_consecutiveFailures, m_maxConsecutiveFailures);
+    
+    if (m_consecutiveFailures >= m_maxConsecutiveFailures) {
+        // Exponential backoff: 30s, 60s, 120s, 240s, max 300s (5 min)
+        uint32_t cooldownMs = m_cooldownBaseMs * (1 << (m_consecutiveFailures - m_maxConsecutiveFailures));
+        cooldownMs = min(cooldownMs, 300000U); // Cap at 5 minutes
+        
+        m_cooldownUntilMs = millis() + cooldownMs;
+        
+        ESP_LOGE(TAG, "[CIRCUIT-BREAKER] ⚡ TRIPPED! Cooldown for %u seconds", cooldownMs / 1000);
+        ESP_LOGE(TAG, "   Consecutive failures: %u", m_consecutiveFailures);
+        ESP_LOGE(TAG, "   Will retry at: %u ms", m_cooldownUntilMs);
+    }
+}
+
+void FirebaseCommandPoller::handleSuccess() {
+    if (m_consecutiveFailures > 0) {
+        ESP_LOGI(TAG, "[CIRCUIT-BREAKER] ✅ Success! Resetting failure count (was %u)", 
+                 m_consecutiveFailures);
+    }
+    m_consecutiveFailures = 0;
+    m_cooldownUntilMs = 0;
+}
+
+bool FirebaseCommandPoller::isInCooldown() {
+    if (m_cooldownUntilMs == 0) {
+        return false;
+    }
+    
+    uint32_t now = millis();
+    if (now >= m_cooldownUntilMs) {
+        ESP_LOGI(TAG, "[CIRCUIT-BREAKER] Cooldown ended, resuming polling");
+        m_cooldownUntilMs = 0;
+        return false;
+    }
+    
+    return true;
 }

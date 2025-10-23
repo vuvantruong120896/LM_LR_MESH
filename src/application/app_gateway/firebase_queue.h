@@ -9,6 +9,7 @@
 #include <vector>
 #include "../../components/lora_mesh_manager/src/services/RoutingTableService.h"
 #include "../common/mesh_utils.h"
+#include "TimeSyncService.h"
 
 // Firebase operation types
 typedef enum {
@@ -147,10 +148,22 @@ typedef struct FirebaseQueueItem {
 } FirebaseQueueItem_t;
 
 // Macro to initialize FirebaseQueueItem_t
+#include <stdint.h>
+
+// Helper: return current timestamp (seconds) using NTP if available,
+// otherwise fall back to millis()/1000.
+static inline uint32_t firebase_now_timestamp_seconds() {
+    uint32_t t = TimeSyncService::getCurrentTimestamp();
+    if (t == 0) {
+        return (uint32_t)(millis() / 1000);
+    }
+    return t;
+}
+
 #define CREATE_FIREBASE_QUEUE_ITEM(op, prio) { \
     .operation = (op), \
     .priority = (prio), \
-    .timestamp = millis(), \
+    .timestamp = firebase_now_timestamp_seconds(), \
     .retryCount = 0, \
     .maxRetries = 3, \
     .payload = {}, \
