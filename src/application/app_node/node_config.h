@@ -39,7 +39,7 @@
 #define LORA_IO1    -1
 
 // Node behavior settings
-#define SEND_INTERVAL_MS        40000   // Send packet every 40 seconds
+#define SEND_INTERVAL_MS        600000  // Send packet every 10 minutes
 #define NODE_ID                 0x1000  // Unique node identifier
 #define ENABLE_SENSOR_SIMULATION true   // Simulate sensor data
 

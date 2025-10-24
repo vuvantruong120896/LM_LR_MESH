@@ -256,16 +256,16 @@ void GatewayApp::loop() {
     // Sync offline buffer to Firebase when online (only if provisioned)
     if (isProvisioned && gatewayState.wifiConnected && firebaseClient) {
         static uint32_t lastBufferSync = 0;
-        const uint32_t BUFFER_SYNC_INTERVAL = 5000; // Sync every 5 seconds when online
+        const uint32_t BUFFER_SYNC_INTERVAL = 60000; // Sync every 1 minute when online
         
         if (currentTime - lastBufferSync >= BUFFER_SYNC_INTERVAL) {
             uint16_t bufferedCount = OfflineDataBuffer::getBufferedCount();
             
             if (bufferedCount > 0) {
                 ESP_LOGI(TAG, "📤 Syncing offline buffer: %u samples pending", bufferedCount);
-                
-                // Upload up to 10 samples per cycle to avoid blocking
-                const uint16_t MAX_UPLOADS_PER_CYCLE = 10;
+
+                // Upload up to 1 sample per cycle to avoid blocking
+                const uint16_t MAX_UPLOADS_PER_CYCLE = 1;
                 uint16_t uploaded = 0;
                 
                 for (uint16_t i = 0; i < MAX_UPLOADS_PER_CYCLE && bufferedCount > 0; i++) {
