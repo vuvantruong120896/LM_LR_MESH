@@ -760,14 +760,12 @@ String FirebaseClient::createGatewayStatusJson(
 }
 
 String FirebaseClient::createRoutingTableJson(const std::vector<RouteNode>& routingTable) {
-    // MEMORY FIX: Use DynamicJsonDocument with capacity calculation for routing table
-    // Routing table can be large (50+ nodes), so we need dynamic allocation
-    // But with explicit capacity to prevent over-allocation
-    size_t capacity = JSON_OBJECT_SIZE(3) + // root: nodes, node_count, updated_at
-                      JSON_OBJECT_SIZE(routingTable.size()) + // nodes object
-                      routingTable.size() * JSON_OBJECT_SIZE(7) + // each node: address, via, metric, role, rssi, snr, last_seen
-                      routingTable.size() * 100; // strings overhead
-    DynamicJsonDocument doc(capacity);
+    // MEMORY FIX: Use DynamicJsonDocument for routing table
+    // ArduinoJson 7.x no longer needs explicit size calculation with JSON_OBJECT_SIZE
+    // The library automatically calculates needed capacity
+    // Estimate capacity: ~250 bytes per node + 100 bytes overhead
+    size_t estimatedCapacity = routingTable.size() * 250 + 100;
+    DynamicJsonDocument doc(estimatedCapacity);
     JsonObject nodesObj = doc["nodes"].to<JsonObject>();
     
     for (const auto& route : routingTable) {
