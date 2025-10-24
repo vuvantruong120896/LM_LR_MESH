@@ -213,16 +213,21 @@ void FirebaseQueueManager::workerTask(void* parameter) {
             ESP_LOGD(TAG, "📥 Processing Firebase operation: %d (priority %d)", 
                      item.operation, item.priority);
             
-            // COORDINATION FIX (Oct 24, 2025): Check if another Firebase task is running
-            // This prevents Firebase Worker and Command Poller from running simultaneously
-            uint32_t waitTime = FirebaseOperationCoordinator::getWaitTime();
-            if (waitTime > 0) {
-                ESP_LOGD(TAG, "⏱️ Coordination wait: %u ms (avoiding concurrent Firebase operations)", waitTime);
-                vTaskDelay(pdMS_TO_TICKS(waitTime));
-            }
+            // BINARY SEMAPHORE COORDINATION (Oct 24, 2025 - v2):
+            // Step 1: Wait for minimum interval (lightweight, doesn't block other tasks)
+            FirebaseOperationCoordinator::waitForMinInterval();
             
-            // Mark operation start for coordination
-            FirebaseOperationCoordinator::markOperationStart();
+            // Step 2: Try to acquire exclusive operation lock (prevents concurrent Firebase HTTP requests)
+            // Use portMAX_DELAY - Worker should always eventually get the lock (higher priority than Poller)
+            if (!FirebaseOperationCoordinator::tryAcquireOperationLock(portMAX_DELAY)) {
+                ESP_LOGE(TAG, "[OP-LOCK] Failed to acquire operation lock even with infinite wait! Retrying...");
+                // Re-queue the item to try again later
+                if (xQueueSendToFront(manager->m_queue, &item, 0) != pdTRUE) {
+                    ESP_LOGE(TAG, "Failed to re-queue item after coordination lock failure!");
+                }
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                continue;
+            }
             
             // Rate limiting - ensure minimum interval between operations (legacy, now handled by coordinator)
             uint32_t now = millis();
@@ -238,6 +243,12 @@ void FirebaseQueueManager::workerTask(void* parameter) {
             uint32_t processingStartTime = millis(); // Phase 2: Track processing time
             manager->processQueueItem(item);
             manager->recordProcessingTime(processingStartTime); // Phase 2
+            
+            // CRITICAL: Release operation lock IMMEDIATELY after HTTP completes
+            FirebaseOperationCoordinator::releaseOperationLock();
+            
+            // Mark completion for interval tracking
+            FirebaseOperationCoordinator::markOperationComplete();
             
             manager->m_lastOperationTime = millis();
             

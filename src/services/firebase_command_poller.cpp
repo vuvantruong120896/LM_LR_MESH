@@ -126,22 +126,29 @@ void FirebaseCommandPoller::pollingTask(void* parameter) {
             continue;
         }
         
-        // COORDINATION FIX (Oct 24, 2025): Check if Firebase Worker is running
-        // This prevents Command Poller and Firebase Worker from running simultaneously
-        // Wait if another Firebase operation happened within last 5 seconds
-        uint32_t waitTime = FirebaseOperationCoordinator::getWaitTime();
-        if (waitTime > 0) {
-            ESP_LOGD(TAG, "[COORDINATION] Waiting %u ms to avoid concurrent Firebase operations", waitTime);
-            vTaskDelay(pdMS_TO_TICKS(waitTime));
+        // BINARY SEMAPHORE COORDINATION (Oct 24, 2025 - v2):
+        // Step 1: Wait for minimum interval (lightweight, doesn't block other tasks)
+        FirebaseOperationCoordinator::waitForMinInterval();
+        
+        // Step 2: Try to acquire exclusive operation lock (prevents concurrent Firebase HTTP requests)
+        // Use 5s timeout - if Worker holds lock, we'll wait or skip
+        if (!FirebaseOperationCoordinator::tryAcquireOperationLock(5000)) {
+            ESP_LOGW(TAG, "[OP-LOCK] Failed to acquire operation lock (Worker busy?), skipping poll");
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            continue;
         }
         
-        // Mark operation start for coordination
-        FirebaseOperationCoordinator::markOperationStart();
-        
+        // Step 3: We now have exclusive access - perform Firebase operation
         ESP_LOGD(TAG, "Polling for pending commands...");
+        bool foundCommand = poller->fetchPendingCommands();
         
-        // Fetch commands with timeout protection
-        if (poller->fetchPendingCommands()) {
+        // Step 4: Release operation lock IMMEDIATELY after HTTP completes
+        FirebaseOperationCoordinator::releaseOperationLock();
+        
+        // Step 5: Mark completion for interval tracking
+        FirebaseOperationCoordinator::markOperationComplete();
+        
+        if (foundCommand) {
             ESP_LOGI(TAG, "✅ Found pending command!");
             ESP_LOGI(TAG, "  ID: %s", poller->m_currentCommand.id.c_str());
             ESP_LOGI(TAG, "  Type: %s", poller->m_currentCommand.type.c_str());

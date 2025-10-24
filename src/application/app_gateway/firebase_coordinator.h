@@ -9,16 +9,26 @@
  * @brief Firebase Operation Coordinator
  * 
  * Coordinates Firebase Worker and Command Poller tasks to prevent concurrent operations.
- * Ensures minimum 5 second interval between Firebase HTTP requests from different tasks
- * to avoid heap pressure from simultaneous connections and JSON buffer allocations.
+ * Uses binary semaphore to ensure ONLY ONE Firebase HTTP operation runs at a time,
+ * preventing SSL engine corruption and CPU0 crashes from simultaneous connections.
+ * 
+ * BINARY SEMAPHORE PATTERN (Oct 24, 2025 - v2):
+ * Fixed watchdog timeout caused by holding mutex during long Firebase HTTP requests.
+ * New approach uses binary semaphore for mutual exclusion during actual HTTP operations.
+ * 
+ * Pattern:
+ * 1. tryAcquireOperationLock() - non-blocking attempt to get exclusive Firebase access
+ * 2. Perform Firebase HTTP request (may take 5-10s)
+ * 3. releaseOperationLock() - release exclusive access
  * 
  * @author Kagri IoT Team
  * @date 2025-10-24
  */
 class FirebaseOperationCoordinator {
 private:
-    static uint32_t s_lastOperationTime;  // Last Firebase operation timestamp (any task)
-    static SemaphoreHandle_t s_mutex;     // Mutex for thread-safe access
+    static uint32_t s_lastOperationTime;    // Last Firebase operation timestamp (any task)
+    static SemaphoreHandle_t s_timeMutex;   // Mutex for timestamp access only
+    static SemaphoreHandle_t s_opSemaphore; // Binary semaphore for operation exclusion
     static constexpr uint32_t MIN_INTERVAL_MS = 5000;  // Minimum 5s between operations
 
 public:
@@ -28,15 +38,48 @@ public:
     static void initialize();
 
     /**
-     * @brief Check if operation can proceed
-     * @return Wait time in milliseconds (0 = can proceed immediately)
+     * @brief Try to acquire exclusive Firebase operation lock (non-blocking or with timeout)
+     * 
+     * Acquires binary semaphore to ensure only ONE Firebase operation runs at a time.
+     * Does NOT hold lock during HTTP request - just prevents concurrent starts.
+     * 
+     * Usage:
+     *   if (tryAcquireOperationLock(5000)) {  // 5s timeout
+     *       // Perform Firebase HTTP operation
+     *       releaseOperationLock();
+     *   }
+     * 
+     * @param timeoutMs Timeout in milliseconds (0 = non-blocking, portMAX_DELAY = wait forever)
+     * @return true if lock acquired, false on timeout
      */
-    static uint32_t getWaitTime();
+    static bool tryAcquireOperationLock(uint32_t timeoutMs = 5000);
 
     /**
-     * @brief Mark operation started (call before Firebase HTTP request)
+     * @brief Release exclusive Firebase operation lock
+     * 
+     * MUST be called after tryAcquireOperationLock() succeeds.
+     * Call immediately after Firebase HTTP request completes (success or failure).
      */
-    static void markOperationStart();
+    static void releaseOperationLock();
+
+    /**
+     * @brief Check minimum interval and wait if needed (call BEFORE tryAcquireOperationLock)
+     * 
+     * Checks if minimum 5s interval has elapsed since last operation.
+     * If not, sleeps the calling task for remaining time.
+     * Thread-safe with lightweight mutex.
+     * 
+     * @return Wait time that was applied in milliseconds (0 = no wait needed)
+     */
+    static uint32_t waitForMinInterval();
+
+    /**
+     * @brief Mark operation completed (call AFTER releaseOperationLock)
+     * 
+     * Updates timestamp for minimum interval tracking.
+     * Thread-safe with lightweight mutex.
+     */
+    static void markOperationComplete();
 
     /**
      * @brief Get time since last operation (for debugging)
