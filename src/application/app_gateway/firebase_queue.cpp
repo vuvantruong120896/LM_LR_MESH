@@ -222,6 +222,9 @@ void FirebaseQueueManager::workerTask(void* parameter) {
             
             taskCounter++;
         } else {
+            // CRITICAL FIX (Oct 24, 2025): Queue timeout (idle) - MUST yield to prevent CPU starvation
+            // This prevents infinite loop consuming 100% CPU when queue is empty
+            
             // Phase 2: Check memory health during idle time
             manager->checkMemoryHealth();
             
@@ -236,6 +239,9 @@ void FirebaseQueueManager::workerTask(void* parameter) {
                 manager->m_lastPersistenceWrite = currentTime;
                 // manager->saveQueueState(); // Commented - needs header declaration
             }
+            
+            // CRITICAL: Yield immediately after idle timeout to prevent task starvation
+            vTaskDelay(pdMS_TO_TICKS(50)); // 50ms delay when queue empty
         }
         
         // Periodic monitoring and statistics (every 30 seconds)
@@ -709,8 +715,24 @@ bool FirebaseQueueManager::enqueueGatewayStatus(uint16_t connectedNodes, uint32_
 }
 
 bool FirebaseQueueManager::enqueueRoutingTable(const std::vector<RouteNode>& routingTable, FirebasePriority_t priority) {
+    // CRITICAL FIX (Oct 24, 2025): Check memory before allocation to prevent out-of-memory hang
+    uint32_t freeHeap = esp_get_free_heap_size();
+    size_t estimatedSize = routingTable.size() * sizeof(RouteNode) + sizeof(std::vector<RouteNode>);
+    
+    if (freeHeap < (estimatedSize + 20480)) { // Need 20KB buffer for safety
+        ESP_LOGE(TAG, "❌ Insufficient memory to enqueue routing table. Free: %u, Need: %u", 
+                 freeHeap, estimatedSize + 20480);
+        return false; // Don't allocate if low memory
+    }
+    
     // Create a copy of the routing table on the heap
-    std::vector<RouteNode>* tableCopy = new std::vector<RouteNode>(routingTable);
+    std::vector<RouteNode>* tableCopy = nullptr;
+    try {
+        tableCopy = new std::vector<RouteNode>(routingTable);
+    } catch (const std::bad_alloc& e) {
+        ESP_LOGE(TAG, "❌ Failed to allocate routing table copy: %s", e.what());
+        return false;
+    }
     
     FirebaseQueueItem_t item = CREATE_FIREBASE_QUEUE_ITEM(FIREBASE_OP_UPLOAD_ROUTING_TABLE, priority);
     
@@ -718,7 +740,15 @@ bool FirebaseQueueManager::enqueueRoutingTable(const std::vector<RouteNode>& rou
     item.payload.routingTable.routingTableData = tableCopy;
     item.payload.routingTable.tableSize = routingTable.size();
     
-    return enqueue(item);
+    // CRITICAL FIX (Oct 24, 2025): If enqueue fails, must delete the allocated pointer
+    bool success = enqueue(item);
+    if (!success && tableCopy) {
+        ESP_LOGW(TAG, "⚠️ Enqueue failed, cleaning up routing table copy");
+        delete tableCopy;
+        tableCopy = nullptr;
+    }
+    
+    return success;
 }
 
 bool FirebaseQueueManager::enqueueLogEvent(const String& eventType, const String& eventData, 

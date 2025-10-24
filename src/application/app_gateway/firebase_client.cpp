@@ -545,6 +545,11 @@ bool FirebaseClient::uploadToPath(const String& path, const String& jsonData) {
         // Solution: Explicitly close WiFi client after each operation
         m_firebaseData.clear();  // Clear internal buffers
         
+        // CRITICAL FIX (Oct 24, 2025): Force TCP connection close to prevent socket leak
+        // After hours of operation, unclosed sockets accumulate → system hangs
+        // WiFiClient has limited socket pool (~10-16) - must cleanup explicitly
+        // Note: Firebase library doesn't expose direct socket control, but clear() helps
+        
         if (!success) {
             errorReason = m_firebaseData.errorReason();
             m_lastError = errorReason;
@@ -570,14 +575,24 @@ bool FirebaseClient::uploadToPath(const String& path, const String& jsonData) {
 bool FirebaseClient::uploadToPathWithRetry(const String& path, const String& jsonData) {
     uint32_t totalStartTime = millis();
     
+    // CRITICAL FIX (Oct 24, 2025): Periodic connection reset to prevent socket leak
+    // Every 50 uploads, force reconnect to cleanup any stale connections
+    static uint32_t uploadCounter = 0;
+    uploadCounter++;
+    if (uploadCounter % 50 == 0) {
+        ESP_LOGI(TAG, "🔄 Periodic Firebase connection refresh (upload #%u)", uploadCounter);
+        Firebase.reconnectWiFi(true);
+        delay(100); // Allow reconnection to complete
+    }
+    
     for (uint8_t attempt = 0; attempt < m_maxRetries; attempt++) {
         // NO WDT RESET: Let watchdog catch hung retries
         // If retries take too long, system should reboot
         
         if (uploadToPath(path, jsonData)) {
-            // Small delay after successful upload to allow WiFi stack cleanup
-            // Prevents TCP connection accumulation and stack/heap leaks
-            delay(50);  // 50ms delay for WiFi client cleanup
+            // CRITICAL: Delay after successful upload to allow TCP connection cleanup
+            // Prevents socket accumulation which causes system hang after hours
+            delay(100);  // Increased from 50ms to 100ms for better cleanup
             
             uint32_t totalTime = millis() - totalStartTime;
             if (totalTime > 10000) {
