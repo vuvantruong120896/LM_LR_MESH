@@ -665,10 +665,12 @@ void GatewayApp::setupFirebase() {
             userUID,
             gatewayMAC
         );
-        // Start poller with dedicated task on CPU1 (isolated from main loop)
-        // Stack: 8KB, Priority: 1, Core: 1 (same as Firebase queue worker)
-        commandPoller->begin(8192, 1, 1);
-        ESP_LOGI(TAG, "✅ Command poller ready - runs in dedicated task with circuit breaker");
+        // CRASH FIX (Oct 24, 2025): Move Command Poller to CPU0 to reduce CPU1 load
+        // CPU1 already runs Firebase Worker task - moving this to CPU0 balances the load
+        // Also increased stack from 8KB to 12KB for safety
+        // Stack: 12KB (was 8KB), Priority: 1, Core: 0 (was 1 - moved from CPU1 to CPU0)
+        commandPoller->begin(12288, 1, 0);
+        ESP_LOGI(TAG, "✅ Command poller ready - runs on CPU0 (Firebase Worker on CPU1)");
         
     } else {
         ESP_LOGW(TAG, "Firebase connection failed: %s", firebaseClient->getLastError().c_str());

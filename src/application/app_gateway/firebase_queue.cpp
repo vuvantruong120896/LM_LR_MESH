@@ -1,5 +1,6 @@
 #include "firebase_queue.h"
 #include "firebase_client.h"
+#include "firebase_coordinator.h"  // COORDINATION FIX (Oct 24, 2025)
 #include <esp_log.h>
 #include <esp_task_wdt.h>
 #include <esp_heap_caps.h>
@@ -81,6 +82,11 @@ FirebaseQueueManager::~FirebaseQueueManager() {
 FirebaseQueueManager& FirebaseQueueManager::getInstance() {
     if (!g_instance) {
         g_instance = new FirebaseQueueManager();
+        if (!g_instance) {
+            ESP_LOGE(TAG, "❌ CRITICAL: Failed to allocate FirebaseQueueManager instance!");
+            // System cannot continue without queue manager - trigger restart
+            esp_restart();
+        }
     }
     return *g_instance;
 }
@@ -97,6 +103,10 @@ bool FirebaseQueueManager::initialize(FirebaseClient* firebaseClient) {
     }
     
     ESP_LOGI(TAG, "Initializing Firebase Queue Manager...");
+    
+    // COORDINATION FIX (Oct 24, 2025): Initialize global coordinator
+    FirebaseOperationCoordinator::initialize();
+    ESP_LOGI(TAG, "  ✅ Firebase operation coordinator initialized (5s min interval)");
     
     m_firebaseClient = firebaseClient;
     
@@ -203,7 +213,18 @@ void FirebaseQueueManager::workerTask(void* parameter) {
             ESP_LOGD(TAG, "📥 Processing Firebase operation: %d (priority %d)", 
                      item.operation, item.priority);
             
-            // Rate limiting - ensure minimum interval between operations
+            // COORDINATION FIX (Oct 24, 2025): Check if another Firebase task is running
+            // This prevents Firebase Worker and Command Poller from running simultaneously
+            uint32_t waitTime = FirebaseOperationCoordinator::getWaitTime();
+            if (waitTime > 0) {
+                ESP_LOGD(TAG, "⏱️ Coordination wait: %u ms (avoiding concurrent Firebase operations)", waitTime);
+                vTaskDelay(pdMS_TO_TICKS(waitTime));
+            }
+            
+            // Mark operation start for coordination
+            FirebaseOperationCoordinator::markOperationStart();
+            
+            // Rate limiting - ensure minimum interval between operations (legacy, now handled by coordinator)
             uint32_t now = millis();
             uint32_t timeSinceLastOp = now - manager->m_lastOperationTime;
             
@@ -488,7 +509,11 @@ bool FirebaseQueueManager::processSensorUpload(const FirebaseQueueItem_t& item) 
         uint32_t heapBefore = heap_caps_get_free_size(MALLOC_CAP_8BIT);
         // Force garbage collection by calling malloc/free
         void* temp = malloc(256);
-        if (temp) free(temp);
+        if (temp) {
+            free(temp);
+        } else {
+            ESP_LOGW(TAG, "⚠️ Memory cleanup malloc(256) failed! Heap: %u bytes", heapBefore);
+        }
         uint32_t heapAfter = heap_caps_get_free_size(MALLOC_CAP_8BIT);
         ESP_LOGD(TAG, "🧹 Memory cleanup triggered - Heap: %u → %u bytes", heapBefore, heapAfter);
     }
@@ -926,6 +951,9 @@ void FirebaseQueueManager::forceGarbageCollection() {
     void* dummy = malloc(1024);
     if (dummy) {
         free(dummy);
+    } else {
+        ESP_LOGW(TAG, "⚠️ Garbage collection malloc(1024) failed! Free heap: %u bytes", 
+                 getCurrentFreeHeap());
     }
     
     ESP_LOGD(TAG, "🗑️ Garbage collection performed");

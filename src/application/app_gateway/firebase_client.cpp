@@ -537,32 +537,44 @@ bool FirebaseClient::uploadToPath(const String& path, const String& jsonData) {
             m_stats.maxOperationTime = operationTime;
         }
         
-        // CRITICAL FIX: Force cleanup TCP connection to prevent memory/stack leak
-        // Firebase library doesn't always cleanup properly, causing:
-        // - Stack decrease (4544 → 2000 bytes observed)
-        // - Heap leak (~64KB lost)
-        // - BearSSL buffer corruption → LoadProhibited crash
-        // Solution: Explicitly close WiFi client after each operation
-        m_firebaseData.clear();  // Clear internal buffers
+        // CRITICAL FIX (Oct 24, 2025): FORCE SOCKET CLEANUP AFTER EVERY OPERATION
+        // Root cause of heap leak: WiFiClient sockets accumulate in Firebase library
+        // Each operation creates new socket but doesn't cleanup → heap drops over hours
+        // Observed: 58KB → 26KB heap loss over 200 operations (log 10.txt line 212754)
+        // 
+        // Solution: AGGRESSIVE cleanup after every operation:
+        // 1. Clear FirebaseData buffers (JSON parser, response data, internal state)
+        // 2. Force periodic WiFi reconnect to close all sockets (every 20 ops)
         
-        // CRITICAL FIX (Oct 24, 2025): Force TCP connection close to prevent socket leak
-        // After hours of operation, unclosed sockets accumulate → system hangs
-        // WiFiClient has limited socket pool (~10-16) - must cleanup explicitly
-        // Note: Firebase library doesn't expose direct socket control, but clear() helps
+        m_firebaseData.clear();  // Clear all internal buffers and reset state
+        
+        // MEMORY LEAK FIX: Force WiFi reconnect every 20 operations to cleanup sockets
+        // Firebase library doesn't expose direct socket control, so we use WiFi reconnect
+        // This closes ALL WiFi sockets including stuck/orphaned ones
+        static uint32_t operationCount = 0;
+        operationCount++;
+        if (operationCount % 20 == 0) {
+            ESP_LOGI(TAG, "🔄 Aggressive socket cleanup (operation #%u)", operationCount);
+            Firebase.reconnectWiFi(true);
+            delay(200);  // Longer delay for full socket cleanup
+        }
         
         if (!success) {
             errorReason = m_firebaseData.errorReason();
             m_lastError = errorReason;
             
-            // CRITICAL FIX: Detect BearSSL errors and prevent retry (avoids crash)
+            // CRITICAL FIX: Detect BearSSL errors and force full reconnect
             if (errorReason.indexOf("BearSSL") >= 0 || errorReason.indexOf("SSL") >= 0) {
-                Serial.printf("[Firebase] BearSSL error detected, forcing reconnect: %s\n", errorReason.c_str());
+                ESP_LOGW(TAG, "BearSSL error detected, forcing reconnect: %s", errorReason.c_str());
                 // Force close all connections to prevent buffer corruption
                 Firebase.reconnectWiFi(true);
                 delay(100);  // Give time for cleanup
             }
         }
     }  // Release mutex immediately after Firebase operation
+    
+    // MEMORY LEAK FIX: Add delay to ensure socket cleanup completes in TCP stack
+    delay(100);
     
     if (success) {
         return true;
@@ -575,40 +587,38 @@ bool FirebaseClient::uploadToPath(const String& path, const String& jsonData) {
 bool FirebaseClient::uploadToPathWithRetry(const String& path, const String& jsonData) {
     uint32_t totalStartTime = millis();
     
-    // CRITICAL FIX (Oct 24, 2025): Periodic connection reset to prevent socket leak
-    // Every 50 uploads, force reconnect to cleanup any stale connections
-    static uint32_t uploadCounter = 0;
-    uploadCounter++;
-    if (uploadCounter % 50 == 0) {
-        ESP_LOGI(TAG, "🔄 Periodic Firebase connection refresh (upload #%u)", uploadCounter);
-        Firebase.reconnectWiFi(true);
-        delay(100); // Allow reconnection to complete
-    }
+    // MEMORY LEAK FIX: Removed periodic reconnect - now handled in uploadToPath()
+    // More aggressive cleanup (every 20 ops) happens at lower level
     
     for (uint8_t attempt = 0; attempt < m_maxRetries; attempt++) {
         // NO WDT RESET: Let watchdog catch hung retries
         // If retries take too long, system should reboot
         
         if (uploadToPath(path, jsonData)) {
-            // CRITICAL: Delay after successful upload to allow TCP connection cleanup
-            // Prevents socket accumulation which causes system hang after hours
-            delay(100);  // Increased from 50ms to 100ms for better cleanup
-            
+            // Success - socket already cleaned up in uploadToPath()
             uint32_t totalTime = millis() - totalStartTime;
             if (totalTime > 10000) {
-                Serial.printf("[Firebase] ⚠️ Slow retry sequence: %u ms total\n", totalTime);
+                ESP_LOGW(TAG, "⚠️ Slow retry sequence: %u ms total", totalTime);
             }
             return true;
         }
         
+        // MEMORY LEAK FIX: Additional cleanup after failed attempt
+        ESP_LOGV(TAG, "Extra cleanup after failed attempt %u/%u", attempt + 1, m_maxRetries);
+        m_firebaseData.clear();
+        
         if (attempt < m_maxRetries - 1) {
-            Serial.printf("[Firebase] Upload failed (attempt %u/%u), retrying in %lu ms...\n",
-                         attempt + 1, m_maxRetries, m_retryDelayMs);
+            ESP_LOGW(TAG, "Upload failed (attempt %u/%u), retrying in %lu ms...",
+                     attempt + 1, m_maxRetries, m_retryDelayMs);
             delay(m_retryDelayMs);
         }
     }
     
-    Serial.printf("[Firebase] Upload failed after %u attempts\n", m_maxRetries);
+    ESP_LOGE(TAG, "Upload failed after %u attempts - Path: %s", m_maxRetries, path.c_str());
+    
+    // MEMORY LEAK FIX: Force cleanup after exhausting all retries
+    m_firebaseData.clear();
+    
     return false;
 }
 
@@ -747,7 +757,7 @@ String FirebaseClient::createGatewayStatusJson(
     doc["timestamp"] = getCurrentTimestamp();
     
     // Debug: Print JSON payload in pretty format
-    Serial.println("[Firebase] Gateway status JSON:");
+    ESP_LOGI(TAG, "[Firebase] Gateway status JSON:");
     {
         String pretty;
         serializeJsonPretty(doc, pretty);
@@ -963,11 +973,11 @@ bool FirebaseClient::queueGatewayStatus(
         wifiRssi, freeHeap, uptimeSeconds, queuePriority
     );
     
-    if (success) {
-        Serial.printf("[Firebase] ✅ Gateway status queued (nodes: %d, priority: %d)\n", connectedNodes, priority);
-    } else {
-        Serial.println("[Firebase] ❌ Failed to queue gateway status");
-    }
+    // if (success) {
+    //     Serial.printf("[Firebase] ✅ Gateway status queued (nodes: %d, priority: %d)\n", connectedNodes, priority);
+    // } else {
+    //     Serial.println("[Firebase] ❌ Failed to queue gateway status");
+    // }
     
     return success;
 }
