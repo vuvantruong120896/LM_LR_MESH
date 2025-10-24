@@ -756,11 +756,16 @@ String FirebaseClient::createRoutingTableJson(const std::vector<RouteNode>& rout
     JsonObject nodesObj = doc["nodes"].to<JsonObject>();
     
     for (const auto& route : routingTable) {
-        String nodeIdStr = nodeIdToString(route.networkNode.address);
+        // MEMORY FIX (Oct 24, 2025): Use char buffer instead of String to avoid heap allocation
+        char nodeIdStr[16];
+        snprintf(nodeIdStr, sizeof(nodeIdStr), "0x%04X", route.networkNode.address);
         JsonObject nodeObj = nodesObj[nodeIdStr].to<JsonObject>();
         
         nodeObj["address"] = nodeIdStr;
-        nodeObj["via"] = nodeIdToString(route.via);
+        // MEMORY FIX (Oct 24, 2025): Use char buffer for via field too
+        char viaIdStr[16];
+        snprintf(viaIdStr, sizeof(viaIdStr), "0x%04X", route.via);
+        nodeObj["via"] = viaIdStr;
         nodeObj["metric"] = route.networkNode.metric;
         nodeObj["role"] = route.networkNode.role;
         
@@ -781,13 +786,16 @@ String FirebaseClient::createRoutingTableJson(const std::vector<RouteNode>& rout
     String jsonData;
     serializeJson(doc, jsonData);
     
-    // Debug: Print JSON payload in pretty format for easy reading
+    // MEMORY FIX (Oct 24, 2025): Only show JSON in pretty format when verbose logging enabled
+    // Remove expensive serializeJsonPretty that causes temporary String allocation
+    #if CORE_DEBUG_LEVEL >= 4  // VERBOSE level only
     Serial.println("[Firebase] Routing table JSON (pretty print):");
     {
         String pretty;
         serializeJsonPretty(doc, pretty);
         ESP_LOGD(TAG, "%s", pretty.c_str());
     }
+    #endif
     
     return jsonData;
 }

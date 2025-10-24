@@ -254,6 +254,10 @@ void FirebaseQueueManager::workerTask(void* parameter) {
                 ESP_LOGW(TAG, "⚠️ Low stack warning! Only %d bytes free", stackHighWaterMark);
             }
             
+            // MEMORY FIX (Oct 24, 2025): Aggressive cleanup every 30s 
+            ESP_LOGD(TAG, "🗑️ Performing periodic memory cleanup...");
+            manager->forceGarbageCollection();
+            
             lastStatsLog = currentTime;
         }
         
@@ -322,6 +326,12 @@ void FirebaseQueueManager::processQueueItem(const FirebaseQueueItem_t& item) {
         if (item.callback) {
             String errorMsg = success ? "" : "Max retries exceeded";
             item.callback(&item, success, errorMsg);
+        }
+        
+        // MEMORY FIX (Oct 24, 2025): Force cleanup after each operation
+        if (!success || item.retryCount > 0) {
+            ESP_LOGD(TAG, "🗑️ Forcing cleanup after operation (success=%d, retries=%d)", success, item.retryCount);
+            forceGarbageCollection();
         }
         
         // Cleanup item resources
@@ -641,6 +651,7 @@ void FirebaseQueueManager::updateAdaptiveRetryStats(bool success) {
 bool FirebaseQueueManager::enqueue(const FirebaseQueueItem_t& item) {
     if (!m_initialized || !m_queue) {
         ESP_LOGE(TAG, "Queue not initialized!");
+        cleanupQueueItem(item); // CRITICAL: Free allocated memory before early return
         return false;
     }
     
@@ -652,6 +663,7 @@ bool FirebaseQueueManager::enqueue(const FirebaseQueueItem_t& item) {
             dropLowPriorityItem();
         } else {
             ESP_LOGE(TAG, "❌ Queue full, dropping new item (priority %d)", item.priority);
+            cleanupQueueItem(item); // CRITICAL: Free allocated memory before dropping
             updateStatistics(false, false, false); // Count as failed enqueue
             return false;
         }
