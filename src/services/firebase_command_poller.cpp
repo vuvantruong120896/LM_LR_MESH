@@ -1,4 +1,5 @@
 #include "firebase_command_poller.h"
+#include "../application/app_gateway/firebase_coordinator.h"  // COORDINATION FIX (Oct 24, 2025)
 #include <esp_log.h>
 #include <ArduinoJson.h>
 #include <WiFi.h>
@@ -86,6 +87,7 @@ void FirebaseCommandPoller::pollingTask(void* parameter) {
     ESP_LOGI(TAG, "[POLLER-TASK] Initial stack: %u bytes free", stackHighWaterMark);
     
     while (poller->m_taskRunning) {
+        
         if (!poller->m_enabled) {
             vTaskDelay(pdMS_TO_TICKS(1000)); // Sleep 1s if disabled
             continue;
@@ -123,6 +125,18 @@ void FirebaseCommandPoller::pollingTask(void* parameter) {
             vTaskDelay(pdMS_TO_TICKS(5000));
             continue;
         }
+        
+        // COORDINATION FIX (Oct 24, 2025): Check if Firebase Worker is running
+        // This prevents Command Poller and Firebase Worker from running simultaneously
+        // Wait if another Firebase operation happened within last 5 seconds
+        uint32_t waitTime = FirebaseOperationCoordinator::getWaitTime();
+        if (waitTime > 0) {
+            ESP_LOGD(TAG, "[COORDINATION] Waiting %u ms to avoid concurrent Firebase operations", waitTime);
+            vTaskDelay(pdMS_TO_TICKS(waitTime));
+        }
+        
+        // Mark operation start for coordination
+        FirebaseOperationCoordinator::markOperationStart();
         
         ESP_LOGD(TAG, "Polling for pending commands...");
         
@@ -166,9 +180,24 @@ bool FirebaseCommandPoller::fetchPendingCommands() {
     
     ESP_LOGD(TAG, "Fetching from: %s", pendingPath.c_str());
     
+    // Static counter for periodic WiFi reconnect (prevent socket leak in Command Poller)
+    static uint32_t pollCount = 0;
+    pollCount++;
+    
+    // Reconnect WiFi every 10 polls to release accumulated sockets
+    if (pollCount % 10 == 0) {
+        ESP_LOGI(TAG, "🔄 [POLLER] Reconnecting WiFi after %u polls (socket cleanup)", pollCount);
+        Firebase.reconnectWiFi(true);
+        delay(200);  // Wait for TCP stack cleanup
+    }
+    
     // Get all pending commands
     if (!Firebase.getJSON(*m_fbdo, pendingPath.c_str())) {
         String errorReason = m_fbdo->errorReason();
+        
+        // CRITICAL: Clean up FirebaseData buffers after failed operation
+        m_fbdo->clear();
+        delay(50);  // TCP cleanup time
         
         // Distinguish between "no data" (normal) vs network/TLS errors
         if (errorReason.indexOf("connection") >= 0 || 
@@ -191,6 +220,10 @@ bool FirebaseCommandPoller::fetchPendingCommands() {
     if (len == 0) {
         ESP_LOGD(TAG, "Pending queue is empty");
         json.iteratorEnd();
+        
+        // CRITICAL: Clean up after successful read with no data
+        m_fbdo->clear();
+        delay(50);
         return false;
     }
     
@@ -207,7 +240,13 @@ bool FirebaseCommandPoller::fetchPendingCommands() {
     ESP_LOGD(TAG, "Command value: %s", value.c_str());
     
     // Parse command
-    if (parseCommand(key, value)) {
+    bool parsed = parseCommand(key, value);
+    
+    // CRITICAL: Clean up FirebaseData buffers after successful operation
+    m_fbdo->clear();
+    delay(50);  // TCP cleanup time
+    
+    if (parsed) {
         m_hasCommand = true;
         return true;
     }
