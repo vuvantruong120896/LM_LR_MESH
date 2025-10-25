@@ -1,0 +1,8 @@
+# partitions_custom_node.csv
+# 4MB flash layout for node devices (single factory app, NVS, PHY, spiffs)
+# Offsets and sizes chosen to fit within 4MB (0x400000)
+# Name,   Type, SubType, Offset,   Size,     Flags
+nvs,       data, nvs,     0x9000,   0x6000
+phy_init,  data, phy,     0xf000,   0x1000
+app,       app,  factory, 0x10000,  0x2f0000
+spiffs,    data, spiffs,  0x300000, 0x100000
