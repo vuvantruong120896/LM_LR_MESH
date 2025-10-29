@@ -213,19 +213,26 @@ void FirebaseQueueManager::workerTask(void* parameter) {
             ESP_LOGD(TAG, "📥 Processing Firebase operation: %d (priority %d)", 
                      item.operation, item.priority);
             
-            // BINARY SEMAPHORE COORDINATION (Oct 24, 2025 - v2):
+            // BINARY SEMAPHORE COORDINATION (Oct 29, 2025 - v3 - DEADLOCK FIX):
             // Step 1: Wait for minimum interval (lightweight, doesn't block other tasks)
             FirebaseOperationCoordinator::waitForMinInterval();
             
-            // Step 2: Try to acquire exclusive operation lock (prevents concurrent Firebase HTTP requests)
-            // Use portMAX_DELAY - Worker should always eventually get the lock (higher priority than Poller)
-            if (!FirebaseOperationCoordinator::tryAcquireOperationLock(portMAX_DELAY)) {
-                ESP_LOGE(TAG, "[OP-LOCK] Failed to acquire operation lock even with infinite wait! Retrying...");
+            // Step 2: Try to acquire exclusive operation lock with TIMEOUT (prevents deadlock)
+            // CRITICAL FIX: Use 30s timeout instead of portMAX_DELAY to prevent infinite blocking
+            // If timeout, re-queue and try again later (prevents deadlock if lock is never released)
+            const uint32_t LOCK_TIMEOUT_MS = 30000; // 30 seconds
+            if (!FirebaseOperationCoordinator::tryAcquireOperationLock(LOCK_TIMEOUT_MS)) {
+                ESP_LOGE(TAG, "[OP-LOCK] ⚠️ DEADLOCK PREVENTION: Failed to acquire lock within %u ms", LOCK_TIMEOUT_MS);
+                ESP_LOGE(TAG, "[OP-LOCK] Re-queuing item and forcing lock reset...");
+                
+                // Force release lock (in case it's stuck)
+                FirebaseOperationCoordinator::releaseOperationLock();
+                
                 // Re-queue the item to try again later
                 if (xQueueSendToFront(manager->m_queue, &item, 0) != pdTRUE) {
-                    ESP_LOGE(TAG, "Failed to re-queue item after coordination lock failure!");
+                    ESP_LOGE(TAG, "Failed to re-queue item after lock timeout!");
                 }
-                vTaskDelay(pdMS_TO_TICKS(1000));
+                vTaskDelay(pdMS_TO_TICKS(2000)); // Wait 2s before retry
                 continue;
             }
             
@@ -239,16 +246,35 @@ void FirebaseQueueManager::workerTask(void* parameter) {
                 vTaskDelay(pdMS_TO_TICKS(waitTime));
             }
             
-            // Process the operation  
-            uint32_t processingStartTime = millis(); // Phase 2: Track processing time
-            manager->processQueueItem(item);
-            manager->recordProcessingTime(processingStartTime); // Phase 2
+            // Process the operation WITH EXCEPTION SAFETY
+            // CRITICAL FIX (Oct 29, 2025): Use try-catch to ensure lock is ALWAYS released
+            bool operationSuccess = false;
+            uint32_t processingStartTime = millis();
             
-            // CRITICAL: Release operation lock IMMEDIATELY after HTTP completes
+            try {
+                manager->processQueueItem(item);
+                operationSuccess = true;
+            } catch (const std::exception& e) {
+                ESP_LOGE(TAG, "❌ CRITICAL: Exception in processQueueItem: %s", e.what());
+                operationSuccess = false;
+            } catch (...) {
+                ESP_LOGE(TAG, "❌ CRITICAL: Unknown exception in processQueueItem!");
+                operationSuccess = false;
+            }
+            
+            manager->recordProcessingTime(processingStartTime);
+            
+            // CRITICAL: Release operation lock in ALL cases (success, fail, exception)
+            // This prevents deadlock if operation crashes
             FirebaseOperationCoordinator::releaseOperationLock();
             
             // Mark completion for interval tracking
             FirebaseOperationCoordinator::markOperationComplete();
+            
+            // If operation failed, log for monitoring
+            if (!operationSuccess) {
+                ESP_LOGW(TAG, "⚠️ Firebase operation failed, lock released safely");
+            }
             
             manager->m_lastOperationTime = millis();
             

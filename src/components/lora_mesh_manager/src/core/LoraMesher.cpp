@@ -576,9 +576,16 @@ void LoraMesher::sendPackets() {
 
             ToSendPackets->setInUse();
 
-            ESP_LOGV(LM_TAG, "Size of Send Packets Queue: %d", ToSendPackets->getLength());
-
-            QueuePacket<Packet<uint8_t>>* tx = ToSendPackets->Pop();
+            // CRITICAL FIX (Oct 29, 2025): Exception safety wrapper
+            QueuePacket<Packet<uint8_t>>* tx = nullptr;
+            try {
+                ESP_LOGV(LM_TAG, "Size of Send Packets Queue: %d", ToSendPackets->getLength());
+                tx = ToSendPackets->Pop();
+            } catch (...) {
+                ESP_LOGE(LM_TAG, "❌ Exception in ToSendPackets->Pop(), releasing mutex");
+                ToSendPackets->releaseInUse();
+                continue;
+            }
 
             ToSendPackets->releaseInUse();
 

@@ -361,39 +361,68 @@ void RoutingTableService::printRoutingTable() {
 
     routingTableList->setInUse();
 
-    if (routingTableList->moveToStart()) {
-        size_t position = 0;
-        unsigned long currentTime = millis();
+    // CRITICAL FIX (Oct 29, 2025): Wrap in try-catch to ensure mutex is ALWAYS released
+    // Previous: If crash/exception happens → mutex never released → deadlock
+    // New: Mutex released in all cases (success, fail, exception)
+    bool printSuccess = false;
+    try {
+        if (routingTableList->moveToStart()) {
+            size_t position = 0;
+            unsigned long currentTime = millis();
 
-        do {
-            RouteNode* node = routingTableList->getCurrent();
-            
-            // Calculate time to live (time remaining before timeout)
-            unsigned long timeLeft = (node->timeout > currentTime) ? 
-                                      (node->timeout - currentTime) / 1000 : 0;
-            
-            // Recalculate link quality for display
-            float quality = node->calculateLinkQuality();
+            do {
+                RouteNode* node = routingTableList->getCurrent();
+                
+                // CRITICAL: Validate node pointer before dereferencing
+                if (node == nullptr) {
+                    ESP_LOGE(LM_TAG, "⚠️ NULL node at position %d, skipping", position);
+                    continue;
+                }
+                
+                // Calculate time to live (time remaining before timeout)
+                unsigned long timeLeft = (node->timeout > currentTime) ? 
+                                          (node->timeout - currentTime) / 1000 : 0;
+                
+                // Recalculate link quality for display (with safety check)
+                float quality = 0.0f;
+                try {
+                    quality = node->calculateLinkQuality();
+                } catch (...) {
+                    ESP_LOGW(LM_TAG, "Failed to calculate link quality for node 0x%04X", node->networkNode.address);
+                    quality = 0.0f;
+                }
 
-            ESP_LOGI(LM_TAG, "%d - Addr:0x%04X via:0x%04X hops:%d role:%d TTL:%lus SNR:%ddB RSSI:%ddBm Q:%.3f", 
-                position,
-                node->networkNode.address,
-                node->via,
-                node->networkNode.metric,
-                node->networkNode.role,
-                timeLeft,
-                node->receivedSNR,
-                node->receivedRSSI,
-                quality);
+                ESP_LOGI(LM_TAG, "%d - Addr:0x%04X via:0x%04X hops:%d role:%d TTL:%lus SNR:%ddB RSSI:%ddBm Q:%.3f", 
+                    position,
+                    node->networkNode.address,
+                    node->via,
+                    node->networkNode.metric,
+                    node->networkNode.role,
+                    timeLeft,
+                    node->receivedSNR,
+                    node->receivedRSSI,
+                    quality);
 
-            position++;
-        } while (routingTableList->next());
+                position++;
+            } while (routingTableList->next());
+        }
+        
+        size_t totalNodes = routingTableList->getLength();
+        ESP_LOGI(LM_TAG, "Total nodes in routing table: %d", totalNodes);
+        printSuccess = true;
+        
+    } catch (const std::exception& e) {
+        ESP_LOGE(LM_TAG, "❌ EXCEPTION in printRoutingTable: %s", e.what());
+    } catch (...) {
+        ESP_LOGE(LM_TAG, "❌ UNKNOWN EXCEPTION in printRoutingTable!");
     }
-    
-    size_t totalNodes = routingTableList->getLength();
-    ESP_LOGI(LM_TAG, "Total nodes in routing table: %d", totalNodes);
 
+    // CRITICAL: ALWAYS release mutex, even if exception occurred
     routingTableList->releaseInUse();
+    
+    if (!printSuccess) {
+        ESP_LOGE(LM_TAG, "⚠️ Routing table print FAILED but mutex safely released");
+    }
 }
 
 bool RoutingTableService::manageTimeoutRoutingTable() {

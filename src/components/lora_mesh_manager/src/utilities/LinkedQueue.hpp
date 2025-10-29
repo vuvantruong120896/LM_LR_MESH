@@ -269,8 +269,29 @@ void LM_LinkedList<T>::Clear() {
 
 template <class T>
 void LM_LinkedList<T>::setInUse() {
+    // CRITICAL FIX (Oct 29, 2025): Add timeout to prevent infinite blocking
+    // Previous: Loop forever with 10ms retries → deadlock if mutex never released
+    // New: Try for max 30 seconds, then force break to prevent total system freeze
+    const uint32_t MAX_WAIT_MS = 30000;  // 30 seconds max wait
+    uint32_t startTime = millis();
+    uint32_t attemptCount = 0;
+    
     while (xSemaphoreTake(xSemaphore, (TickType_t) 10) != pdTRUE) {
-        ESP_LOGW(LM_TAG, "List in Use Alert");
+        attemptCount++;
+        uint32_t elapsedMs = millis() - startTime;
+        
+        if (elapsedMs > MAX_WAIT_MS) {
+            ESP_LOGE(LM_TAG, "⚠️ CRITICAL: Failed to acquire list mutex after %u attempts (%u ms)!", 
+                     attemptCount, elapsedMs);
+            ESP_LOGE(LM_TAG, "⚠️ DEADLOCK DETECTED! Force breaking to prevent total freeze.");
+            ESP_LOGE(LM_TAG, "⚠️ System may be in inconsistent state. Consider reboot.");
+            break;  // Break out to prevent infinite loop
+        }
+        
+        // Log warning every 5 seconds
+        if (attemptCount % 500 == 0) {  // 500 * 10ms = 5s
+            ESP_LOGW(LM_TAG, "List mutex still in use after %u ms (%u attempts)", elapsedMs, attemptCount);
+        }
     }
 }
 

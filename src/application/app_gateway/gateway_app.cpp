@@ -932,7 +932,7 @@ void GatewayApp::handleWiFiEvent(WiFiConnectionService::WiFiEvent event, int8_t 
 
 // Static callback for processing gateway packets
 void GatewayApp::processGatewayPackets(void* parameter) {
-    ESP_LOGI(TAG, "[GATEWAY-TASK] Gateway packet processing task started");
+    ESP_LOGI(TAG, "[GATEWAY-TASK] Gateway packet processing task started (Oct 29, 2025 - v2 - WDT FIX)");
     
     // Stack monitoring - check initial stack
     UBaseType_t stackHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
@@ -944,7 +944,15 @@ void GatewayApp::processGatewayPackets(void* parameter) {
     uint32_t packetCount = 0;
     ESP_LOGI(TAG, "[GATEWAY-TASK] Initial free heap: %u bytes", initialFreeHeap);
 
+    // WDT configuration: Reset every N packets to prevent false-positive reboots
+    const uint32_t MAX_PACKETS_PER_WDT_CYCLE = 20; // Reset WDT every 20 packets max
+    uint32_t packetsThisCycle = 0;
+
     for (;;) {
+        // CRITICAL FIX (Oct 29, 2025): Reset WDT before blocking wait
+        // This prevents watchdog timeout during idle periods
+        esp_task_wdt_reset();
+        
         // Wait for notification from mesh receiver
         ulTaskNotifyTake(pdPASS, portMAX_DELAY);
 
@@ -960,12 +968,22 @@ void GatewayApp::processGatewayPackets(void* parameter) {
             ESP_LOGW(TAG, "⚠️ [GATEWAY-TASK] Low stack warning! Only %d bytes free", stackHighWaterMark);
         }
 
+        // Reset cycle counter for new batch
+        packetsThisCycle = 0;
+
         while (GatewayApp::instance->radio.getReceivedQueueSize() > 0) {
             ESP_LOGD(TAG, "[GATEWAY-TASK] Processing received mesh packet");
             ESP_LOGD(TAG, "[GATEWAY-TASK] Queue size: %d", GatewayApp::instance->radio.getReceivedQueueSize());
 
-            // NO WDT RESET per packet: Let watchdog catch hung operations
-            // If packet processing hangs, system should reboot
+            // CRITICAL FIX (Oct 29, 2025): Reset WDT periodically during heavy load
+            // Previous design: NO WDT reset → timeout if Firebase slow → random reboot
+            // New design: Reset every N packets to prevent false-positive timeout
+            packetsThisCycle++;
+            if (packetsThisCycle >= MAX_PACKETS_PER_WDT_CYCLE) {
+                esp_task_wdt_reset();
+                packetsThisCycle = 0;
+                ESP_LOGD(TAG, "[GATEWAY-TASK] WDT reset after %u packets", MAX_PACKETS_PER_WDT_CYCLE);
+            }
 
             AppPacket<uint8_t>* packet = GatewayApp::instance->radio.getNextAppPacket<uint8_t>();
             
