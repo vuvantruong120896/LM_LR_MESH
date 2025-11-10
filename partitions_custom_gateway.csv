@@ -1,13 +1,16 @@
 # partitions_custom_gateway.csv
-# 8MB flash layout with OTA support (app0/app1), NVS, ota data and spiffs
-# Offsets and sizes chosen to fit within 8MB (0x800000)
-# Name,   Type, SubType, Offset,   Size,     Flags
-nvs,      data, nvs,     0x9000,   0x5000
-otadata,  data, ota,     0xe000,   0x2000
-# Three app partitions: factory + ota_0 + ota_1, each ~2.2MB (0x230000)
-# Offsets aligned to 0x10000
-factory,  app,  factory, 0x10000,  0x230000
-ota_0,    app,  ota_0,   0x240000, 0x230000
-ota_1,    app,  ota_1,   0x470000, 0x230000
-# SPIFFS starts after ota_1 end (ota_1 end = 0x6A0000). Remaining space = 0x800000 - 0x6A0000 = 0x160000
-spiffs,   data, spiffs,  0x6A0000, 0x160000
+# 16MB flash layout with 3MB app partitions (factory + ota_0 + ota_1)
+# and 3MB SPIFFS data partition at the end
+# Total Flash = 0x1000000 (16MB)
+
+# Name,     Type, SubType, Offset,   Size,      Flags
+nvs,        data, nvs,     0x9000,   0x5000
+otadata,    data, ota,     0xe000,   0x2000
+
+# App partitions (each 3MB = 0x300000)
+factory,    app,  factory, 0x10000,  0x300000
+ota_0,      app,  ota_0,   0x310000, 0x300000
+ota_1,      app,  ota_1,   0x610000, 0x300000
+
+# SPIFFS (3MB = 0x300000)
+spiffs,     data, spiffs,  0x910000, 0x300000

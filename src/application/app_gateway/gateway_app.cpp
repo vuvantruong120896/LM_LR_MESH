@@ -187,6 +187,16 @@ void GatewayApp::initializeServices() {
 void GatewayApp::loop() {
     // Check if provisioning just succeeded (show LED success pattern)
     static bool successShown = false;
+
+    // Periodic CPU core and task monitoring (every 30 seconds)
+    static uint32_t lastCpuCheck = 0;
+    if (millis() - lastCpuCheck > 30000) {  // Mỗi 30s
+        ESP_LOGI(TAG, "[CPU] Core 0 running: %d tasks", uxTaskGetNumberOfTasks());
+        ESP_LOGI(TAG, "[CPU] Core ID executing loop: %d", xPortGetCoreID());
+        lastCpuCheck = millis();
+    }
+
+    // Show provision success LED pattern once
     if (provisionManager && provisionManager->provisionSucceeded() && !successShown) {
         ESP_LOGI(TAG, "🎉 Showing provision success LED pattern...");
         led_pattern_provision_success();  // 3 seconds of fast flashing
@@ -1045,23 +1055,12 @@ TaskHandle_t GatewayApp::createGatewayReceiveTask() {
 
     ESP_LOGI(TAG, "Creating gateway receive task...");
 
-    // CRITICAL FIX: Increased stack size from 8192 to 16384 bytes (Oct 21, 2025)
-    // REASON: Stack overflow when processing LoRa packets + Firebase operations
-    // ANALYSIS:
-    // - LoRa packet decryption buffer: ~64 bytes
-    // - JSON data creation for Firebase: ~500 bytes
-    // - Firebase client state: ~200 bytes
-    // - Nested function calls & local variables: ~300+ bytes
-    // - WiFi TCP stack: ~2KB
-    // TOTAL required: ~3.5KB minimum
-    // With safety margin: 16KB recommended
-    // 
     // CPU ARCHITECTURE (Oct 23, 2025):
     // Pin to CPU0 for mesh/protocol processing separation from Firebase (CPU1)
     int res = xTaskCreatePinnedToCore(
         processGatewayPackets,
         "Gateway Receive Task",
-        16384,  // Stack: 16KB (prevents stack overflow)
+        8192,  // Stack: 8KB (prevents stack overflow)
         (void*) 1,
         2,      // Priority: 2 (higher than Firebase queue)
         &taskHandle,
@@ -1073,7 +1072,7 @@ TaskHandle_t GatewayApp::createGatewayReceiveTask() {
         return NULL;
     }
 
-    ESP_LOGI(TAG, "Gateway task created successfully, handle: %p, stack: 16384 bytes", taskHandle);
+    ESP_LOGI(TAG, "Gateway task created successfully, handle: %p, stack: 8192 bytes", taskHandle);
     return taskHandle;
 }
 

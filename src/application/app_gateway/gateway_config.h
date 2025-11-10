@@ -23,7 +23,7 @@
 // LoRa configuration for Gateway
 #define LORA_CS     5
 #define LORA_RST    4
-#define LORA_IRQ    15
+#define LORA_IRQ    6
 #define LORA_IO1    -1
 
 // Gateway-specific settings

@@ -35,7 +35,7 @@
 // LoRa configuration for node (ESP32 - same as Gateway)
 #define LORA_CS     5
 #define LORA_RST    4
-#define LORA_IRQ    15
+#define LORA_IRQ    6
 #define LORA_IO1    -1
 
 // Node behavior settings

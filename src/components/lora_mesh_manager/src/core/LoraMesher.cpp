@@ -312,63 +312,69 @@ int LoraMesher::startChannelScan() {
 
 void LoraMesher::initializeSchedulers() {
     ESP_LOGV(LM_TAG, "Setting up Schedulers");
-    int res = xTaskCreate(
+    int res = xTaskCreatePinnedToCore(
         [](void* o) { static_cast<LoraMesher*>(o)->receivingRoutine(); },
         "Receiving routine",
         4096,
         this,
         6,
-        &ReceivePacket_TaskHandle);
+        &ReceivePacket_TaskHandle,
+        0);
     if (res != pdPASS) {
         ESP_LOGE(LM_TAG, "Receiving routine creation gave error: %d", res);
     }
-    res = xTaskCreate(
+    res = xTaskCreatePinnedToCore(
         [](void* o) { static_cast<LoraMesher*>(o)->sendPackets(); },
         "Sending routine",
         4096,
         this,
         5,
-        &SendData_TaskHandle);
+        &SendData_TaskHandle,
+        0);
     if (res != pdPASS) {
         ESP_LOGE(LM_TAG, "Sending Task creation gave error: %d", res);
     }
-    res = xTaskCreate(
+    res = xTaskCreatePinnedToCore(
         [](void* o) { static_cast<LoraMesher*>(o)->sendHelloPacket(); },
         "Hello routine",
         4096,
         this,
         4,
-        &Hello_TaskHandle);
+        &Hello_TaskHandle,
+        0);
     if (res != pdPASS) {
-        ESP_LOGE(LM_TAG, "Process Task creation gave error: %d", res);
+        ESP_LOGE(LM_TAG, "Hello Task creation gave error: %d", res);
     }
-    res = xTaskCreate(
+    res = xTaskCreatePinnedToCore(
         [](void* o) { static_cast<LoraMesher*>(o)->processPackets(); },
         "Process routine",
         4096,
         this,
         3,
-        &ReceiveData_TaskHandle);
+        &ReceiveData_TaskHandle,
+        0);
     if (res != pdPASS) {
         ESP_LOGE(LM_TAG, "Process Task creation gave error: %d", res);
     }
-    res = xTaskCreate(
+    res = xTaskCreatePinnedToCore(
         [](void* o) { static_cast<LoraMesher*>(o)->routingTableManager(); },
         "Routing Table Manager routine",
         4096,
         this,
         2,
-        &RoutingTableManager_TaskHandle);
+        &RoutingTableManager_TaskHandle,
+        0);
     if (res != pdPASS) {
         ESP_LOGE(LM_TAG, "Routing Table Manager Task creation gave error: %d", res);
     }
-    res = xTaskCreate(
+    res = xTaskCreatePinnedToCore(
         [](void* o) { static_cast<LoraMesher*>(o)->queueManager(); },
         "Queue Manager routine",
         4096,
         this,
         2,
-        &QueueManager_TaskHandle);
+        &QueueManager_TaskHandle,
+        0);
     if (res != pdPASS) {
         ESP_LOGE(LM_TAG, "Queue Manager Task creation gave error: %d", res);
     }
