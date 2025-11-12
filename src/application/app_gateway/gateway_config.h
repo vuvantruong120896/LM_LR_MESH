@@ -48,6 +48,19 @@
 #define FIREBASE_AUTH           "0kMDkyCxejcJB350HrFlgBmb3Y5PsOiR90ZXf1MV"    // Change this!
 #endif
 
+// Cellular configuration (for USE_CELLULAR mode)
+#ifdef USE_CELLULAR
+#ifndef CELLULAR_APN
+#define CELLULAR_APN            "v-internet"  // Viettel APN for data connection
+#endif
+#ifndef CELLULAR_APN_USER
+#define CELLULAR_APN_USER       ""       // Viettel doesn't require username
+#endif
+#ifndef CELLULAR_APN_PASS
+#define CELLULAR_APN_PASS       ""       // Viettel doesn't require password
+#endif
+#endif
+
 // Gateway ID for Firebase (based on MAC address)
 // Format: GW_<MAC> (e.g., "GW_240AC4123456")
 #define FIREBASE_GATEWAY_ID_PREFIX "0x"
@@ -55,7 +68,7 @@
 // Gateway operation settings
 #define GATEWAY_ROUTING_TABLE_INTERVAL 300000  // Backup upload every 5 minutes (real-time upload on changes)
 #define GATEWAY_SENSOR_UPLOAD_TIMEOUT  10000    // Timeout for sensor data upload
-#define GATEWAY_SENSOR_INTERVAL        600000  // Gateway sensor reading interval: 10 minutes
+#define GATEWAY_SENSOR_INTERVAL        60000   // Gateway sensor reading interval: 1 minute (changed from 10 minutes on Nov 12, 2025)
 #define GATEWAY_STATUS_INTERVAL        300000  // Gateway status upload interval: 5 minutes
 
 // LoRa module type

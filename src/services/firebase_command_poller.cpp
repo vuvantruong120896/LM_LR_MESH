@@ -264,7 +264,7 @@ bool FirebaseCommandPoller::fetchPendingCommands() {
 
 bool FirebaseCommandPoller::parseCommand(const String& key, const String& value) {
     // Parse JSON command
-    DynamicJsonDocument doc(1024);
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, value);
     
     if (error) {
@@ -279,7 +279,7 @@ bool FirebaseCommandPoller::parseCommand(const String& key, const String& value)
     m_currentCommand.priority = doc["priority"] | 1;
     
     // Extract params (keep as JSON string for flexibility)
-    if (doc.containsKey("params")) {
+    if (doc["params"].is<JsonVariant>()) {
         String paramsStr;
         serializeJson(doc["params"], paramsStr);
         m_currentCommand.params = paramsStr;

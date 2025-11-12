@@ -364,8 +364,8 @@ FirebaseClient::UploadResult FirebaseClient::updateGatewayInfo(
         return result;
     }
     
-    // Create JSON - MEMORY FIX: Use StaticJsonDocument
-    StaticJsonDocument<256> doc;  // 256 bytes (enough for gateway info)
+    // Create JSON - Updated for ArduinoJson v7
+    JsonDocument doc;  // Dynamic document
     doc["mac"] = macAddress;
     doc["ip"] = ipAddress;
     doc["firmware_version"] = firmwareVersion;
@@ -425,8 +425,8 @@ FirebaseClient::UploadResult FirebaseClient::updateNodeInfo(
     
     String nodeIdStr = nodeIdToString(nodeId);
     
-    // Create JSON - MEMORY FIX: Use StaticJsonDocument
-    StaticJsonDocument<256> doc;  // 256 bytes (enough for node info)
+    // Create JSON - Updated for ArduinoJson v7
+    JsonDocument doc;  // Dynamic document
     doc["address"] = nodeIdStr;
     doc["name"] = name;
     doc["type"] = type;

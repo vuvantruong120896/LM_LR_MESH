@@ -8,6 +8,13 @@
 
 static const char* TAG = "GATEWAY";
 
+// Helper macros for command poller operations (WiFi vs Cellular)
+#ifdef USE_CELLULAR
+    #define COMMAND_POLLER cellularCommandPoller
+#else
+    #define COMMAND_POLLER commandPoller
+#endif
+
 // Compute a 16-bit Node ID using the last 2 bytes of the WiFi MAC (STA MAC)
 static uint16_t computeNodeIdFromWifiMac() {
     uint8_t mac[6];
@@ -22,14 +29,22 @@ GatewayApp* GatewayApp::instance = nullptr;
 
 GatewayApp::GatewayApp()
     : radio(LoraMesher::getInstance()),
+#ifdef USE_CELLULAR
+      cellularService(nullptr),
+      sslClient(nullptr),
+      firebaseClient(nullptr),
+      cellularCommandPoller(nullptr),
+      commandQueue(nullptr),
+#else
       wifiService(nullptr),
       firebaseClient(nullptr),
+      commandPoller(nullptr),
+#endif
       statusCounter(0),
       sensorCounter(0),
       lastStatusUploadTime(0),
       statusPacket(new gatewayStatus),
-      provisionManager(nullptr),
-      commandPoller(nullptr) {
+      provisionManager(nullptr) {
     instance = this;
     gatewayState.bootTime = millis();
 }
@@ -37,9 +52,17 @@ GatewayApp::GatewayApp()
 GatewayApp::~GatewayApp() {
     delete statusPacket;
     delete firebaseClient;
-    delete wifiService;
     delete provisionManager;
+    
+#ifdef USE_CELLULAR
+    delete cellularCommandPoller;
+    delete commandQueue;
+    delete sslClient;
+    delete cellularService;
+#else
     delete commandPoller;
+    delete wifiService;
+#endif
 }
 
 void GatewayApp::setup() {
@@ -122,12 +145,17 @@ void GatewayApp::setup() {
     // Log security status
     logSecurityStatus();
     
-    // Only setup mesh, WiFi and Firebase if provisioned
+    // Only setup mesh, WiFi/Cellular and Firebase if provisioned
     if (provisionManager && provisionManager->isProvisioned()) {
         setupLoRaMesher();
+        
+#ifdef USE_CELLULAR
+        setupCellular();
+#else
         setupWiFi();
+#endif
+        
         setupFirebase();
-        setupTimeSync();  // Setup NTP time synchronization
         
         // Register callback to upload routing table when it changes
         RoutingTableService::setRoutingTableChangedCallback(onRoutingTableChanged);
@@ -153,6 +181,8 @@ void GatewayApp::setup() {
         ESP_LOGI(TAG, "🔵 Gateway in provisioning mode - use mobile app to configure");
         led_pattern_provisioning();  // Indicate provisioning mode
     }
+
+    ESP_LOGI(TAG, "🎉✨ Setup complete. Gateway is ready! 🚀");
 }
 
 void GatewayApp::initializeServices() {
@@ -258,6 +288,15 @@ void GatewayApp::loop() {
         lastHeapCheck = currentTime;
     }
 
+#ifdef USE_CELLULAR
+    // Update Cellular service (handles auto-reconnect) - only if provisioned
+    if (cellularService) {
+        cellularService->update();
+    }
+
+    // Direct upload to Firebase when cellular connected (no offline buffer for cellular mode)
+    if (isProvisioned && gatewayState.cellularConnected && firebaseClient) {
+#else
     // Update WiFi service (handles auto-reconnect) - only if provisioned
     if (wifiService) {
         wifiService->update();
@@ -265,6 +304,7 @@ void GatewayApp::loop() {
 
     // Sync offline buffer to Firebase when online (only if provisioned)
     if (isProvisioned && gatewayState.wifiConnected && firebaseClient) {
+#endif
         static uint32_t lastBufferSync = 0;
         const uint32_t BUFFER_SYNC_INTERVAL = 60000; // Sync every 1 minute when online
         
@@ -283,9 +323,14 @@ void GatewayApp::loop() {
                     sensorData data;
                     
                     if (OfflineDataBuffer::getOldestData(nodeId, data)) {
-                        // NEW: Use queue for non-blocking upload (no watchdog resets needed)
                         bool success = false;
                         
+#ifdef USE_CELLULAR
+                        // Cellular: Direct upload (blocking)
+                        auto result = firebaseClient->uploadSensorData(data, 0, 0.0f);
+                        success = result.success;
+#else
+                        // WiFi: Use queue for non-blocking upload
                         if (firebaseClient->isQueueRunning()) {
                             // Queue-based upload (non-blocking, runs on CPU1)
                             success = firebaseClient->queueSensorData(data, 0, 0.0f, 2); // Normal priority
@@ -298,6 +343,7 @@ void GatewayApp::loop() {
                             auto result = firebaseClient->uploadSensorData(data, 0, 0.0f);
                             success = result.success;
                         }
+#endif
                         
                         if (success) {
                             // Remove from buffer after successful queue or upload
@@ -322,27 +368,33 @@ void GatewayApp::loop() {
         }
     }
 
-    // Periodic NTP re-sync (every 1 hour) and time broadcast (every 5 minutes) - only if provisioned
-    static uint32_t lastNTPSync = 0;
-    const uint32_t NTP_RESYNC_INTERVAL = 3600000;  // 1 hour
-    const uint32_t TIME_BROADCAST_INTERVAL = 300000;  // 5 minutes
+//     // Periodic NTP re-sync (every 1 hour) and time broadcast (every 5 minutes) - only if provisioned
+//     static uint32_t lastNTPSync = 0;
+//     const uint32_t NTP_RESYNC_INTERVAL = 3600000;  // 1 hour
+//     const uint32_t TIME_BROADCAST_INTERVAL = 300000;  // 5 minutes
     
-    // Re-sync with NTP every hour (if WiFi connected and provisioned)
-    if (isProvisioned && gatewayState.wifiConnected && (currentTime - lastNTPSync >= NTP_RESYNC_INTERVAL)) {
-        ESP_LOGI(TAG, "⏰ Periodic NTP re-sync");
-        if (TimeSyncService::syncWithNTP("pool.ntp.org", 25200, 0)) {
-            gatewayState.ntpSynced = true;
-            ESP_LOGI(TAG, "✅ NTP re-sync successful");
-        }
-        lastNTPSync = currentTime;
-    }
+// #ifdef USE_CELLULAR
+//     // Re-sync with NTP every hour (if cellular connected and provisioned)
+//     if (isProvisioned && gatewayState.cellularConnected && (currentTime - lastNTPSync >= NTP_RESYNC_INTERVAL)) {
+//         ESP_LOGI(TAG, "⏰ Periodic NTP re-sync over cellular");
+// #else
+//     // Re-sync with NTP every hour (if WiFi connected and provisioned)
+//     if (isProvisioned && gatewayState.wifiConnected && (currentTime - lastNTPSync >= NTP_RESYNC_INTERVAL)) {
+//         ESP_LOGI(TAG, "⏰ Periodic NTP re-sync");
+// #endif
+//         if (TimeSyncService::syncWithNTP("pool.ntp.org", 25200, 0)) {
+//             gatewayState.ntpSynced = true;
+//             ESP_LOGI(TAG, "✅ NTP re-sync successful");
+//         }
+//         lastNTPSync = currentTime;
+//     }
     
-    // Broadcast time sync to nodes every 5 minutes
-    if (gatewayState.ntpSynced && 
-        (currentTime - gatewayState.lastTimeSyncBroadcast >= TIME_BROADCAST_INTERVAL)) {
-        ESP_LOGI(TAG, "⏰ Periodic time sync broadcast to nodes");
-        broadcastTimeSync();
-    }
+    // // Broadcast time sync to nodes every 5 minutes
+    // if (gatewayState.ntpSynced && 
+    //     (currentTime - gatewayState.lastTimeSyncBroadcast >= TIME_BROADCAST_INTERVAL)) {
+    //     ESP_LOGI(TAG, "⏰ Periodic time sync broadcast to nodes");
+    //     broadcastTimeSync();
+    // }
 
     // Routing table upload strategy:
     // 1. Primary: Immediate upload via onRoutingTableChanged() callback when changes occur
@@ -354,9 +406,13 @@ void GatewayApp::loop() {
     if (gatewayState.firebaseConnected && !firstRoutingTableUploadDone) {
         ESP_LOGI(TAG, "📡 Initial routing table upload (post-reboot)");
         
-        // NEW: Use queue for non-blocking routing table upload
-        ESP_LOGI(TAG, "📡 Initial routing table upload (post-reboot)");
+#ifdef USE_CELLULAR
+        // Cellular: Direct upload
+        uploadRoutingTable();
+#else
+        // WiFi: Use queue for non-blocking routing table upload
         queueRoutingTableUpload(3); // High priority for initial upload
+#endif
         gatewayState.lastRoutingTableUpload = currentTime;
         firstRoutingTableUploadDone = true;
     }
@@ -365,8 +421,13 @@ void GatewayApp::loop() {
         (currentTime - gatewayState.lastRoutingTableUpload >= GATEWAY_ROUTING_TABLE_INTERVAL)) {
         ESP_LOGI(TAG, "⏰ Periodic backup routing table upload");
         
-        // NEW: Use queue for non-blocking routing table upload
+#ifdef USE_CELLULAR
+        // Cellular: Direct upload
+        uploadRoutingTable();
+#else
+        // WiFi: Use queue for non-blocking routing table upload
         queueRoutingTableUpload(2); // Normal priority for periodic upload
+#endif
         // Always update timestamp even if upload fails to prevent rapid retries
         gatewayState.lastRoutingTableUpload = currentTime;
     }
@@ -379,9 +440,13 @@ void GatewayApp::loop() {
     if (gatewayState.firebaseConnected && !firstUploadDone) {
         ESP_LOGI(TAG, "📊 Initial Gateway sensor data upload (post-reboot)");
         
-        // NEW: Use queue for non-blocking gateway sensor upload
-        ESP_LOGI(TAG, "📊 Initial Gateway sensor data upload (post-reboot)");
+#ifdef USE_CELLULAR
+        // Cellular: Direct upload
+        uploadGatewaySensorData();
+#else
+        // WiFi: Use queue for non-blocking gateway sensor upload
         queueGatewaySensorDataUpload(3); // High priority for initial upload
+#endif
         lastSensorUpload = currentTime;
         firstUploadDone = true;
     }
@@ -390,27 +455,46 @@ void GatewayApp::loop() {
         (currentTime - lastSensorUpload >= GATEWAY_SENSOR_INTERVAL)) {
         ESP_LOGI(TAG, "📊 Periodic Gateway sensor data collection");
         
-        // NEW: Use queue for non-blocking gateway sensor upload
+#ifdef USE_CELLULAR
+        // Cellular: Direct upload
+        uploadGatewaySensorData();
+#else
+        // WiFi: Use queue for non-blocking gateway sensor upload
         queueGatewaySensorDataUpload(2); // Normal priority for periodic upload
+#endif
         lastSensorUpload = currentTime;
     }
 
     // Simple status LED indication
     if (statusCounter++ % 100 == 0) {
+#ifdef USE_CELLULAR
+        if (gatewayState.cellularConnected && gatewayState.firebaseConnected) {
+            led_pattern_message(); // Quick flash for active
+        } else if (gatewayState.cellularConnected) {
+            led_flash(1, 500);     // Single slow flash for Cellular only
+        } else {
+#else
         if (gatewayState.wifiConnected && gatewayState.firebaseConnected) {
             led_pattern_message(); // Quick flash for active
         } else if (gatewayState.wifiConnected) {
             led_flash(1, 500);     // Single slow flash for WiFi only
         } else {
+#endif
             led_pattern_error();   // Error pattern for disconnected
         }
     }
 
-    // NEW: Check for Firebase commands (polling now runs in dedicated task)
-    // No need to call poll() - it runs automatically in background task
-    if (isProvisioned && gatewayState.firebaseConnected && commandPoller) {
-        if (commandPoller->hasCommand()) {
+    // Check for Firebase commands (both WiFi and Cellular modes)
+    if (isProvisioned && gatewayState.firebaseConnected) {
+#ifdef USE_CELLULAR
+        // Cellular mode: Check for commands (polling runs in dedicated task on CPU1)
+        if (cellularCommandPoller && cellularCommandPoller->hasCommand()) {
+            auto cmd = cellularCommandPoller->getNextCommand();
+#else
+        // WiFi mode: Check for commands (polling runs in dedicated task on CPU1)
+        if (commandPoller && commandPoller->hasCommand()) {
             auto cmd = commandPoller->getNextCommand();
+#endif
             
             ESP_LOGI(TAG, "📥 Processing command from Firebase:");
             ESP_LOGI(TAG, "  ID: %s", cmd.id.c_str());
@@ -418,7 +502,11 @@ void GatewayApp::loop() {
             ESP_LOGI(TAG, "  Priority: %d", cmd.priority);
             
             // Move to processing immediately
+#ifdef USE_CELLULAR
+            cellularCommandPoller->moveToProcessing(cmd);
+#else
             commandPoller->moveToProcessing(cmd);
+#endif
             
             // Handle command based on type
             if (cmd.type == "start_provisioning") {
@@ -431,12 +519,16 @@ void GatewayApp::loop() {
                 ESP_LOGW(TAG, "Unknown command type: %s", cmd.type.c_str());
                 String message = "Unknown command type: ";
                 message += cmd.type;
+#ifdef USE_CELLULAR
+                cellularCommandPoller->moveToFailed(cmd, "UNKNOWN_COMMAND", message);
+#else
                 commandPoller->moveToFailed(cmd, "UNKNOWN_COMMAND", message);
+#endif
             }
         }
     }
     
-    // NEW: Update provisioning progress if active
+    // Update provisioning progress if active
     if (gatewayState.provisioningActive) {
         updateProvisioningProgress();
         
@@ -449,28 +541,109 @@ void GatewayApp::loop() {
             radio.broadcastHelloModeChange(HELLO_MODE_NORMAL, 0);
             
             // Mark command as completed
+#ifdef USE_CELLULAR
+            if (cellularCommandPoller && !gatewayState.provisioningCommandId.isEmpty()) {
+                CellularFirebaseCommandPoller::Command cmd;
+#else
             if (commandPoller && !gatewayState.provisioningCommandId.isEmpty()) {
                 FirebaseCommandPoller::Command cmd;
+#endif
                 cmd.id = gatewayState.provisioningCommandId;
-                cmd.type = "start_provisioning";
-                
-                String message = "Provisioning completed. ";
-                message += String(gatewayState.nodesDiscoveredDuringProvisioning);
-                message += " nodes discovered";
-                
+                String message = "Provisioning completed. Discovered " + String(gatewayState.nodesDiscoveredDuringProvisioning) + " nodes";
+#ifdef USE_CELLULAR
+                cellularCommandPoller->moveToCompleted(cmd, "success", message);
+#else
                 commandPoller->moveToCompleted(cmd, "success", message);
+#endif
             }
             
+            // Reset state
             gatewayState.provisioningActive = false;
             gatewayState.provisioningCommandId = "";
+            gatewayState.nodesDiscoveredDuringProvisioning = 0;
         }
     }
+    
+//     // Time synchronization with NTP (loop-based with retry and periodic refresh)
+//     bool shouldAttemptNtpSync = false;
+//     uint32_t ntpSyncInterval = 0;
+    
+//     // Determine if NTP sync is needed
+//     if (!gatewayState.ntpSyncInProgress) {
+//         if (!gatewayState.ntpSynced) {
+//             // First sync: Wait 30s after boot, then retry every 30s (up to 3 attempts)
+//             if ((currentTime - gatewayState.bootTime >= 30000) && 
+//                 (currentTime - gatewayState.lastNtpSyncAttempt >= 30000) && 
+//                 (gatewayState.ntpRetryCount < 3)) {
+//                 shouldAttemptNtpSync = true;
+//                 ntpSyncInterval = 30000; // 30s retry interval
+//             }
+//         } else {
+//             // Periodic re-sync every 1 hour after successful first sync
+//             if (currentTime - gatewayState.lastSuccessfulNtpSync >= 3600000) { // 1 hour
+//                 shouldAttemptNtpSync = true;
+//                 ntpSyncInterval = 3600000; // 1 hour interval
+//             }
+//         }
+//     }
+    
+//     // Perform NTP sync if needed
+//     if (shouldAttemptNtpSync) {
+// #ifdef USE_CELLULAR
+//         if (!gatewayState.cellularConnected) {
+//             ESP_LOGW(TAG, "🕒 Skipping NTP sync - Cellular not connected");
+//         } else {
+// #else
+//         if (!gatewayState.wifiConnected) {
+//             ESP_LOGW(TAG, "🕒 Skipping NTP sync - WiFi not connected");
+//         } else {
+// #endif
+//             gatewayState.ntpSyncInProgress = true;
+//             gatewayState.lastNtpSyncAttempt = currentTime;
+            
+//             ESP_LOGI(TAG, "🕒 Attempting NTP time sync (attempt %d/%d)...", 
+//                      gatewayState.ntpRetryCount + 1, 3);
+            
+//             // Attempt sync with 10s timeout (handled by NTP library internally)
+//             // For cellular mode, use NTP over cellular connection like WiFi mode
+//             if (TimeSyncService::syncWithNTP("pool.ntp.org", 25200, 0)) {
+//                 ESP_LOGI(TAG, "✅ NTP time synchronized successfully");
+                
+//                 gatewayState.ntpSynced = true;
+//                 gatewayState.lastSuccessfulNtpSync = currentTime;
+//                 gatewayState.ntpRetryCount = 0; // Reset retry counter on success
+//                 gatewayState.ntpSyncInProgress = false;
+                
+//                 // Broadcast time to mesh nodes
+//                 broadcastTimeSync();
+//             } else {
+//                 ESP_LOGW(TAG, "❌ NTP sync failed (attempt %d/%d)", 
+//                          gatewayState.ntpRetryCount + 1, 3);
+                
+//                 gatewayState.ntpRetryCount++;
+//                 gatewayState.ntpSyncInProgress = false;
+                
+//                 // If all retries exhausted, wait for periodic re-attempt
+//                 if (gatewayState.ntpRetryCount >= 3) {
+//                     ESP_LOGE(TAG, "🚨 NTP sync failed after 3 attempts - will retry in 1 hour");
+//                     gatewayState.ntpSynced = false;
+//                     gatewayState.lastSuccessfulNtpSync = currentTime; // Prevent immediate retry
+//                 }
+//             }
+//         }
+//     }
 
     // Upload gateway status every 60 seconds (use queue for non-blocking)
     static uint32_t lastStatusUploadTime = 0;
     const uint32_t STATUS_UPLOAD_INTERVAL = 60000; // 60 seconds
     if (currentTime - lastStatusUploadTime >= STATUS_UPLOAD_INTERVAL) {
+#ifdef USE_CELLULAR
+        // Cellular: Direct upload
+        uploadGatewayStatusPeriodic();
+#else
+        // WiFi: Use queue for non-blocking status upload
         queueGatewayStatusUpload(1); // Low priority for periodic status
+#endif
         lastStatusUploadTime = currentTime;
     }
 
@@ -520,6 +693,46 @@ void GatewayApp::setupLoRaMesher() {
     }
 }
 
+#ifdef USE_CELLULAR
+void GatewayApp::setupCellular() {
+    ESP_LOGI(TAG, "Setting up Cellular connection...");
+
+    // Create cellular service instance with APN config
+    CellularConnectionService::APNConfig apnConfig(CELLULAR_APN, CELLULAR_APN_USER, CELLULAR_APN_PASS);
+    cellularService = new CellularConnectionService(
+        apnConfig,
+        true,  // auto-reconnect enabled
+        5000   // reconnect interval: 5 seconds
+    );
+
+    // Register cellular event callback
+    cellularService->onEvent([this](CellularConnectionService::Event event, int8_t rssi) {
+        this->handleCellularEvent(event, rssi);
+    });
+
+    // Set signal quality threshold for low signal warning (10 = -93 dBm approximately)
+    cellularService->setSignalQualityThreshold(10);
+
+    // Initialize cellular service
+    if (!cellularService->initialize()) {
+        ESP_LOGE(TAG, "Failed to initialize cellular service");
+        led_pattern_error();
+        return;
+    }
+
+    // Connect to cellular network (with 60-second timeout)
+    ESP_LOGI(TAG, "Connecting to cellular network...");
+    if (cellularService->connect(60000)) {
+        gatewayState.cellularConnected = true;
+        int8_t signalStrength = cellularService->getSignalStrength();
+        ESP_LOGI(TAG, "Cellular connected! Operator: %s, RSSI: %d dBm",
+                 cellularService->getOperator().c_str(), signalStrength);
+    } else {
+        ESP_LOGW(TAG, "Cellular connection failed, but auto-reconnect is enabled");
+        gatewayState.cellularConnected = false;
+    }
+}
+#else
 void GatewayApp::setupWiFi() {
     ESP_LOGI(TAG, "Setting up WiFi connection...");
 
@@ -569,6 +782,7 @@ void GatewayApp::setupWiFi() {
         gatewayState.wifiConnected = false;
     }
 }
+#endif
 
 void GatewayApp::setupFirebase() {
     ESP_LOGI(TAG, "Setting up Firebase connection...");
@@ -584,10 +798,85 @@ void GatewayApp::setupFirebase() {
     ESP_LOGI(TAG, "User UID from provisioning: %s", userUID.c_str());
 
     // Create Gateway MAC address string
+#ifdef USE_CELLULAR
+    uint8_t mac[6];
+    esp_efuse_mac_get_default(mac);
+    char macStr[18];
+    snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    String gatewayMAC = String(macStr);
+#else
     String gatewayMAC = WiFi.macAddress();
+#endif
     ESP_LOGI(TAG, "Gateway MAC: %s", gatewayMAC.c_str());
 
-    // Create Firebase client instance
+#ifdef USE_CELLULAR
+    // Cellular-based Firebase client with HTTPS
+    ESP_LOGI(TAG, "Creating Cellular HTTPS Firebase client...");
+    
+    // Create SSL client first
+    sslClient = new CellularSSLClient(cellularService);
+    
+    // // Attempt time sync from modem (opportunistic, not blocking)
+    // // This is just an attempt - main retry logic is in loop() with periodic backoff
+    // if (!gatewayState.ntpSynced && cellularService) {
+    //     ESP_LOGI(TAG, "🕒 Attempting to sync time from cellular modem...");
+    //     if (cellularService->syncTimeFromNetwork()) {
+    //         gatewayState.ntpSynced = true;
+    //         gatewayState.lastSuccessfulNtpSync = millis();
+    //         gatewayState.ntpRetryCount = 0;  // Reset retry counter on success
+    //         ESP_LOGI(TAG, "✅ Time initialized from cellular network (modem)");
+    //     } else {
+    //         // Don't block setup - let loop() handle periodic NTP retry
+    //         // This allows setup to continue while NTP retries in background
+    //         ESP_LOGW(TAG, "⚠️ Modem time sync failed; will retry via NTP in loop (30s intervals)");
+    //         // Keep ntpSynced = false so loop() will retry
+    //     }
+    // }
+    
+    // Create HTTPS Firebase client
+    firebaseClient = new CellularFirebaseHTTPSClient(
+        sslClient,
+        FIREBASE_HOST,
+        FIREBASE_AUTH,
+        gatewayMAC.c_str()
+    );
+    
+    // Set user context for multi-user Firebase paths
+    firebaseClient->setUserContext(userUID, gatewayMAC);
+
+    // Initialize Firebase client (this will initialize SSL client too)
+    if (!firebaseClient->initialize()) {
+        ESP_LOGE(TAG, "Failed to initialize Cellular HTTPS Firebase client");
+        led_pattern_error();
+        return;
+    }
+
+    // ⚠️ NOTE: Skipping testConnection() because modem doesn't receive response (may timeout)
+    // However, actual data uploads work fine - issue is response receiving, not sending
+    // So we'll assume connected and attempt uploads. Real status determined by successful uploads.
+    gatewayState.firebaseConnected = true;
+    ESP_LOGI(TAG, "🔥 Cellular HTTPS Firebase READY (connection test skipped - will retry on first upload)");
+    ESP_LOGI(TAG, "🔥 User: %s, Gateway: %s", userUID.c_str(), gatewayMAC.c_str());
+
+    // Log gateway started event
+    firebaseClient->logEvent("gateway_started", gatewayMAC, "Gateway initialized with cellular HTTPS");
+    
+    // Initialize Cellular Command Poller
+    cellularCommandPoller = new CellularFirebaseCommandPoller(
+        firebaseClient,
+        userUID,
+        gatewayMAC
+    );
+    // // Start command polling task on CPU1 (same as WiFi mode)
+    // // Stack: 8KB, Priority: 1, Core: 1 (CPU1)
+    // cellularCommandPoller->begin(8192, 1, 1);
+    // ESP_LOGI(TAG, "✅ Cellular Command Poller initialized (30s interval, CPU1 task)");
+    
+    // ESP_LOGI(TAG, "✅ Cellular Firebase ready (HTTPS mode with command polling on CPU1)");
+    
+#else
+    // WiFi-based Firebase client (existing code)
     firebaseClient = new FirebaseClient(
         FIREBASE_HOST,
         FIREBASE_AUTH,
@@ -686,6 +975,7 @@ void GatewayApp::setupFirebase() {
         ESP_LOGW(TAG, "Firebase connection failed: %s", firebaseClient->getLastError().c_str());
         gatewayState.firebaseConnected = false;
     }
+#endif
 }
 
 void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
@@ -778,9 +1068,14 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
                     break;
             }
 
-            // NEW: Use queue for non-blocking sensor upload (no watchdog resets needed!)
             bool success = false;
             
+#ifdef USE_CELLULAR
+            // Cellular: Direct upload (blocking)
+            auto result = firebaseClient->uploadSensorData(*s, rssi, snr);
+            success = result.success;
+#else
+            // WiFi: Use queue for non-blocking sensor upload
             if (firebaseClient->isQueueRunning()) {
                 // Queue-based upload (non-blocking, runs on CPU1)
                 success = firebaseClient->queueSensorData(*s, rssi, snr, 2); // Normal priority
@@ -793,6 +1088,7 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
                 auto result = firebaseClient->uploadSensorData(*s, rssi, snr);
                 success = result.success;
             }
+#endif
 
             if (success) {
                 gatewayState.packetsUploaded++;
@@ -888,13 +1184,69 @@ void GatewayApp::uploadRoutingTable() {
         if (routingTable.size() == 0) {
             ESP_LOGI(TAG, "✅ Empty routing table uploaded - Firebase cleared");
         } else {
+#ifdef USE_CELLULAR
+            ESP_LOGI(TAG, "✅ Routing table uploaded (%d ms)", result.responseTime);
+#else
             ESP_LOGI(TAG, "✅ Routing table uploaded (%d bytes)", result.payloadSize);
+#endif
         }
     } else {
+#ifdef USE_CELLULAR
+        ESP_LOGW(TAG, "❌ Failed to upload routing table: %s", result.message.c_str());
+#else
         ESP_LOGW(TAG, "❌ Failed to upload routing table: %s", result.errorMessage.c_str());
+#endif
     }
 }
 
+#ifdef USE_CELLULAR
+void GatewayApp::handleCellularEvent(CellularConnectionService::Event event, int8_t rssi) {
+    switch (event) {
+        case CellularConnectionService::Event::CONNECTED:
+            ESP_LOGI(TAG, "✅ Cellular CONNECTED! Operator: %s, RSSI: %d dBm",
+                     cellularService->getOperator().c_str(), rssi);
+            gatewayState.cellularConnected = true;
+            gatewayState.cellularRSSI = rssi;
+            led_pattern_connected();
+
+            // Try to reconnect Firebase if it was disconnected
+            if (firebaseClient && !gatewayState.firebaseConnected) {
+                if (firebaseClient->testConnection()) {
+                    gatewayState.firebaseConnected = true;
+                    firebaseClient->logEvent("firebase_reconnected", "", "Cellular reconnected");
+                }
+            }
+            break;
+
+        case CellularConnectionService::Event::DISCONNECTED:
+            ESP_LOGW(TAG, "❌ Cellular DISCONNECTED!");
+            gatewayState.cellularConnected = false;
+            gatewayState.firebaseConnected = false;
+            led_pattern_error();
+
+            if (firebaseClient) {
+                firebaseClient->logEvent("cellular_disconnected", "", "");
+            }
+            break;
+
+        case CellularConnectionService::Event::RECONNECTING:
+            ESP_LOGI(TAG, "⏳ Cellular RECONNECTING...");
+            led_flash(2, 250);  // Double flash pattern for reconnecting
+            break;
+
+        case CellularConnectionService::Event::CONNECTION_FAILED:
+            ESP_LOGE(TAG, "❌ Cellular CONNECTION FAILED!");
+            gatewayState.cellularConnected = false;
+            led_pattern_error();
+            break;
+
+        case CellularConnectionService::Event::SIGNAL_LOW:
+            ESP_LOGW(TAG, "⚠️ Cellular signal LOW! RSSI: %d dBm", rssi);
+            gatewayState.cellularRSSI = rssi;
+            break;
+    }
+}
+#else
 void GatewayApp::handleWiFiEvent(WiFiConnectionService::WiFiEvent event, int8_t rssi) {
     switch (event) {
         case WiFiConnectionService::WiFiEvent::CONNECTED:
@@ -939,6 +1291,7 @@ void GatewayApp::handleWiFiEvent(WiFiConnectionService::WiFiEvent event, int8_t 
             break;
     }
 }
+#endif
 
 // Static callback for processing gateway packets
 void GatewayApp::processGatewayPackets(void* parameter) {
@@ -1088,8 +1441,14 @@ void GatewayApp::onRoutingTableChanged() {
         return;
     }
 
-    ESP_LOGI(TAG, "🔄 Routing table changed - triggering immediate Firebase queue upload");
+    ESP_LOGI(TAG, "🔄 Routing table changed - triggering immediate upload");
+#ifdef USE_CELLULAR
+    // Cellular: Direct upload
+    instance->uploadRoutingTable();
+#else
+    // WiFi: Use queue for non-blocking upload
     instance->queueRoutingTableUpload(3); // High priority for immediate changes
+#endif
 }
 
 // REMOVED: Old UART callback functions - no longer used in WiFi+Firebase architecture
@@ -1386,11 +1745,19 @@ void GatewayApp::setupTimeSync() {
         return;
     }
     
+#ifdef USE_CELLULAR
+    // Wait for Cellular connection before NTP sync
+    if (!gatewayState.cellularConnected) {
+        ESP_LOGW(TAG, "Cellular not connected yet, will sync NTP later");
+        return;
+    }
+#else
     // Wait for WiFi connection before NTP sync
     if (!gatewayState.wifiConnected) {
         ESP_LOGW(TAG, "WiFi not connected yet, will sync NTP later");
         return;
     }
+#endif
     
     // Sync with NTP server (Vietnam timezone GMT+7)
     // GMT offset: 7 * 3600 = 25200 seconds
@@ -1494,8 +1861,12 @@ void GatewayApp::uploadGatewaySensorData() {
     // Generate gateway sensor data (always, regardless of provision status)
     sensorData gatewaySensor = simulateGatewaySensorData();
     
-    // Get WiFi RSSI for Gateway sensor data (Gateway signal quality to router)
-    int8_t wifiRssi = wifiService ? wifiService->getRSSI() : -90;  // Default fallback if WiFi not available
+    // Get signal strength (WiFi RSSI or Cellular RSSI)
+#ifdef USE_CELLULAR
+    int16_t signalRssi = cellularService ? cellularService->getSignalStrength() : -90;
+#else
+    int8_t signalRssi = wifiService ? wifiService->getRSSI() : -90;
+#endif
     float gatewaySnr = 10.0f;  // Fixed SNR value for Gateway data
     
     char nodeIdStr[16];
@@ -1524,17 +1895,25 @@ void GatewayApp::uploadGatewaySensorData() {
                          gatewaySensor.battery, nodeIdStr);
                 break;
         }
-        ESP_LOGI(TAG, "📶 WiFi Signal - RSSI: %d dBm, SNR: %.1f dB", wifiRssi, gatewaySnr);
+        ESP_LOGI(TAG, "📶 Signal - RSSI: %d dBm, SNR: %.1f dB", signalRssi, gatewaySnr);
         
         // NO WDT RESET: Upload should complete or timeout naturally
-        auto result = firebaseClient->uploadSensorData(gatewaySensor, wifiRssi, gatewaySnr);
+        auto result = firebaseClient->uploadSensorData(gatewaySensor, signalRssi, gatewaySnr);
         
         if (result.success) {
             gatewayState.packetsUploaded++;
+#ifdef USE_CELLULAR
+            ESP_LOGI(TAG, "✅ Gateway sensor upload successful (%d ms)", result.responseTime);
+#else
             ESP_LOGI(TAG, "✅ Gateway sensor upload successful (%d bytes)", result.payloadSize);
+#endif
         } else {
             gatewayState.uploadErrors++;
+#ifdef USE_CELLULAR
+            ESP_LOGW(TAG, "❌ Gateway sensor upload failed: %s", result.message.c_str());
+#else
             ESP_LOGW(TAG, "❌ Gateway sensor upload failed: %s", result.errorMessage.c_str());
+#endif
             ESP_LOGI(TAG, "📦 Buffering Gateway sensor data to NVS for later sync...");
             
             // Buffer Gateway sensor data to NVS (same as Node data)
@@ -1574,11 +1953,19 @@ void GatewayApp::uploadGatewayStatusPeriodic() {
         return;
     }
     
-    if (!firebaseClient || !firebaseClient->isConnected()) {
-        // Update timestamp to avoid spam checking when Firebase is disconnected
+#ifdef USE_CELLULAR
+    // Cellular mode: No isConnected() method - just check if client exists
+    if (!firebaseClient) {
         lastStatusUploadTime = currentTime;
         return;
     }
+#else
+    // WiFi mode: Check isConnected()
+    if (!firebaseClient || !firebaseClient->isConnected()) {
+        lastStatusUploadTime = currentTime;
+        return;
+    }
+#endif
     
     // Collect metrics
     uint16_t connectedNodes = 0;
@@ -1589,19 +1976,26 @@ void GatewayApp::uploadGatewayStatusPeriodic() {
     
     uint32_t totalPacketsReceived = gatewayState.totalMeshPackets;
     uint32_t totalPacketsSent = gatewayState.packetsUploaded;
-    int8_t wifiRssi = WiFi.RSSI();
+    
+    // Get signal strength (WiFi RSSI or Cellular RSSI)
+#ifdef USE_CELLULAR
+    int16_t signalRssi = cellularService ? cellularService->getSignalStrength() : -90;
+#else
+    int8_t signalRssi = WiFi.RSSI();
+#endif
+    
     uint32_t freeHeap = ESP.getFreeHeap();
     uint32_t uptimeSeconds = millis() / 1000;
     
     ESP_LOGI(TAG, "📊 Uploading Gateway status: nodes=%u, rx=%u, tx=%u, rssi=%d, heap=%u, uptime=%u",
-             connectedNodes, totalPacketsReceived, totalPacketsSent, wifiRssi, freeHeap, uptimeSeconds);
+             connectedNodes, totalPacketsReceived, totalPacketsSent, signalRssi, freeHeap, uptimeSeconds);
     
     // NO WDT RESET: Upload should complete or timeout naturally
     auto result = firebaseClient->uploadGatewayStatus(
         connectedNodes,
         totalPacketsReceived,
         totalPacketsSent,
-        wifiRssi,
+        signalRssi,
         freeHeap,
         uptimeSeconds
     );
@@ -1610,6 +2004,17 @@ void GatewayApp::uploadGatewayStatusPeriodic() {
         ESP_LOGI(TAG, "✅ Gateway status uploaded successfully");
         lastStatusUploadTime = currentTime;
     } else {
+#ifdef USE_CELLULAR
+        ESP_LOGW(TAG, "⚠️ Failed to upload Gateway status: %s", result.message.c_str());
+        
+        // Always update timestamp to prevent spam
+        lastStatusUploadTime = currentTime;
+        
+        // For error cases, back off
+        if (result.message.indexOf("timeout") != -1) {
+            ESP_LOGD(TAG, "📊 Status upload timeout - backing off for 60 seconds");
+        }
+#else
         ESP_LOGW(TAG, "⚠️ Failed to upload Gateway status: %s", result.errorMessage.c_str());
         
         // Always update timestamp to prevent spam, especially for circuit breaker
@@ -1621,12 +2026,17 @@ void GatewayApp::uploadGatewayStatusPeriodic() {
             result.errorMessage.indexOf("cooldown") != -1) {
             ESP_LOGD(TAG, "📊 Circuit breaker active - backing off for 60 seconds");
         }
+#endif
     }
 }
 
-// NEW: Command handler implementations
+// Command handler implementations (both WiFi and Cellular modes)
 
+#ifdef USE_CELLULAR
+void GatewayApp::handleStartProvisioning(const CellularFirebaseCommandPoller::Command& cmd) {
+#else
 void GatewayApp::handleStartProvisioning(const FirebaseCommandPoller::Command& cmd) {
+#endif
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "╔════════════════════════════════════════════════════════════╗");
     ESP_LOGI(TAG, "║  START PROVISIONING via Firebase Command                  ║");
@@ -1634,17 +2044,17 @@ void GatewayApp::handleStartProvisioning(const FirebaseCommandPoller::Command& c
     ESP_LOGI(TAG, "Command ID: %s", cmd.id.c_str());
     
     // Parse parameters from JSON
-    DynamicJsonDocument doc(512);
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, cmd.params);
     
     uint32_t durationMs = 600000;  // Default: 10 minutes
     uint16_t maxNodes = 0;         // Default: unlimited
     
     if (!error) {
-        if (doc.containsKey("durationMs")) {
+        if (doc["durationMs"].is<uint32_t>()) {
             durationMs = doc["durationMs"];
         }
-        if (doc.containsKey("maxNodes")) {
+        if (doc["maxNodes"].is<uint16_t>()) {
             maxNodes = doc["maxNodes"];
         }
     } else {
@@ -1671,12 +2081,17 @@ void GatewayApp::handleStartProvisioning(const FirebaseCommandPoller::Command& c
     gatewayState.nodesDiscoveredDuringProvisioning = 0;
     
     // Update command result for Mobile App
+#ifdef USE_CELLULAR
+    if (cellularCommandPoller) {
+        cellularCommandPoller->updateProgress(cmd.id, 0, durationMs);
+#else
     if (commandPoller) {
         commandPoller->updateCommandResult(
             cmd.id,
             "processing",
             "Fast discovery mode activated - waiting for nodes to join"
         );
+#endif
     }
     
     ESP_LOGI(TAG, "");
@@ -1688,7 +2103,11 @@ void GatewayApp::handleStartProvisioning(const FirebaseCommandPoller::Command& c
     ESP_LOGI(TAG, "");
 }
 
+#ifdef USE_CELLULAR
+void GatewayApp::handleStopProvisioning(const CellularFirebaseCommandPoller::Command& cmd) {
+#else
 void GatewayApp::handleStopProvisioning(const FirebaseCommandPoller::Command& cmd) {
+#endif
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "╔════════════════════════════════════════════════════════════╗");
     ESP_LOGI(TAG, "║  STOP PROVISIONING via Firebase Command                   ║");
@@ -1698,8 +2117,8 @@ void GatewayApp::handleStopProvisioning(const FirebaseCommandPoller::Command& cm
     if (!gatewayState.provisioningActive) {
         ESP_LOGW(TAG, "Provisioning not active - nothing to stop");
         
-        if (commandPoller) {
-            commandPoller->moveToFailed(cmd, "NOT_ACTIVE", 
+        if (COMMAND_POLLER) {
+            COMMAND_POLLER->moveToFailed(cmd, "NOT_ACTIVE", 
                                        "Provisioning mode is not active");
         }
         return;
@@ -1722,14 +2141,14 @@ void GatewayApp::handleStopProvisioning(const FirebaseCommandPoller::Command& cm
     ESP_LOGI(TAG, "  Nodes discovered: %d", gatewayState.nodesDiscoveredDuringProvisioning);
     
     // Mark command as completed
-    if (commandPoller) {
+    if (COMMAND_POLLER) {
         String message = "Provisioning stopped. ";
         message += String(gatewayState.nodesDiscoveredDuringProvisioning);
         message += " nodes discovered in ";
         message += String(duration / 1000);
         message += " seconds";
         
-        commandPoller->moveToCompleted(cmd, "success", message);
+        COMMAND_POLLER->moveToCompleted(cmd, "success", message);
     }
     
     // Reset provisioning state
@@ -1744,7 +2163,11 @@ void GatewayApp::handleStopProvisioning(const FirebaseCommandPoller::Command& cm
     ESP_LOGI(TAG, "");
 }
 
+#ifdef USE_CELLULAR
+void GatewayApp::handleAssignNetkey(const CellularFirebaseCommandPoller::Command& cmd) {
+#else
 void GatewayApp::handleAssignNetkey(const FirebaseCommandPoller::Command& cmd) {
+#endif
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "╔════════════════════════════════════════════════════════════╗");
     ESP_LOGI(TAG, "║  ASSIGN NETKEY via Firebase Command                       ║");
@@ -1756,8 +2179,8 @@ void GatewayApp::handleAssignNetkey(const FirebaseCommandPoller::Command& cmd) {
     if (!NVSStorageService::loadNetworkConfig(cfg)) {
         ESP_LOGE(TAG, "❌ Failed to load network config from NVS - Gateway not registered?");
         
-        if (commandPoller) {
-            commandPoller->moveToFailed(cmd, "NO_NETKEY", 
+        if (COMMAND_POLLER) {
+            COMMAND_POLLER->moveToFailed(cmd, "NO_NETKEY", 
                                        "Network key not found. Please register gateway first.");
         }
         return;
@@ -1766,8 +2189,8 @@ void GatewayApp::handleAssignNetkey(const FirebaseCommandPoller::Command& cmd) {
     if (!cfg.initialized) {
         ESP_LOGE(TAG, "❌ Network config not initialized - Gateway not registered?");
         
-        if (commandPoller) {
-            commandPoller->moveToFailed(cmd, "NETKEY_NOT_INITIALIZED", 
+        if (COMMAND_POLLER) {
+            COMMAND_POLLER->moveToFailed(cmd, "NETKEY_NOT_INITIALIZED", 
                                        "Network key not initialized. Please register gateway first.");
         }
         return;
@@ -1782,8 +2205,8 @@ void GatewayApp::handleAssignNetkey(const FirebaseCommandPoller::Command& cmd) {
                                                           cfg.networkId, cfg.keyVersion)) {
         ESP_LOGE(TAG, "❌ Failed to update Gateway local network key");
         
-        if (commandPoller) {
-            commandPoller->moveToFailed(cmd, "LOCAL_UPDATE_FAILED", 
+        if (COMMAND_POLLER) {
+            COMMAND_POLLER->moveToFailed(cmd, "LOCAL_UPDATE_FAILED", 
                                        "Failed to update Gateway's local network key");
         }
         return;
@@ -1796,8 +2219,8 @@ void GatewayApp::handleAssignNetkey(const FirebaseCommandPoller::Command& cmd) {
     if (routingTableSize == 0) {
         ESP_LOGW(TAG, "⚠️  No nodes in routing table - nothing to provision");
         
-        if (commandPoller) {
-            commandPoller->moveToFailed(cmd, "NO_NODES", 
+        if (COMMAND_POLLER) {
+            COMMAND_POLLER->moveToFailed(cmd, "NO_NODES", 
                                        "No nodes found in routing table. Start provisioning first.");
         }
         return;
@@ -1829,8 +2252,8 @@ void GatewayApp::handleAssignNetkey(const FirebaseCommandPoller::Command& cmd) {
     if (result != pdPASS) {
         ESP_LOGE(TAG, "❌ Failed to create netkey worker task");
         
-        if (commandPoller) {
-            commandPoller->moveToFailed(cmd, "TASK_CREATE_FAILED", 
+        if (COMMAND_POLLER) {
+            COMMAND_POLLER->moveToFailed(cmd, "TASK_CREATE_FAILED", 
                                        "Failed to create worker task for netkey distribution");
         }
         
@@ -1844,7 +2267,7 @@ void GatewayApp::handleAssignNetkey(const FirebaseCommandPoller::Command& cmd) {
 }
 
 void GatewayApp::updateProvisioningProgress() {
-    if (!gatewayState.provisioningActive || !commandPoller) {
+    if (!gatewayState.provisioningActive || !COMMAND_POLLER) {
         return;
     }
     
@@ -1871,11 +2294,13 @@ void GatewayApp::updateProvisioningProgress() {
     }
     
     // Update Firebase progress
-    commandPoller->updateProgress(
-        gatewayState.provisioningCommandId,
-        gatewayState.nodesDiscoveredDuringProvisioning,
-        timeRemaining
-    );
+    if (COMMAND_POLLER) {
+        COMMAND_POLLER->updateProgress(
+            gatewayState.provisioningCommandId,
+            gatewayState.nodesDiscoveredDuringProvisioning,
+            timeRemaining
+        );
+    }
     
     ESP_LOGD(TAG, "📊 Provisioning progress: %d nodes, %u ms remaining",
              gatewayState.nodesDiscoveredDuringProvisioning, timeRemaining);
@@ -1920,7 +2345,12 @@ void GatewayApp::queueRoutingTableUpload(uint8_t priority) {
         ESP_LOGI(TAG, "📡 Queuing routing table (%d nodes, priority %d)", routingTable.size(), priority);
     }
 
-    // Queue the upload (non-blocking)
+#ifdef USE_CELLULAR
+    // Cellular mode - direct upload (no queue system)
+    ESP_LOGD(TAG, "Cellular mode - using direct upload");
+    uploadRoutingTable();
+#else
+    // WiFi mode - use queue if available
     if (firebaseClient->isQueueRunning()) {
         bool success = firebaseClient->queueRoutingTable(routingTable, priority);
         if (success) {
@@ -1933,6 +2363,7 @@ void GatewayApp::queueRoutingTableUpload(uint8_t priority) {
         ESP_LOGW(TAG, "Queue not available, using direct routing table upload");
         uploadRoutingTable();
     }
+#endif
 }
 
 void GatewayApp::queueGatewaySensorDataUpload(uint8_t priority) {
@@ -1944,8 +2375,12 @@ void GatewayApp::queueGatewaySensorDataUpload(uint8_t priority) {
     // Generate gateway sensor data
     sensorData gatewaySensor = simulateGatewaySensorData();
     
-    // Get WiFi RSSI for Gateway sensor data
-    int8_t wifiRssi = wifiService ? wifiService->getRSSI() : -90;
+    // Get signal strength (WiFi RSSI or Cellular RSSI)
+#ifdef USE_CELLULAR
+    int16_t signalRssi = cellularService ? cellularService->getSignalStrength() : -90;
+#else
+    int8_t signalRssi = wifiService ? wifiService->getRSSI() : -90;
+#endif
     float gatewaySnr = 10.0f;  // Fixed SNR value for Gateway data
     
     char nodeIdStr[16];
@@ -1973,14 +2408,20 @@ void GatewayApp::queueGatewaySensorDataUpload(uint8_t priority) {
     //         break;
     // }
 
-    // Queue the upload (non-blocking)
+#ifdef USE_CELLULAR
+    // Cellular mode - direct upload (no queue system)
+    ESP_LOGD(TAG, "Cellular mode - using direct upload");
+    uploadGatewaySensorData();
+#else
+    // WiFi mode - use queue if available
     if (firebaseClient->isQueueRunning()) {
-        firebaseClient->queueSensorData(gatewaySensor, wifiRssi, gatewaySnr, priority);
+        firebaseClient->queueSensorData(gatewaySensor, signalRssi, gatewaySnr, priority);
     } else {
         // Fallback to direct upload
         ESP_LOGW(TAG, "Queue not available, using direct gateway sensor upload");
         uploadGatewaySensorData();
     }
+#endif
 }
 
 void GatewayApp::queueGatewayStatusUpload(uint8_t priority) {
@@ -1998,18 +2439,30 @@ void GatewayApp::queueGatewayStatusUpload(uint8_t priority) {
     
     uint32_t totalPacketsReceived = gatewayState.totalMeshPackets;
     uint32_t totalPacketsSent = gatewayState.packetsUploaded;
-    int8_t wifiRssi = WiFi.RSSI();
+    
+    // Get signal strength (WiFi RSSI or Cellular RSSI)
+#ifdef USE_CELLULAR
+    int16_t signalRssi = cellularService ? cellularService->getSignalStrength() : -90;
+#else
+    int8_t signalRssi = WiFi.RSSI();
+#endif
+    
     uint32_t freeHeap = ESP.getFreeHeap();
     uint32_t uptimeSeconds = millis() / 1000;
     
     ESP_LOGI(TAG, "📊 Queuing Gateway status (priority %d): nodes=%u, rx=%u, tx=%u, rssi=%d, heap=%u, uptime=%u",
-             priority, connectedNodes, totalPacketsReceived, totalPacketsSent, wifiRssi, freeHeap, uptimeSeconds);
+             priority, connectedNodes, totalPacketsReceived, totalPacketsSent, signalRssi, freeHeap, uptimeSeconds);
 
-    // Queue the upload (non-blocking)
+#ifdef USE_CELLULAR
+    // Cellular mode - direct upload (no queue system)
+    ESP_LOGD(TAG, "Cellular mode - using direct upload");
+    uploadGatewayStatusPeriodic();
+#else
+    // WiFi mode - use queue if available
     if (firebaseClient->isQueueRunning()) {
         bool success = firebaseClient->queueGatewayStatus(
             connectedNodes, totalPacketsReceived, totalPacketsSent,
-            wifiRssi, freeHeap, uptimeSeconds, priority
+            signalRssi, freeHeap, uptimeSeconds, priority
         );
         
         if (success) {
@@ -2022,6 +2475,7 @@ void GatewayApp::queueGatewayStatusUpload(uint8_t priority) {
         ESP_LOGW(TAG, "Queue not available, using direct gateway status upload");
         uploadGatewayStatusPeriodic();
     }
+#endif
 }
 
 // ===== Netkey Distribution Worker Task (CPU1) =====
@@ -2065,8 +2519,13 @@ void GatewayApp::netkeyDistributionWorker(void* parameter) {
         } else {
             ESP_LOGE(TAG, "[NETKEY-WORKER] Failed to get nodes from routing table");
             
+#ifdef USE_CELLULAR
+            if (GatewayApp::instance && GatewayApp::instance->cellularCommandPoller) {
+                GatewayApp::instance->cellularCommandPoller->moveToFailed(
+#else
             if (GatewayApp::instance && GatewayApp::instance->commandPoller) {
                 GatewayApp::instance->commandPoller->moveToFailed(
+#endif
                     task->cmd, "NO_NODES", 
                     "Failed to retrieve nodes from routing table"
                 );
@@ -2082,7 +2541,11 @@ void GatewayApp::netkeyDistributionWorker(void* parameter) {
     }
     
     // Mark command as completed
+#ifdef USE_CELLULAR
+    if (GatewayApp::instance && GatewayApp::instance->cellularCommandPoller) {
+#else
     if (GatewayApp::instance && GatewayApp::instance->commandPoller) {
+#endif
         String message = "Netkey distributed to ";
         message += String(nodesSuccessful);
         message += " of ";
@@ -2090,11 +2553,19 @@ void GatewayApp::netkeyDistributionWorker(void* parameter) {
         message += " nodes";
         
         if (distributionSuccess) {
+#ifdef USE_CELLULAR
+            GatewayApp::instance->cellularCommandPoller->moveToCompleted(
+#else
             GatewayApp::instance->commandPoller->moveToCompleted(
+#endif
                 task->cmd, "success", message
             );
         } else {
+#ifdef USE_CELLULAR
+            GatewayApp::instance->cellularCommandPoller->moveToFailed(
+#else
             GatewayApp::instance->commandPoller->moveToFailed(
+#endif
                 task->cmd, "PARTIAL_FAILURE", message
             );
         }

@@ -3,8 +3,20 @@
 
 #include <Arduino.h>
 #include "gateway_config.h"
-#include "firebase_client.h"
-#include "wifi_connection_service.h"
+
+// Conditional compilation: WiFi or Cellular mode
+#ifdef USE_CELLULAR
+    #include "components/cellular/include/cellular_connection_service.h"
+    #include "components/cellular/include/cellular_ssl_client.h"
+    #include "components/cellular/include/cellular_firebase_https_client.h"
+    #include "components/cellular/include/firebase_command_queue.h"
+    #include "../../services/cellular_firebase_command_poller.h"
+#else
+    #include "firebase_client.h"
+    #include "wifi_connection_service.h"
+    #include "../../services/firebase_command_poller.h"
+#endif
+
 #include "led_control.h"
 #include "offline_data_buffer.h"
 #include "../common/mesh_utils.h"
@@ -16,26 +28,36 @@
 #include "components/lora_mesh_manager/src/services/ProvisioningProtocol.h"
 #include "components/lora_mesh_manager/src/services/TimeSyncService.h"
 #include "provision_manager.h"
-#include "../../services/firebase_command_poller.h"
 
 // Gateway state structure
 struct GatewayState {
+#ifdef USE_CELLULAR
+    bool cellularConnected = false;     // Cellular connection status
+    int8_t cellularRSSI = 0;            // Cellular signal strength
+#else
     bool wifiConnected = false;
+#endif
     bool firebaseConnected = false;
     uint32_t packetsUploaded = 0;
     uint32_t lastRoutingTableUpload = 0;
     uint32_t totalMeshPackets = 0;
     uint32_t uploadErrors = 0;
     uint32_t bootTime = 0;
-    uint32_t lastTimeSyncBroadcast = 0;  // Time of last time sync broadcast
-    bool ntpSynced = false;              // True if NTP time sync successful
+    uint32_t lastTimeSyncBroadcast = 0;
+    bool ntpSynced = false;
     
-    // NEW: Provisioning via Firebase command
-    bool provisioningActive = false;     // True if provisioning mode active
-    uint32_t provisioningStartTime = 0;  // When provisioning started
-    uint32_t provisioningEndTime = 0;    // When provisioning should end
-    String provisioningCommandId = "";   // Current provisioning command ID
-    uint16_t nodesDiscoveredDuringProvisioning = 0; // Count of nodes discovered
+    // Time sync state (loop-based, periodic with retry)
+    uint32_t lastNtpSyncAttempt = 0;
+    uint32_t lastSuccessfulNtpSync = 0;
+    uint8_t ntpRetryCount = 0;
+    bool ntpSyncInProgress = false;
+    
+    // Provisioning via Firebase command
+    bool provisioningActive = false;
+    uint32_t provisioningStartTime = 0;
+    uint32_t provisioningEndTime = 0;
+    String provisioningCommandId = "";
+    uint16_t nodesDiscoveredDuringProvisioning = 0;
 };
 
 class GatewayApp {
@@ -56,23 +78,41 @@ public:
 
 private:
     LoraMesher& radio;
+    
+#ifdef USE_CELLULAR
+    // Cellular components
+    CellularConnectionService* cellularService;
+    CellularSSLClient* sslClient;
+    CellularFirebaseHTTPSClient* firebaseClient;
+    CellularFirebaseCommandPoller* cellularCommandPoller;
+    FirebaseCommandQueue* commandQueue;
+#else
+    // WiFi components
     WiFiConnectionService* wifiService;
     FirebaseClient* firebaseClient;
+    FirebaseCommandPoller* commandPoller;
+#endif
+    
     GatewayState gatewayState;
     uint32_t statusCounter;
-    uint32_t sensorCounter;              // Counter for gateway sensor data
-    uint32_t lastStatusUploadTime;       // Timestamp of last gateway status upload
+    uint32_t sensorCounter;
+    uint32_t lastStatusUploadTime;
     gatewayStatus* statusPacket;
     ProvisioningService* provisioningService;
     ProvisionManager* provisionManager;
-    FirebaseCommandPoller* commandPoller;  // NEW: Command poller for Firebase commands
     
     // Counter tracking to prevent duplicate data storage
-    std::map<uint16_t, uint32_t> lastProcessedCounter;  // nodeId -> last processed counter
+    std::map<uint16_t, uint32_t> lastProcessedCounter;
     
     // Private methods
     void setupLoRaMesher();
+    
+#ifdef USE_CELLULAR
+    void setupCellular();
+#else
     void setupWiFi();
+#endif
+    
     void setupFirebase();
     void setupTimeSync();
     void broadcastTimeSync();
@@ -81,26 +121,39 @@ private:
     void loadNetworkConfiguration();
     void printSystemStatus();
     void uploadToFirebase(AppPacket<sensorData>* packet);
-    void uploadGatewaySensorData();     // Upload gateway's own sensor data
+    void uploadGatewaySensorData();
     void uploadRoutingTable();
-    void uploadGatewayStatusPeriodic(); // Upload gateway status periodically
-    sensorData simulateGatewaySensorData(); // Generate gateway sensor data
+    void uploadGatewayStatusPeriodic();
+    sensorData simulateGatewaySensorData();
+    
+#ifdef USE_CELLULAR
+    void handleCellularEvent(CellularConnectionService::Event event, int8_t rssi);
+#else
     void handleWiFiEvent(WiFiConnectionService::WiFiEvent event, int8_t rssi);
+#endif
     
     // NEW: Queue-based Firebase upload helpers (non-blocking)
     void queueRoutingTableUpload(uint8_t priority = 2);        // Queue routing table upload
     void queueGatewaySensorDataUpload(uint8_t priority = 2);   // Queue gateway sensor upload
     void queueGatewayStatusUpload(uint8_t priority = 2);       // Queue gateway status upload
     
-    // NEW: Command handlers for Firebase commands
+    // Command handlers for Firebase commands (both WiFi and Cellular)
+#ifdef USE_CELLULAR
+    typedef CellularFirebaseCommandPoller::Command CommandType;
+    void handleStartProvisioning(const CellularFirebaseCommandPoller::Command& cmd);
+    void handleStopProvisioning(const CellularFirebaseCommandPoller::Command& cmd);
+    void handleAssignNetkey(const CellularFirebaseCommandPoller::Command& cmd);
+#else
+    typedef FirebaseCommandPoller::Command CommandType;
     void handleStartProvisioning(const FirebaseCommandPoller::Command& cmd);
     void handleStopProvisioning(const FirebaseCommandPoller::Command& cmd);
     void handleAssignNetkey(const FirebaseCommandPoller::Command& cmd);
+#endif
     void updateProvisioningProgress();  // Update provisioning progress to Firebase
     
-    // NEW: Netkey distribution worker (runs on CPU1 to avoid blocking CPU0)
+    // Netkey distribution worker (runs on CPU1 to avoid blocking CPU0)
     struct NetkeyDistributionTask {
-        FirebaseCommandPoller::Command cmd;
+        CommandType cmd;
         NetworkConfig config;
         bool* completed;
     };
