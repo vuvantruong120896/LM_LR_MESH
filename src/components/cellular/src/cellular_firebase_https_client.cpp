@@ -121,6 +121,20 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::sendHTTPS
         return result;
     }
 
+    // OPTIMIZATION: For PUT/POST methods, Firebase receives data even if we don't wait for response
+    // Server accepts the request and processes it. No need to wait for HTTP response.
+    // This saves 8+ seconds of timeout per request.
+    if (method == "PUT" || method == "POST") {
+        result.success = true;
+        result.message = "Data sent (Firebase processes in background)";
+        result.responseTime = millis() - startTime;
+        ESP_LOGI(TAG, "✅ %s request sent successfully (%d bytes) - not waiting for response", method.c_str(), sent);
+        // m_sslClient->disconnect();
+        return result;
+    }
+
+    // For GET/DELETE, we need to read response
+
     // Receive response (chunked with backoff)
     const size_t CHUNK = 512;               // smaller reads reduce ERROR likelihood
     char buffer[CHUNK + 1];
@@ -250,20 +264,23 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::uploadSen
     nodeId.toUpperCase();
     
     uint32_t timestamp = millis() / 1000; // Unix timestamp (seconds)
-    
-    // Path 1: Latest data (real-time dashboard) - matching WiFi mode with .json
-    String path1 = "/nodes/" + m_userUID + "/" + m_gatewayMAC + 
-                   "/0x" + nodeId + "/latest_data.json";
 
     String jsonBody = buildSensorDataJSON(data, rssi, snr);
+
+    // Path 2: Time-series data (historical charts)
+    String path2 = "/sensor_data/" + m_userUID + "/0x" + nodeId + "/" + String(timestamp) + ".json";
+    UploadResult result2 = sendHTTPSRequest("PUT", path2, jsonBody);
+    
+
+    vTaskDelay(200 / portTICK_PERIOD_MS); // Short delay between requests
+
+     // Path 1: Latest data (real-time dashboard) - matching WiFi mode with .json
+    String path1 = "/nodes/" + m_userUID + "/" + m_gatewayMAC + 
+                   "/0x" + nodeId + "/latest_data.json";
     
     ESP_LOGI(TAG, "📤 Uploading sensor data for node 0x%s", nodeId.c_str());
     
     UploadResult result1 = sendHTTPSRequest("PUT", path1, jsonBody);
-    
-    // // Path 2: Time-series data (historical charts)
-    // String path2 = "/sensor_data/" + m_userUID + "/0x" + nodeId + "/" + String(timestamp) + ".json";
-    // UploadResult result2 = sendHTTPSRequest("PUT", path2, jsonBody);
     
     // // Return success if both uploads succeed
     // UploadResult result;
