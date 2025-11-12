@@ -128,7 +128,7 @@ bool CellularSSLClient::stopHTTPService() {
 bool CellularSSLClient::connect(const String& host, uint16_t port, uint32_t timeoutMs) {
     if (m_state == State::CONNECTED) {
         ESP_LOGW(TAG, "Already connected, disconnecting first");
-        disconnect();
+        // disconnect();
     }
 
     if (!m_httpServiceStarted && !initialize()) {
@@ -368,7 +368,8 @@ bool CellularSSLClient::disconnect() {
 
         ESP_LOGI(TAG, "Closing HTTPS connection (session %d)", m_sessionId);
 
-        ATCommandHandler::Response resp = m_atHandler->sendCommand(cmd.c_str(), 5000);
+        ATCommandHandler::Response resp = m_atHandler->sendCommand(cmd.c_str(), 3000);
+
         if (!resp.success) {
             ESP_LOGW(TAG, "Failed to close HTTPS connection");
         }

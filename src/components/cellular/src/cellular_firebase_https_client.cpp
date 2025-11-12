@@ -134,8 +134,8 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::sendHTTPS
     uint32_t readStart = millis();
     uint32_t backoffMs = 200;               // start with 200ms backoff when no data (cellular needs more time)
     uint32_t pollCount = 0;
-    while (millis() - readStart < 3000) {  // 3s overall window for cellular response (server processing + network latency)
-        int received = m_sslClient->receive(buffer, CHUNK, 3000); 
+    while (millis() - readStart < 8000) {  // 8s overall window for cellular response (server processing + network latency)
+        int received = m_sslClient->receive(buffer, CHUNK, 2000); 
         pollCount++;
         
         if (received > 0) {
@@ -182,12 +182,12 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::sendHTTPS
         }
     }
 
-    m_sslClient->disconnect();
+    // m_sslClient->disconnect();
 
     result.responseTime = millis() - startTime;
 
     if (totalReceived == 0) {
-        result.message = "No response received (timeout after 3s)";
+        result.message = "No response received (timeout after 8s)";
         ESP_LOGW(TAG, "%s - Check cellular network latency", result.message.c_str());
         return result;
     }
