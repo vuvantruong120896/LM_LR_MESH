@@ -331,15 +331,42 @@ bool CellularFirebaseHTTPSClient::logEvent(const String& eventType, const String
 }
 
 String CellularFirebaseHTTPSClient::buildSensorDataJSON(const sensorData& data, int8_t rssi, float snr) {
+    // Match WiFi format exactly for Firebase compatibility
     JsonDocument doc;
     
-    doc["nodeId"] = String(data.nodeId, HEX);
+    // Convert device type to string (match WiFi format)
+    String deviceTypeStr;
+    switch (data.deviceType) {
+        case DeviceType::SOIL_SENSOR:
+            deviceTypeStr = "soil_sensor";
+            break;
+        case DeviceType::ENV_SENSOR:
+            deviceTypeStr = "environment_sensor";
+            break;
+        case DeviceType::WATER_SENSOR:
+            deviceTypeStr = "water_sensor";
+            break;
+        case DeviceType::GATEWAY:
+            deviceTypeStr = "gateway";
+            break;
+        default:
+            deviceTypeStr = "unknown";
+    }
+    
+    doc["deviceType"] = deviceTypeStr;
     doc["counter"] = data.counter;
-    doc["deviceType"] = static_cast<int>(data.deviceType);
     doc["battery"] = data.battery;
-    doc["rssi"] = rssi;
-    doc["snr"] = snr;
-    doc["timestamp"] = millis();
+    doc["timestamp"] = millis() / 1000;
+    
+    // Add RSSI if valid (-120 to -30 dBm)
+    if (rssi != 0 && rssi >= -120 && rssi <= -30) {
+        doc["rssi"] = rssi;
+    }
+    
+    // Add SNR if valid (-20 to +15 dB)
+    if (snr != 0.0f && snr >= -20.0f && snr <= 15.0f) {
+        doc["snr"] = snr;
+    }
     
     // Add sensor-specific data
     switch (data.deviceType) {
@@ -347,10 +374,10 @@ String CellularFirebaseHTTPSClient::buildSensorDataJSON(const sensorData& data, 
             doc["soilMoisture"] = data.data.soil.soilMoisture;
             doc["soilTemperature"] = data.data.soil.soilTemperature;
             doc["pH"] = data.data.soil.pH;
+            doc["ec"] = data.data.soil.ec;
             doc["nitrogen"] = data.data.soil.nitrogen;
             doc["phosphorus"] = data.data.soil.phosphorus;
             doc["potassium"] = data.data.soil.potassium;
-            doc["ec"] = data.data.soil.ec;
             break;
         case DeviceType::ENV_SENSOR:
             doc["temperature"] = data.data.environment.temperature;
@@ -364,6 +391,14 @@ String CellularFirebaseHTTPSClient::buildSensorDataJSON(const sensorData& data, 
             doc["tds"] = data.data.water.tds;
             doc["turbidity"] = data.data.water.turbidity;
             break;
+        default:
+            // For unknown types, add generic values
+            for (int i = 0; i < 8; i++) {
+                String key = "value";
+                key += i;
+                doc[key] = data.data.values[i];
+            }
+            break;
     }
     
     String jsonBody;
@@ -372,16 +407,37 @@ String CellularFirebaseHTTPSClient::buildSensorDataJSON(const sensorData& data, 
 }
 
 String CellularFirebaseHTTPSClient::buildRoutingTableJSON(const std::vector<RouteNode>& routes) {
+    // Match WiFi format exactly for Firebase compatibility
+    // WiFi uses: { "nodes": { "0xADDR": { ... } }, "node_count": N, "updated_at": timestamp }
     JsonDocument doc;
     
+    JsonObject nodesObj = doc["nodes"].to<JsonObject>();
+    
     for (const auto& route : routes) {
-        String nodeId = String(route.networkNode.address, HEX);
-        nodeId.toUpperCase();
+        char nodeIdStr[16];
+        snprintf(nodeIdStr, sizeof(nodeIdStr), "0x%04X", route.networkNode.address);
+        JsonObject nodeObj = nodesObj[nodeIdStr].to<JsonObject>();
         
-        JsonObject nodeObj = doc["0x" + nodeId].to<JsonObject>();
-        nodeObj["via"] = String(route.via, HEX);
+        nodeObj["address"] = nodeIdStr;
+        
+        char viaIdStr[16];
+        snprintf(viaIdStr, sizeof(viaIdStr), "0x%04X", route.via);
+        nodeObj["via"] = viaIdStr;
+        
         nodeObj["metric"] = route.networkNode.metric;
+        nodeObj["role"] = route.networkNode.role;
+        
+        // Include signal quality for direct routes (metric == 1)
+        if (route.networkNode.metric == 1) {
+            nodeObj["rssi"] = route.receivedRSSI;
+            nodeObj["snr"] = route.receivedSNR;
+        }
+        
+        nodeObj["last_seen"] = millis() / 1000;  // current timestamp
     }
+    
+    doc["node_count"] = (int)routes.size();
+    doc["updated_at"] = millis() / 1000;
     
     String jsonBody;
     serializeJson(doc, jsonBody);
@@ -392,15 +448,18 @@ String CellularFirebaseHTTPSClient::buildGatewayStatusJSON(
     uint16_t nodeCount, uint32_t rxPackets, uint32_t txPackets, int16_t rssi,
     uint32_t freeHeap, uint32_t uptime) {
     
+    // Match WiFi format exactly for Firebase compatibility
     JsonDocument doc;
     
-    doc["nodeCount"] = nodeCount;
-    doc["packetsReceived"] = rxPackets;
-    doc["packetsSent"] = txPackets;
-    doc["rssi"] = rssi;
-    doc["freeHeap"] = freeHeap;
-    doc["uptime"] = uptime;
-    doc["timestamp"] = millis();
+    doc["connected_nodes"] = nodeCount;
+    doc["total_packets_received"] = rxPackets;
+    doc["total_packets_sent"] = txPackets;
+    doc["wifi_connected"] = true;  // Cellular is "connected" if uploading
+    doc["wifi_rssi"] = rssi;
+    doc["firebase_connected"] = true;
+    doc["uptime_seconds"] = uptime;
+    doc["free_heap"] = freeHeap;
+    doc["timestamp"] = millis() / 1000;
     
     String jsonBody;
     serializeJson(doc, jsonBody);

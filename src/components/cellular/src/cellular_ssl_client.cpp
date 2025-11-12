@@ -275,9 +275,10 @@ int CellularSSLClient::receive(char* buffer, size_t maxLength, uint32_t timeoutM
         return -1;
     }
 
-    // Prefer URC-gated receive: wait briefly while processing URCs
+    // Prefer URC-gated receive: wait for +CCHRECV URC with extended timeout
+    // Polling after CCHSEND causes ERROR because session may be in transient state
     uint32_t start = millis();
-    const uint32_t urcWaitMs = timeoutMs > 0 ? min<uint32_t>(timeoutMs, 2000) : 0; // increased from 1.5s to 2s for cellular
+    const uint32_t urcWaitMs = timeoutMs > 0 ? min<uint32_t>(timeoutMs, 5000) : 0; // increased from 2s to 5s for Firebase processing
     if (m_availableBytes <= 0 && urcWaitMs > 0) {
         while ((millis() - start) < urcWaitMs) {
             // Pump URCs so +CCHRECV indications are captured
@@ -287,72 +288,9 @@ int CellularSSLClient::receive(char* buffer, size_t maxLength, uint32_t timeoutM
         }
     }
 
-    // Hybrid fallback: bounded polling if no URC arrived
-    // DISABLED: Polling causes AT+CCHRECV spam with ERROR responses
-    // Just wait for URC instead
-    if (false && m_availableBytes <= 0 && timeoutMs > urcWaitMs) {
-        uint32_t pollStart = millis();
-        uint32_t backoff = 200; // ms (increased from 100ms for cellular)
-        const uint32_t maxBackoff = 800;  // increased from 500ms
-        // Try a few light polls within the remaining timeout budget
-        while ((millis() - pollStart) < (timeoutMs - urcWaitMs)) {
-            // Request larger chunk for HTTP responses (typically 1-2KB)
-            // Instead of 1-byte probe, read 512 bytes to get full response
-            String probe = "+CCHRECV=" + String(m_sessionId) + ",512";
-            
-            ATCommandHandler::Response r = m_atHandler->sendCommand(probe.c_str(), 800);  // increased from 500ms
-            
-            // Check if data was received
-            int dataLength = 0;
-            if (r.data.indexOf("+CCHRECV:") >= 0) {
-                int tag = r.data.indexOf("+CCHRECV:");
-                int headerEnd = r.data.indexOf('\n', tag);
-                String header = headerEnd > tag ? r.data.substring(tag + 9, headerEnd) : r.data.substring(tag + 9);
-                header.trim();
-                int comma = header.indexOf(',');
-                if (comma >= 0) {
-                    String lenStr = header.substring(comma + 1); lenStr.trim();
-                    dataLength = lenStr.toInt();
-                }
-            }
-            
-            if (r.success && r.data.indexOf("+CCHRECV:") >= 0 && dataLength > 0) {
-                // We received at least 1 byte; fold it into available buffer
-                // Parse length from header and place into m_availableBytes
-                int tag = r.data.indexOf("+CCHRECV:");
-                int headerEnd = r.data.indexOf('\n', tag);
-                String header = headerEnd > tag ? r.data.substring(tag + 9, headerEnd) : r.data.substring(tag + 9);
-                header.trim();
-                int rxLen = 0;
-                int comma = header.indexOf(',');
-                if (comma >= 0) {
-                    String lenStr = header.substring(comma + 1); lenStr.trim();
-                    rxLen = lenStr.toInt();
-                } else {
-                    rxLen = header.toInt();
-                }
-                // Copy data payload into buffer immediately if caller provided space
-                int dataStart = r.data.indexOf('\n', tag);
-                if (dataStart >= 0) {
-                    dataStart++;
-                    if (rxLen > 0) {
-                        int maxCopy = (int)maxLength - 1;
-                        int bytesToCopy = (rxLen < maxCopy) ? rxLen : maxCopy;
-                        memcpy(buffer, r.data.c_str() + dataStart, bytesToCopy);
-                        buffer[bytesToCopy] = '\0';
-                        // No need to set m_availableBytes since we already consumed
-                        return bytesToCopy;
-                    }
-                }
-            }
-            // No data yet — gentle backoff with longer delays for cellular
-            delay(backoff);
-            if (backoff < 800) backoff += 150;  // increased max backoff to 800ms for cellular
-            if (m_atHandler) m_atHandler->processURCs();
-            if (m_availableBytes > 0) break; // URC may arrive during fallback
-        }
-    }
-
+    // Fallback polling DISABLED: At+CCHRECV after CCHSEND may hit closed session
+    // Better to extend URC wait timeout than poll closed session
+    
     if (m_availableBytes <= 0) {
         // Still no data available
         return 0;
