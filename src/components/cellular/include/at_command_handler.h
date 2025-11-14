@@ -111,6 +111,15 @@ public:
     bool waitForResponse(const String& expectedResponse, uint32_t timeoutMs = 1000);
 
     /**
+     * @brief Wait for URC line that starts with prefix
+     * @param prefix Prefix to match (e.g., "+HTTPACTION:")
+     * @param outLine Optional output string to store the full line
+     * @param timeoutMs Timeout in milliseconds
+     * @return true if matching URC received within timeout
+     */
+    bool waitForURC(const String& prefix, String& outLine, uint32_t timeoutMs = 1000);
+
+    /**
      * @brief Register URC callback
      * @param callback Callback function for URCs
      */

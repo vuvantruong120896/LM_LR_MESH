@@ -114,7 +114,7 @@ private:
     // Helper methods
     String buildFirebaseURL(const String& path);
     UploadResult sendHTTPSRequest(const String& method, const String& path, const String& body);
-    String buildSensorDataJSON(const sensorData& data, int8_t rssi, float snr);
+    String buildSensorDataJSON(const sensorData& data, int8_t rssi, float snr, uint32_t timestamp);
     String buildRoutingTableJSON(const std::vector<RouteNode>& routes);
     String buildGatewayStatusJSON(uint16_t nodeCount, uint32_t rxPackets, 
                                    uint32_t txPackets, int16_t rssi,

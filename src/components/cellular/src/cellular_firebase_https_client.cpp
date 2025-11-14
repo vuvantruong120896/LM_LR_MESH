@@ -4,7 +4,24 @@
  */
 
 #include "cellular_firebase_https_client.h"
+#include "TimeSyncService.h"
 #include <esp_log.h>
+
+namespace {
+uint32_t getSyncedUnixTimestamp() {
+    if (TimeSyncService::isTimeSynced()) {
+        return TimeSyncService::getCurrentTimestamp();
+    }
+    return millis() / 1000;
+}
+
+uint32_t resolveMeasurementTimestamp(const sensorData& data) {
+    if (data.timestamp > 0) {
+        return data.timestamp;
+    }
+    return getSyncedUnixTimestamp();
+}
+}
 
 static const char* TAG = "FB_HTTPS";
 
@@ -263,9 +280,9 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::uploadSen
     String nodeId = String(data.nodeId, HEX);
     nodeId.toUpperCase();
     
-    uint32_t timestamp = millis() / 1000; // Unix timestamp (seconds)
+    uint32_t timestamp = resolveMeasurementTimestamp(data);
 
-    String jsonBody = buildSensorDataJSON(data, rssi, snr);
+    String jsonBody = buildSensorDataJSON(data, rssi, snr, timestamp);
 
     // Path 2: Time-series data (historical charts)
     String path2 = "/sensor_data/" + m_userUID + "/0x" + nodeId + "/" + String(timestamp) + ".json";
@@ -327,7 +344,7 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::uploadGat
 bool CellularFirebaseHTTPSClient::logEvent(const String& eventType, const String& nodeId, const String& message) {
     // Path matching WiFi mode: gateways/{userUID}/{gatewayMAC}/events/{timestamp}.json
     // WiFi Firebase library auto-appends .json, so we need explicit .json in HTTPS path
-    uint32_t timestamp = millis() / 1000;
+    uint32_t timestamp = getSyncedUnixTimestamp();
     String path = "/gateways/" + m_userUID + "/" + m_gatewayMAC + "/events/" + String(timestamp) + ".json";
     
     JsonDocument doc;
@@ -347,7 +364,7 @@ bool CellularFirebaseHTTPSClient::logEvent(const String& eventType, const String
     return result.success;
 }
 
-String CellularFirebaseHTTPSClient::buildSensorDataJSON(const sensorData& data, int8_t rssi, float snr) {
+String CellularFirebaseHTTPSClient::buildSensorDataJSON(const sensorData& data, int8_t rssi, float snr, uint32_t timestamp) {
     // Match WiFi format exactly for Firebase compatibility
     JsonDocument doc;
     
@@ -373,7 +390,7 @@ String CellularFirebaseHTTPSClient::buildSensorDataJSON(const sensorData& data, 
     doc["deviceType"] = deviceTypeStr;
     doc["counter"] = data.counter;
     doc["battery"] = data.battery;
-    doc["timestamp"] = millis() / 1000;
+    doc["timestamp"] = timestamp;
     
     // Add RSSI if valid (-120 to -30 dBm)
     if (rssi != 0 && rssi >= -120 && rssi <= -30) {
@@ -450,11 +467,11 @@ String CellularFirebaseHTTPSClient::buildRoutingTableJSON(const std::vector<Rout
             nodeObj["snr"] = route.receivedSNR;
         }
         
-        nodeObj["last_seen"] = millis() / 1000;  // current timestamp
+        nodeObj["last_seen"] = getSyncedUnixTimestamp();  // current timestamp
     }
     
     doc["node_count"] = (int)routes.size();
-    doc["updated_at"] = millis() / 1000;
+    doc["updated_at"] = getSyncedUnixTimestamp();
     
     String jsonBody;
     serializeJson(doc, jsonBody);
@@ -476,7 +493,7 @@ String CellularFirebaseHTTPSClient::buildGatewayStatusJSON(
     doc["firebase_connected"] = true;
     doc["uptime_seconds"] = uptime;
     doc["free_heap"] = freeHeap;
-    doc["timestamp"] = millis() / 1000;
+    doc["timestamp"] = getSyncedUnixTimestamp();
     
     String jsonBody;
     serializeJson(doc, jsonBody);

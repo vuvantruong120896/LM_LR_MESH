@@ -154,7 +154,10 @@ void GatewayApp::setup() {
 #else
         setupWiFi();
 #endif
-        
+
+        // Run time sync before Firebase to keep AT channel quiet while enabling CLTS/NTP
+        setupTimeSync();
+
         setupFirebase();
         
         // Register callback to upload routing table when it changes
@@ -368,34 +371,27 @@ void GatewayApp::loop() {
         }
     }
 
-//     // Periodic NTP re-sync (every 1 hour) and time broadcast (every 5 minutes) - only if provisioned
-//     static uint32_t lastNTPSync = 0;
-//     const uint32_t NTP_RESYNC_INTERVAL = 3600000;  // 1 hour
-//     const uint32_t TIME_BROADCAST_INTERVAL = 300000;  // 5 minutes
+    // Periodic NTP re-sync (every 1 hour) and time broadcast (every 5 minutes) - only if provisioned
+    static uint32_t lastNTPSync = 0;
+    const uint32_t NTP_RESYNC_INTERVAL = 3600000;  // 1 hour
+    const uint32_t TIME_BROADCAST_INTERVAL = 300000;  // 5 minutes
     
-// #ifdef USE_CELLULAR
-//     // Re-sync with NTP every hour (if cellular connected and provisioned)
-//     if (isProvisioned && gatewayState.cellularConnected && (currentTime - lastNTPSync >= NTP_RESYNC_INTERVAL)) {
-//         ESP_LOGI(TAG, "⏰ Periodic NTP re-sync over cellular");
-// #else
-//     // Re-sync with NTP every hour (if WiFi connected and provisioned)
-//     if (isProvisioned && gatewayState.wifiConnected && (currentTime - lastNTPSync >= NTP_RESYNC_INTERVAL)) {
-//         ESP_LOGI(TAG, "⏰ Periodic NTP re-sync");
-// #endif
-//         if (TimeSyncService::syncWithNTP("pool.ntp.org", 25200, 0)) {
-//             gatewayState.ntpSynced = true;
-//             ESP_LOGI(TAG, "✅ NTP re-sync successful");
-//         }
-//         lastNTPSync = currentTime;
-//     }
+#ifdef USE_CELLULAR
+    // Re-sync with NTP every hour (if cellular connected and provisioned)
+    if (isProvisioned && gatewayState.cellularConnected && (currentTime - lastNTPSync >= NTP_RESYNC_INTERVAL)) {
+        ESP_LOGI(TAG, "⏰ Periodic NTP re-sync over cellular");
+#else
+    // Re-sync with NTP every hour (if WiFi connected and provisioned)
+    if (isProvisioned && gatewayState.wifiConnected && (currentTime - lastNTPSync >= NTP_RESYNC_INTERVAL)) {
+        ESP_LOGI(TAG, "⏰ Periodic NTP re-sync");
+#endif
+        if (TimeSyncService::syncWithNTP("pool.ntp.org", 25200, 0)) {
+            gatewayState.ntpSynced = true;
+            ESP_LOGI(TAG, "✅ NTP re-sync successful");
+        }
+        lastNTPSync = currentTime;
+    }
     
-    // // Broadcast time sync to nodes every 5 minutes
-    // if (gatewayState.ntpSynced && 
-    //     (currentTime - gatewayState.lastTimeSyncBroadcast >= TIME_BROADCAST_INTERVAL)) {
-    //     ESP_LOGI(TAG, "⏰ Periodic time sync broadcast to nodes");
-    //     broadcastTimeSync();
-    // }
-
     // Routing table upload strategy:
     // 1. Primary: Immediate upload via onRoutingTableChanged() callback when changes occur
     // 2. Initial: Upload once immediately after Firebase connection (post-reboot)
@@ -564,74 +560,105 @@ void GatewayApp::loop() {
         }
     }
     
-//     // Time synchronization with NTP (loop-based with retry and periodic refresh)
-//     bool shouldAttemptNtpSync = false;
-//     uint32_t ntpSyncInterval = 0;
+    // Time synchronization with NTP (loop-based with retry and periodic refresh)
+    bool shouldAttemptNtpSync = false;
+    uint32_t ntpSyncInterval = 0;
     
-//     // Determine if NTP sync is needed
-//     if (!gatewayState.ntpSyncInProgress) {
-//         if (!gatewayState.ntpSynced) {
-//             // First sync: Wait 30s after boot, then retry every 30s (up to 3 attempts)
-//             if ((currentTime - gatewayState.bootTime >= 30000) && 
-//                 (currentTime - gatewayState.lastNtpSyncAttempt >= 30000) && 
-//                 (gatewayState.ntpRetryCount < 3)) {
-//                 shouldAttemptNtpSync = true;
-//                 ntpSyncInterval = 30000; // 30s retry interval
-//             }
-//         } else {
-//             // Periodic re-sync every 1 hour after successful first sync
-//             if (currentTime - gatewayState.lastSuccessfulNtpSync >= 3600000) { // 1 hour
-//                 shouldAttemptNtpSync = true;
-//                 ntpSyncInterval = 3600000; // 1 hour interval
-//             }
-//         }
-//     }
+    // Determine if NTP sync is needed
+    if (!gatewayState.ntpSyncInProgress) {
+        if (!gatewayState.ntpSynced) {
+            // First sync: Wait 30s after boot, then retry every 30s (up to 3 attempts)
+            if ((currentTime - gatewayState.bootTime >= 30000) && 
+                (currentTime - gatewayState.lastNtpSyncAttempt >= 30000) && 
+                (gatewayState.ntpRetryCount < 3)) {
+                shouldAttemptNtpSync = true;
+                ntpSyncInterval = 30000; // 30s retry interval
+            }
+        } else {
+            // Periodic re-sync every 1 hour after successful first sync
+            if (currentTime - gatewayState.lastSuccessfulNtpSync >= 3600000) { // 1 hour
+                shouldAttemptNtpSync = true;
+                ntpSyncInterval = 3600000; // 1 hour interval
+            }
+        }
+    }
     
-//     // Perform NTP sync if needed
-//     if (shouldAttemptNtpSync) {
-// #ifdef USE_CELLULAR
-//         if (!gatewayState.cellularConnected) {
-//             ESP_LOGW(TAG, "🕒 Skipping NTP sync - Cellular not connected");
-//         } else {
-// #else
-//         if (!gatewayState.wifiConnected) {
-//             ESP_LOGW(TAG, "🕒 Skipping NTP sync - WiFi not connected");
-//         } else {
-// #endif
-//             gatewayState.ntpSyncInProgress = true;
-//             gatewayState.lastNtpSyncAttempt = currentTime;
+    // Perform time sync if needed
+    if (shouldAttemptNtpSync) {
+#ifdef USE_CELLULAR
+        if (!gatewayState.cellularConnected) {
+            ESP_LOGW(TAG, "🕒 Skipping time sync - Cellular not connected");
+        } else {
+            gatewayState.ntpSyncInProgress = true;
+            gatewayState.lastNtpSyncAttempt = currentTime;
             
-//             ESP_LOGI(TAG, "🕒 Attempting NTP time sync (attempt %d/%d)...", 
-//                      gatewayState.ntpRetryCount + 1, 3);
+            ESP_LOGI(TAG, "🕒 Attempting modem time sync (attempt %d/%d)...", 
+                     gatewayState.ntpRetryCount + 1, 3);
             
-//             // Attempt sync with 10s timeout (handled by NTP library internally)
-//             // For cellular mode, use NTP over cellular connection like WiFi mode
-//             if (TimeSyncService::syncWithNTP("pool.ntp.org", 25200, 0)) {
-//                 ESP_LOGI(TAG, "✅ NTP time synchronized successfully");
+            // Cellular mode: Get time from modem
+            if (syncTimeFromModem()) {
+                ESP_LOGI(TAG, "✅ Time synchronized successfully via modem");
                 
-//                 gatewayState.ntpSynced = true;
-//                 gatewayState.lastSuccessfulNtpSync = currentTime;
-//                 gatewayState.ntpRetryCount = 0; // Reset retry counter on success
-//                 gatewayState.ntpSyncInProgress = false;
+                gatewayState.ntpSynced = true;
+                gatewayState.lastSuccessfulNtpSync = currentTime;
+                gatewayState.ntpRetryCount = 0; // Reset retry counter on success
+                gatewayState.ntpSyncInProgress = false;
                 
-//                 // Broadcast time to mesh nodes
-//                 broadcastTimeSync();
-//             } else {
-//                 ESP_LOGW(TAG, "❌ NTP sync failed (attempt %d/%d)", 
-//                          gatewayState.ntpRetryCount + 1, 3);
+                // Broadcast time to mesh nodes
+                broadcastTimeSync();
+            } else {
+                ESP_LOGW(TAG, "❌ Modem time sync failed (attempt %d/%d)", 
+                         gatewayState.ntpRetryCount + 1, 3);
                 
-//                 gatewayState.ntpRetryCount++;
-//                 gatewayState.ntpSyncInProgress = false;
+                gatewayState.ntpRetryCount++;
+                gatewayState.ntpSyncInProgress = false;
                 
-//                 // If all retries exhausted, wait for periodic re-attempt
-//                 if (gatewayState.ntpRetryCount >= 3) {
-//                     ESP_LOGE(TAG, "🚨 NTP sync failed after 3 attempts - will retry in 1 hour");
-//                     gatewayState.ntpSynced = false;
-//                     gatewayState.lastSuccessfulNtpSync = currentTime; // Prevent immediate retry
-//                 }
-//             }
-//         }
-//     }
+                // If all retries exhausted, wait for periodic re-attempt
+                if (gatewayState.ntpRetryCount >= 3) {
+                    ESP_LOGE(TAG, "🚨 Time sync failed after 3 attempts - will retry in 1 hour");
+                    gatewayState.ntpSynced = false;
+                    gatewayState.lastSuccessfulNtpSync = currentTime; // Prevent immediate retry
+                }
+            }
+        }
+#else
+        if (!gatewayState.wifiConnected) {
+            ESP_LOGW(TAG, "🕒 Skipping NTP sync - WiFi not connected");
+        } else {
+            gatewayState.ntpSyncInProgress = true;
+            gatewayState.lastNtpSyncAttempt = currentTime;
+            
+            ESP_LOGI(TAG, "🕒 Attempting NTP time sync (attempt %d/%d)...", 
+                     gatewayState.ntpRetryCount + 1, 3);
+            
+            // WiFi mode: Use NTP
+            if (TimeSyncService::syncWithNTP("pool.ntp.org", 25200, 0)) {
+                ESP_LOGI(TAG, "✅ NTP time synchronized successfully");
+                
+                gatewayState.ntpSynced = true;
+                gatewayState.lastSuccessfulNtpSync = currentTime;
+                gatewayState.ntpRetryCount = 0; // Reset retry counter on success
+                gatewayState.ntpSyncInProgress = false;
+                
+                // Broadcast time to mesh nodes
+                broadcastTimeSync();
+            } else {
+                ESP_LOGW(TAG, "❌ NTP sync failed (attempt %d/%d)", 
+                         gatewayState.ntpRetryCount + 1, 3);
+                
+                gatewayState.ntpRetryCount++;
+                gatewayState.ntpSyncInProgress = false;
+                
+                // If all retries exhausted, wait for periodic re-attempt
+                if (gatewayState.ntpRetryCount >= 3) {
+                    ESP_LOGE(TAG, "🚨 NTP sync failed after 3 attempts - will retry in 1 hour");
+                    gatewayState.ntpSynced = false;
+                    gatewayState.lastSuccessfulNtpSync = currentTime; // Prevent immediate retry
+                }
+            }
+        }
+#endif
+    }
 
     // Upload gateway status every 60 seconds (use queue for non-blocking)
     static uint32_t lastStatusUploadTime = 0;
@@ -1746,18 +1773,30 @@ void GatewayApp::setupTimeSync() {
     }
     
 #ifdef USE_CELLULAR
-    // Wait for Cellular connection before NTP sync
+    // Wait for Cellular connection before time sync
     if (!gatewayState.cellularConnected) {
-        ESP_LOGW(TAG, "Cellular not connected yet, will sync NTP later");
+        ESP_LOGW(TAG, "Cellular not connected yet, will sync time later");
         return;
     }
+    
+    // Cellular mode: Get time via modem AT command (most reliable)
+    if (syncTimeFromModem()) {
+        gatewayState.ntpSynced = true;
+        gatewayState.lastTimeSyncBroadcast = millis();
+        ESP_LOGI(TAG, "✅ Time sync successful via modem - Gateway time synchronized");
+        
+        // Immediately broadcast time to nodes
+        broadcastTimeSync();
+    } else {
+        ESP_LOGE(TAG, "❌ Modem time sync failed - will retry later");
+        gatewayState.ntpSynced = false;
+    }
 #else
-    // Wait for WiFi connection before NTP sync
+    // WiFi mode: Use NTP (works well over WiFi)
     if (!gatewayState.wifiConnected) {
         ESP_LOGW(TAG, "WiFi not connected yet, will sync NTP later");
         return;
     }
-#endif
     
     // Sync with NTP server (Vietnam timezone GMT+7)
     // GMT offset: 7 * 3600 = 25200 seconds
@@ -1773,7 +1812,139 @@ void GatewayApp::setupTimeSync() {
         ESP_LOGE(TAG, "❌ NTP sync failed - will retry later");
         gatewayState.ntpSynced = false;
     }
+#endif
 }
+
+#ifdef USE_CELLULAR
+bool GatewayApp::syncTimeFromModem() {
+    ESP_LOGI(TAG, "🕒 Syncing time from modem via network time (CLTS)...");
+    
+    if (!cellularService || !cellularService->getATHandler()) {
+        ESP_LOGE(TAG, "Cellular service or AT handler not available");
+        return false;
+    }
+    
+    ATCommandHandler* atHandler = cellularService->getATHandler();
+    
+    // Step 1: Enabling automatic timezone update
+    ESP_LOGI(TAG, "Step 1: Enabling automatic timezone update (AT+CTZU=1)...");
+    auto ctzuResp = atHandler->sendCommand("+CTZU=1", 3000);
+    if (!ctzuResp.success) {
+        ESP_LOGW(TAG, "CTZU command failed: %s", ctzuResp.data.c_str());
+    }
+    delay(500);
+    
+    // Step 2: Query modem clock via AT+CCLK?
+    ESP_LOGI(TAG, "Step 2: Querying modem clock (AT+CCLK?)...");
+    bool gotValidTime = false;
+    String clockLine;
+    const int maxClockAttempts = 20;
+    const uint32_t clockRetryDelayMs = 3000;  // allow network time propagation
+    for (int attempt = 0; attempt < maxClockAttempts; attempt++) {
+        ESP_LOGD(TAG, "  CCLK attempt %d/%d", attempt + 1, maxClockAttempts);
+        auto clockResp = atHandler->sendCommand("+CCLK?", 3000);
+        if (clockResp.success) {
+            int idx = clockResp.data.indexOf("+CCLK:");
+            if (idx >= 0) {
+                clockLine = clockResp.data.substring(idx);
+                if (clockLine.indexOf("70/01/01") >= 0) {
+                    ESP_LOGW(TAG, "Modem clock still default (70/01/01...). Waiting for network sync...");
+                } else {
+                    gotValidTime = true;
+                    break;
+                }
+            }
+        }
+        delay(clockRetryDelayMs);
+    }
+
+    if (!gotValidTime) {
+        ESP_LOGE(TAG, "Failed to read valid modem time after %d attempts (~%lus). Ensure SIM has network time service enabled.",
+                 maxClockAttempts,
+                 (unsigned long)((maxClockAttempts * clockRetryDelayMs) / 1000));
+        return false;
+    }
+
+    int quoteStart = clockLine.indexOf('"');
+    int quoteEnd = clockLine.indexOf('"', quoteStart + 1);
+    if (quoteStart < 0 || quoteEnd < 0) {
+        ESP_LOGE(TAG, "Malformed +CCLK response: %s", clockLine.c_str());
+        return false;
+    }
+
+    String timeStr = clockLine.substring(quoteStart + 1, quoteEnd);
+    ESP_LOGI(TAG, "Modem reported time: %s", timeStr.c_str());
+
+    int year, month, day, hour, minute, second, tzValue;
+    char tzSignChar;
+    if (sscanf(timeStr.c_str(), "%d/%d/%d,%d:%d:%d%c%d", &year, &month, &day, &hour, &minute, &second, &tzSignChar, &tzValue) != 8) {
+        ESP_LOGE(TAG, "Unable to parse +CCLK string: %s", timeStr.c_str());
+        return false;
+    }
+
+    if (tzSignChar != '+' && tzSignChar != '-') {
+        ESP_LOGE(TAG, "Invalid timezone sign in +CCLK response: %c", tzSignChar);
+        return false;
+    }
+
+    // Convert to UTC epoch
+    int yearFull = 2000 + year;
+    struct tm localTime = {0};
+    localTime.tm_year = yearFull - 1900;
+    localTime.tm_mon = month - 1;
+    localTime.tm_mday = day;
+    localTime.tm_hour = hour;
+    localTime.tm_min = minute;
+    localTime.tm_sec = second;
+    localTime.tm_isdst = 0;
+    time_t localSeconds = mktime(&localTime);
+    if (localSeconds == -1) {
+        ESP_LOGE(TAG, "mktime failed for parsed modem time");
+        return false;
+    }
+
+    int tzMinutes = tzValue * 15;  // value is in 15-minute increments
+    if (tzSignChar == '-') {
+        tzMinutes = -tzMinutes;
+    }
+    time_t utcSeconds = localSeconds - (tzMinutes * 60);
+    if (utcSeconds <= 0) {
+        ESP_LOGE(TAG, "Computed UTC timestamp invalid (%ld)", (long)utcSeconds);
+        return false;
+    }
+
+    uint32_t unixtime = static_cast<uint32_t>(utcSeconds);
+    ESP_LOGI(TAG, "Extracted unixtime from modem: %u", unixtime);
+    
+    // Step 3: Set system time from unixtime
+    struct timeval tv = { 
+        .tv_sec = (time_t)unixtime,
+        .tv_usec = 0
+    };
+    
+    if (settimeofday(&tv, NULL) != 0) {
+        ESP_LOGE(TAG, "Failed to set system time");
+        return false;
+    }
+
+    // Update internal time sync service so application timestamps use the new clock
+    TimeSyncService::setManualTimestamp(unixtime, true);
+    
+    // Log the synchronized time
+    time_t systemTime = time(nullptr);
+    struct tm* tminfo = localtime(&systemTime);
+    char systemTimeStr[64];
+    strftime(systemTimeStr, sizeof(systemTimeStr), "%Y-%m-%d %H:%M:%S", tminfo);
+
+    int tzHours = tzMinutes / 60;
+    int tzRemainMinutes = abs(tzMinutes % 60);
+    ESP_LOGI(TAG, "✅ Time synchronized from modem network time");
+    ESP_LOGI(TAG, "   📅 System time: %s (local TZ %+d:%02d)", systemTimeStr, tzHours, tzRemainMinutes);
+    ESP_LOGI(TAG, "   🕒 Unix timestamp: %u", (uint32_t)systemTime);
+    
+    return true;
+}
+#endif
 
 void GatewayApp::broadcastTimeSync() {
     if (!TimeSyncService::isTimeSynced()) {

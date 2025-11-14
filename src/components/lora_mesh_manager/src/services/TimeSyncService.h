@@ -82,7 +82,7 @@ public:
      * @brief Set manual timestamp (for testing or manual sync)
      * @param timestamp Unix timestamp in seconds
      */
-    static void setManualTimestamp(uint32_t timestamp);
+    static void setManualTimestamp(uint32_t timestamp, bool fromNetwork = false);
 
 private:
     static bool m_isGateway;

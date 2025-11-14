@@ -173,6 +173,48 @@ bool ATCommandHandler::waitForResponse(const String& expectedResponse, uint32_t 
     return false;
 }
 
+bool ATCommandHandler::waitForURC(const String& prefix, String& outLine, uint32_t timeoutMs) {
+    if (!m_uart) {
+        ESP_LOGE(TAG, "UART not initialized");
+        return false;
+    }
+
+    uint32_t startTime = millis();
+    while ((millis() - startTime) < timeoutMs) {
+        if (m_uart->available()) {
+            char buffer[512];
+            size_t len = m_uart->readLine(buffer, sizeof(buffer), 300);
+            if (len > 0) {
+                String line(buffer);
+                line.trim();
+
+                if (line.length() == 0) {
+                    continue;
+                }
+
+                if (line.startsWith(prefix)) {
+                    outLine = line;
+                    ESP_LOGD(TAG, "URC match: %s", line.c_str());
+                    return true;
+                }
+
+                if (isURC(line)) {
+                    if (m_urcCallback) {
+                        m_urcCallback(line);
+                    }
+                    continue;
+                }
+
+                // Ignore other lines (e.g., echoes, final responses)
+            }
+        }
+        delay(1);
+    }
+
+    ESP_LOGW(TAG, "Timeout waiting for URC prefix: %s", prefix.c_str());
+    return false;
+}
+
 void ATCommandHandler::registerURCCallback(URCCallback callback) {
     m_urcCallback = callback;
 }
@@ -383,5 +425,7 @@ bool ATCommandHandler::isURC(const String& line) const {
             line.startsWith("+NETCLOSE:") ||
             line.startsWith("+CADATAIND:") ||
             line.startsWith("+CGDCONT:") ||
-            line.startsWith("+CPIN:"));
+            line.startsWith("+CPIN:") ||
+            line.startsWith("+HTTPACTION:") ||
+            line.startsWith("+HTTPSTATUS:"));
 }

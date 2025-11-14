@@ -147,13 +147,13 @@ uint32_t TimeSyncService::getTimeSinceLastSync() {
     return (millis() - m_lastSyncMillis) / 1000;
 }
 
-void TimeSyncService::setManualTimestamp(uint32_t timestamp) {
+void TimeSyncService::setManualTimestamp(uint32_t timestamp, bool fromNetwork) {
     m_lastSyncTimestamp = timestamp;
     m_lastSyncMillis = millis();
     m_bootOffset = timestamp - (m_lastSyncMillis / 1000);
     m_timeSynced = true;
-    m_ntpSynced = false;
+    m_ntpSynced = fromNetwork;
     
-    ESP_LOGI(TAG, "Manual timestamp set: %u (Boot offset: %u)", 
-             timestamp, m_bootOffset);
+    ESP_LOGI(TAG, "Manual timestamp set: %u (Boot offset: %u, source=%s)", 
+             timestamp, m_bootOffset, fromNetwork ? "network" : "manual");
 }

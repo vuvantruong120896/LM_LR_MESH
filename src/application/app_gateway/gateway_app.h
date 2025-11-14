@@ -116,6 +116,12 @@ private:
     void setupFirebase();
     void setupTimeSync();
     void broadcastTimeSync();
+    
+#ifdef USE_CELLULAR
+    bool syncTimeFromModem();  // Get time from cellular modem via AT+CCLK?
+    bool getTimeFromHTTPSAPI(int& year, int& month, int& day, int& hour, int& minute, int& second);  // Get time from HTTPS API
+#endif
+    
     void initializeServices();
     void initializeNVSStorage();
     void loadNetworkConfiguration();
