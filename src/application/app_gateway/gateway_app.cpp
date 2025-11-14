@@ -428,6 +428,20 @@ void GatewayApp::loop() {
         gatewayState.lastRoutingTableUpload = currentTime;
     }
 
+        // Handle deferred routing table uploads requested by callbacks (runs on CPU1)
+        if (gatewayState.firebaseConnected && gatewayState.routingTableUploadPending) {
+        ESP_LOGI(TAG, "📡 Processing deferred routing table upload request (priority %d)",
+             gatewayState.routingTableUploadPriority);
+
+    #ifdef USE_CELLULAR
+        uploadRoutingTable();
+    #else
+        queueRoutingTableUpload(gatewayState.routingTableUploadPriority);
+    #endif
+        gatewayState.routingTableUploadPending = false;
+        gatewayState.lastRoutingTableUpload = currentTime;
+        }
+
     // Gateway sensor data collection and upload
     static uint32_t lastSensorUpload = 0;
     static bool firstUploadDone = false;
@@ -844,23 +858,6 @@ void GatewayApp::setupFirebase() {
     // Create SSL client first
     sslClient = new CellularSSLClient(cellularService);
     
-    // // Attempt time sync from modem (opportunistic, not blocking)
-    // // This is just an attempt - main retry logic is in loop() with periodic backoff
-    // if (!gatewayState.ntpSynced && cellularService) {
-    //     ESP_LOGI(TAG, "🕒 Attempting to sync time from cellular modem...");
-    //     if (cellularService->syncTimeFromNetwork()) {
-    //         gatewayState.ntpSynced = true;
-    //         gatewayState.lastSuccessfulNtpSync = millis();
-    //         gatewayState.ntpRetryCount = 0;  // Reset retry counter on success
-    //         ESP_LOGI(TAG, "✅ Time initialized from cellular network (modem)");
-    //     } else {
-    //         // Don't block setup - let loop() handle periodic NTP retry
-    //         // This allows setup to continue while NTP retries in background
-    //         ESP_LOGW(TAG, "⚠️ Modem time sync failed; will retry via NTP in loop (30s intervals)");
-    //         // Keep ntpSynced = false so loop() will retry
-    //     }
-    // }
-    
     // Create HTTPS Firebase client
     firebaseClient = new CellularFirebaseHTTPSClient(
         sslClient,
@@ -889,12 +886,13 @@ void GatewayApp::setupFirebase() {
     // Log gateway started event
     firebaseClient->logEvent("gateway_started", gatewayMAC, "Gateway initialized with cellular HTTPS");
     
-    // Initialize Cellular Command Poller
-    cellularCommandPoller = new CellularFirebaseCommandPoller(
-        firebaseClient,
-        userUID,
-        gatewayMAC
-    );
+    // // Initialize Cellular Command Poller
+    // cellularCommandPoller = new CellularFirebaseCommandPoller(
+    //     firebaseClient,
+    //     userUID,
+    //     gatewayMAC
+    // );
+
     // // Start command polling task on CPU1 (same as WiFi mode)
     // // Stack: 8KB, Priority: 1, Core: 1 (CPU1)
     // cellularCommandPoller->begin(8192, 1, 1);
@@ -1469,13 +1467,9 @@ void GatewayApp::onRoutingTableChanged() {
     }
 
     ESP_LOGI(TAG, "🔄 Routing table changed - triggering immediate upload");
-#ifdef USE_CELLULAR
-    // Cellular: Direct upload
-    instance->uploadRoutingTable();
-#else
-    // WiFi: Use queue for non-blocking upload
-    instance->queueRoutingTableUpload(3); // High priority for immediate changes
-#endif
+    instance->gatewayState.routingTableUploadPending = true;
+    instance->gatewayState.routingTableUploadPriority = 3;
+    instance->gatewayState.lastRoutingTableChange = millis();
 }
 
 // REMOVED: Old UART callback functions - no longer used in WiFi+Firebase architecture

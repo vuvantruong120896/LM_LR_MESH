@@ -40,6 +40,9 @@ struct GatewayState {
     bool firebaseConnected = false;
     uint32_t packetsUploaded = 0;
     uint32_t lastRoutingTableUpload = 0;
+    volatile bool routingTableUploadPending = false;
+    uint8_t routingTableUploadPriority = 2;
+    uint32_t lastRoutingTableChange = 0;
     uint32_t totalMeshPackets = 0;
     uint32_t uploadErrors = 0;
     uint32_t bootTime = 0;
