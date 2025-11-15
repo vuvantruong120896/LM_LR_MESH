@@ -1,6 +1,7 @@
 #include "gateway_app.h"
 #include "firebase_queue.h"  // Include Firebase queue system
 #include "components/lora_mesh_manager/src/services/RoutingTableService.h"
+#include "components/lora_mesh_manager/src/core/BuildOptions.h"  // For ROLE_GATEWAY
 #include "mesh_security_config.h"
 #include <esp_log.h>
 #include <esp_task_wdt.h>
@@ -1166,59 +1167,89 @@ void GatewayApp::uploadRoutingTable() {
         return;
     }
 
-    // Access routing table from RoutingTableService
-    LM_LinkedList<RouteNode>* rtList = RoutingTableService::routingTableList;
-    if (!rtList) {
-        ESP_LOGW(TAG, "Routing table is null");
-        return;
-    }
-
-    rtList->setInUse();
-    size_t tableSize = rtList->getLength();
-
-    // Convert LinkedList to vector for Firebase upload
-    // Upload even if empty to clear stale data on Firebase
-    std::vector<RouteNode> routingTable;
-    routingTable.reserve(tableSize);
-
-    if (rtList->moveToStart()) {
-        do {
-            RouteNode* node = rtList->getCurrent();
-            if (node) {
-                routingTable.push_back(*node);
-            }
-        } while (rtList->next());
-    }
-
-    rtList->releaseInUse();
-
-    if (routingTable.size() == 0) {
+    // 🌐 Build Firebase routing table (includes Gateway + all nodes)
+    std::vector<RouteNode> firebaseRoutingTable = buildFirebaseRoutingTable();
+    
+    if (firebaseRoutingTable.size() == 0) {
         ESP_LOGI(TAG, "📡 Uploading EMPTY routing table to clear Firebase data");
     } else {
-        ESP_LOGI(TAG, "📡 Uploading routing table (%d nodes)", routingTable.size());
+        ESP_LOGI(TAG, "📡 Uploading Firebase routing table (%d nodes, includes Gateway)", firebaseRoutingTable.size());
     }
 
     // NO WDT RESET: Let operation complete naturally or timeout
-    auto result = firebaseClient->uploadRoutingTable(routingTable);
+    auto result = firebaseClient->uploadRoutingTable(firebaseRoutingTable);
 
     if (result.success) {
         gatewayState.lastRoutingTableUpload = millis();
-        if (routingTable.size() == 0) {
+        if (firebaseRoutingTable.size() == 0) {
             ESP_LOGI(TAG, "✅ Empty routing table uploaded - Firebase cleared");
         } else {
 #ifdef USE_CELLULAR
-            ESP_LOGI(TAG, "✅ Routing table uploaded (%d ms)", result.responseTime);
+            ESP_LOGI(TAG, "✅ Firebase routing table uploaded (%d ms)", result.responseTime);
 #else
-            ESP_LOGI(TAG, "✅ Routing table uploaded (%d bytes)", result.payloadSize);
+            ESP_LOGI(TAG, "✅ Firebase routing table uploaded (%d bytes)", result.payloadSize);
 #endif
         }
     } else {
 #ifdef USE_CELLULAR
-        ESP_LOGW(TAG, "❌ Failed to upload routing table: %s", result.message.c_str());
+        ESP_LOGW(TAG, "❌ Failed to upload Firebase routing table: %s", result.message.c_str());
 #else
-        ESP_LOGW(TAG, "❌ Failed to upload routing table: %s", result.errorMessage.c_str());
+        ESP_LOGW(TAG, "❌ Failed to upload Firebase routing table: %s", result.errorMessage.c_str());
 #endif
     }
+}
+
+// 🌐 Build Firebase routing table - includes Gateway as a node for complete network view
+std::vector<RouteNode> GatewayApp::buildFirebaseRoutingTable() {
+    std::vector<RouteNode> firebaseRoutingTable;
+    
+    // Step 1: Get original routing table from RoutingTableService
+    LM_LinkedList<RouteNode>* rtList = RoutingTableService::routingTableList;
+    if (!rtList) {
+        ESP_LOGW(TAG, "Original routing table is null, returning Gateway-only table");
+    } else {
+        rtList->setInUse();
+        size_t tableSize = rtList->getLength();
+        firebaseRoutingTable.reserve(tableSize + 1);  // +1 for Gateway
+        
+        // Copy all existing nodes
+        if (rtList->moveToStart()) {
+            do {
+                RouteNode* node = rtList->getCurrent();
+                if (node) {
+                    firebaseRoutingTable.push_back(*node);
+                }
+            } while (rtList->next());
+        }
+        
+        rtList->releaseInUse();
+        ESP_LOGD(TAG, "Copied %d nodes from original routing table", firebaseRoutingTable.size());
+    }
+    
+    // Step 2: Add Gateway as a node entry
+    uint16_t gatewayNodeId = computeNodeIdFromWifiMac();
+    
+    // Create Gateway RouteNode with specified values
+    RouteNode gatewayNode(
+        gatewayNodeId,      // address: Gateway's own node ID
+        0,                  // metric: 0 (Gateway is local)
+        ROLE_GATEWAY,       // role: Gateway role
+        gatewayNodeId       // via: itself (no forwarding needed)
+    );
+    
+    // Set signal quality values as requested
+    gatewayNode.receivedRSSI = -50;   // RSSI = -50 dBm (good signal)
+    gatewayNode.receivedSNR = 10;     // SNR = 10 dB (good quality)
+    gatewayNode.sentSNR = 10;         // SNR for sent packets
+    gatewayNode.linkQuality = 1.0f;   // Perfect quality (local)
+    gatewayNode.timeout = millis() + 300000;  // 5 minutes timeout
+    
+    firebaseRoutingTable.push_back(gatewayNode);
+    
+    ESP_LOGD(TAG, "Built Firebase routing table: %d total nodes (%d original + Gateway 0x%04X)", 
+             firebaseRoutingTable.size(), firebaseRoutingTable.size() - 1, gatewayNodeId);
+    
+    return firebaseRoutingTable;
 }
 
 #ifdef USE_CELLULAR

@@ -152,6 +152,9 @@ private:
     void uploadGatewayStatusPeriodic();
     sensorData simulateGatewaySensorData();
     
+    // 🌐 Helper to build Firebase routing table (includes Gateway as node)
+    std::vector<RouteNode> buildFirebaseRoutingTable();
+    
 #ifdef USE_CELLULAR
     void handleCellularEvent(CellularConnectionService::Event event, int8_t rssi);
 #else
