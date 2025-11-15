@@ -6,6 +6,10 @@
 #include <esp_task_wdt.h>
 #include <map>
 
+#ifdef USE_CELLULAR
+#include "components/cellular/include/cellular_firebase_queue.h"
+#endif
+
 static const char* TAG = "GATEWAY";
 
 // Helper macros for command poller operations (WiFi vs Cellular)
@@ -329,9 +333,13 @@ void GatewayApp::loop() {
                         bool success = false;
                         
 #ifdef USE_CELLULAR
-                        // Cellular: Direct upload (blocking)
-                        auto result = firebaseClient->uploadSensorData(data, 0, 0.0f);
-                        success = result.success;
+                        if (CellularFirebaseQueue::getInstance().isRunning()) {
+                            success = CellularFirebaseQueue::getInstance().enqueueSensorData(data, 0, 0.0f, 2);
+                        } else {
+                            ESP_LOGW(TAG, "Cellular queue offline - syncing buffer with direct upload");
+                            auto result = firebaseClient->uploadSensorData(data, 0, 0.0f);
+                            success = result.success;
+                        }
 #else
                         // WiFi: Use queue for non-blocking upload
                         if (firebaseClient->isQueueRunning()) {
@@ -402,13 +410,7 @@ void GatewayApp::loop() {
     if (gatewayState.firebaseConnected && !firstRoutingTableUploadDone) {
         ESP_LOGI(TAG, "📡 Initial routing table upload (post-reboot)");
         
-#ifdef USE_CELLULAR
-        // Cellular: Direct upload
-        uploadRoutingTable();
-#else
-        // WiFi: Use queue for non-blocking routing table upload
         queueRoutingTableUpload(3); // High priority for initial upload
-#endif
         gatewayState.lastRoutingTableUpload = currentTime;
         firstRoutingTableUploadDone = true;
     }
@@ -417,30 +419,20 @@ void GatewayApp::loop() {
         (currentTime - gatewayState.lastRoutingTableUpload >= GATEWAY_ROUTING_TABLE_INTERVAL)) {
         ESP_LOGI(TAG, "⏰ Periodic backup routing table upload");
         
-#ifdef USE_CELLULAR
-        // Cellular: Direct upload
-        uploadRoutingTable();
-#else
-        // WiFi: Use queue for non-blocking routing table upload
         queueRoutingTableUpload(2); // Normal priority for periodic upload
-#endif
         // Always update timestamp even if upload fails to prevent rapid retries
         gatewayState.lastRoutingTableUpload = currentTime;
     }
 
-        // Handle deferred routing table uploads requested by callbacks (runs on CPU1)
-        if (gatewayState.firebaseConnected && gatewayState.routingTableUploadPending) {
+    // Handle deferred routing table uploads requested by callbacks (runs on CPU1)
+    if (gatewayState.firebaseConnected && gatewayState.routingTableUploadPending) {
         ESP_LOGI(TAG, "📡 Processing deferred routing table upload request (priority %d)",
              gatewayState.routingTableUploadPriority);
 
-    #ifdef USE_CELLULAR
-        uploadRoutingTable();
-    #else
         queueRoutingTableUpload(gatewayState.routingTableUploadPriority);
-    #endif
         gatewayState.routingTableUploadPending = false;
         gatewayState.lastRoutingTableUpload = currentTime;
-        }
+    }
 
     // Gateway sensor data collection and upload
     static uint32_t lastSensorUpload = 0;
@@ -450,13 +442,7 @@ void GatewayApp::loop() {
     if (gatewayState.firebaseConnected && !firstUploadDone) {
         ESP_LOGI(TAG, "📊 Initial Gateway sensor data upload (post-reboot)");
         
-#ifdef USE_CELLULAR
-        // Cellular: Direct upload
-        uploadGatewaySensorData();
-#else
-        // WiFi: Use queue for non-blocking gateway sensor upload
         queueGatewaySensorDataUpload(3); // High priority for initial upload
-#endif
         lastSensorUpload = currentTime;
         firstUploadDone = true;
     }
@@ -465,33 +451,8 @@ void GatewayApp::loop() {
         (currentTime - lastSensorUpload >= GATEWAY_SENSOR_INTERVAL)) {
         ESP_LOGI(TAG, "📊 Periodic Gateway sensor data collection");
         
-#ifdef USE_CELLULAR
-        // Cellular: Direct upload
-        uploadGatewaySensorData();
-#else
-        // WiFi: Use queue for non-blocking gateway sensor upload
         queueGatewaySensorDataUpload(2); // Normal priority for periodic upload
-#endif
         lastSensorUpload = currentTime;
-    }
-
-    // Simple status LED indication
-    if (statusCounter++ % 100 == 0) {
-#ifdef USE_CELLULAR
-        if (gatewayState.cellularConnected && gatewayState.firebaseConnected) {
-            led_pattern_message(); // Quick flash for active
-        } else if (gatewayState.cellularConnected) {
-            led_flash(1, 500);     // Single slow flash for Cellular only
-        } else {
-#else
-        if (gatewayState.wifiConnected && gatewayState.firebaseConnected) {
-            led_pattern_message(); // Quick flash for active
-        } else if (gatewayState.wifiConnected) {
-            led_flash(1, 500);     // Single slow flash for WiFi only
-        } else {
-#endif
-            led_pattern_error();   // Error pattern for disconnected
-        }
     }
 
     // Check for Firebase commands (both WiFi and Cellular modes)
@@ -573,6 +534,16 @@ void GatewayApp::loop() {
             gatewayState.nodesDiscoveredDuringProvisioning = 0;
         }
     }
+    
+    // 🔔 Process pending buffer uploads (timeout handler for failed items)
+#ifdef USE_CELLULAR
+    static uint32_t lastPendingCheck = 0;
+    const uint32_t PENDING_CHECK_INTERVAL = 5000; // Check every 5 seconds
+    if (currentTime - lastPendingCheck >= PENDING_CHECK_INTERVAL) {
+        processPendingBufferUploads();
+        lastPendingCheck = currentTime;
+    }
+#endif
     
     // Time synchronization with NTP (loop-based with retry and periodic refresh)
     bool shouldAttemptNtpSync = false;
@@ -678,13 +649,7 @@ void GatewayApp::loop() {
     static uint32_t lastStatusUploadTime = 0;
     const uint32_t STATUS_UPLOAD_INTERVAL = 60000; // 60 seconds
     if (currentTime - lastStatusUploadTime >= STATUS_UPLOAD_INTERVAL) {
-#ifdef USE_CELLULAR
-        // Cellular: Direct upload
-        uploadGatewayStatusPeriodic();
-#else
-        // WiFi: Use queue for non-blocking status upload
-        queueGatewayStatusUpload(1); // Low priority for periodic status
-#endif
+    queueGatewayStatusUpload(1); // Low priority for periodic status
         lastStatusUploadTime = currentTime;
     }
 
@@ -876,6 +841,13 @@ void GatewayApp::setupFirebase() {
         return;
     }
 
+    bool queueReady = CellularFirebaseQueue::getInstance().initialize(firebaseClient);
+    if (queueReady) {
+        ESP_LOGI(TAG, "🚀 Cellular Firebase queue initialized (dedicated worker active)");
+    } else {
+        ESP_LOGW(TAG, "⚠️ Cellular Firebase queue unavailable, falling back to direct uploads");
+    }
+
     // ⚠️ NOTE: Skipping testConnection() because modem doesn't receive response (may timeout)
     // However, actual data uploads work fine - issue is response receiving, not sending
     // So we'll assume connected and attempt uploads. Real status determined by successful uploads.
@@ -883,8 +855,18 @@ void GatewayApp::setupFirebase() {
     ESP_LOGI(TAG, "🔥 Cellular HTTPS Firebase READY (connection test skipped - will retry on first upload)");
     ESP_LOGI(TAG, "🔥 User: %s, Gateway: %s", userUID.c_str(), gatewayMAC.c_str());
 
-    // Log gateway started event
-    firebaseClient->logEvent("gateway_started", gatewayMAC, "Gateway initialized with cellular HTTPS");
+    // Log gateway started event through queue (fallback to direct if needed)
+    bool logged = false;
+    if (CellularFirebaseQueue::getInstance().isRunning()) {
+        logged = CellularFirebaseQueue::getInstance().enqueueLogEvent(
+            "gateway_started",
+            gatewayMAC,
+            "Gateway initialized with cellular HTTPS",
+            3);
+    }
+    if (!logged) {
+        firebaseClient->logEvent("gateway_started", gatewayMAC, "Gateway initialized with cellular HTTPS");
+    }
     
     // // Initialize Cellular Command Poller
     // cellularCommandPoller = new CellularFirebaseCommandPoller(
@@ -1001,6 +983,16 @@ void GatewayApp::setupFirebase() {
         gatewayState.firebaseConnected = false;
     }
 #endif
+
+    // 🔔 Register callback for queue upload results (buffer management)
+#ifdef USE_CELLULAR
+    CellularFirebaseQueue::getInstance().setUploadCallback(
+        [this](CellularFirebaseQueue::Operation op, bool success, const sensorData* data, uint8_t attempts) {
+            this->handleQueueUploadResult(op, success, data, attempts);
+        }
+    );
+    ESP_LOGI(TAG, "✅ Queue upload callback registered for buffer management");
+#endif
 }
 
 void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
@@ -1096,9 +1088,14 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
             bool success = false;
             
 #ifdef USE_CELLULAR
-            // Cellular: Direct upload (blocking)
-            auto result = firebaseClient->uploadSensorData(*s, rssi, snr);
-            success = result.success;
+            // Cellular: Prefer queue to isolate modem access
+            if (CellularFirebaseQueue::getInstance().isRunning()) {
+                success = CellularFirebaseQueue::getInstance().enqueueSensorData(*s, rssi, snr, 2);
+            } else {
+                ESP_LOGW(TAG, "Cellular queue offline - using direct sensor upload");
+                auto result = firebaseClient->uploadSensorData(*s, rssi, snr);
+                success = result.success;
+            }
 #else
             // WiFi: Use queue for non-blocking sensor upload
             if (firebaseClient->isQueueRunning()) {
@@ -1226,6 +1223,16 @@ void GatewayApp::uploadRoutingTable() {
 
 #ifdef USE_CELLULAR
 void GatewayApp::handleCellularEvent(CellularConnectionService::Event event, int8_t rssi) {
+    auto logEventViaQueue = [&](const char* type, const char* nodeId, const char* details) {
+        bool logged = false;
+        if (CellularFirebaseQueue::getInstance().isRunning()) {
+            logged = CellularFirebaseQueue::getInstance().enqueueLogEvent(type, nodeId, details, 3);
+        }
+        if (!logged && firebaseClient) {
+            firebaseClient->logEvent(type, nodeId, details);
+        }
+    };
+
     switch (event) {
         case CellularConnectionService::Event::CONNECTED:
             ESP_LOGI(TAG, "✅ Cellular CONNECTED! Operator: %s, RSSI: %d dBm",
@@ -1238,7 +1245,7 @@ void GatewayApp::handleCellularEvent(CellularConnectionService::Event event, int
             if (firebaseClient && !gatewayState.firebaseConnected) {
                 if (firebaseClient->testConnection()) {
                     gatewayState.firebaseConnected = true;
-                    firebaseClient->logEvent("firebase_reconnected", "", "Cellular reconnected");
+                    logEventViaQueue("firebase_reconnected", "", "Cellular reconnected");
                 }
             }
             break;
@@ -1249,9 +1256,7 @@ void GatewayApp::handleCellularEvent(CellularConnectionService::Event event, int
             gatewayState.firebaseConnected = false;
             led_pattern_error();
 
-            if (firebaseClient) {
-                firebaseClient->logEvent("cellular_disconnected", "", "");
-            }
+            logEventViaQueue("cellular_disconnected", "", "");
             break;
 
         case CellularConnectionService::Event::RECONNECTING:
@@ -2511,9 +2516,17 @@ void GatewayApp::queueRoutingTableUpload(uint8_t priority) {
     }
 
 #ifdef USE_CELLULAR
-    // Cellular mode - direct upload (no queue system)
-    ESP_LOGD(TAG, "Cellular mode - using direct upload");
-    uploadRoutingTable();
+    bool queued = false;
+    if (CellularFirebaseQueue::getInstance().isRunning()) {
+        queued = CellularFirebaseQueue::getInstance().enqueueRoutingTable(routingTable, priority);
+    }
+
+    if (queued) {
+        ESP_LOGD(TAG, "✅ Cellular routing table enqueued successfully");
+    } else {
+        ESP_LOGW(TAG, "Cellular queue unavailable - using direct routing table upload");
+        uploadRoutingTable();
+    }
 #else
     // WiFi mode - use queue if available
     if (firebaseClient->isQueueRunning()) {
@@ -2552,31 +2565,17 @@ void GatewayApp::queueGatewaySensorDataUpload(uint8_t priority) {
     snprintf(nodeIdStr, sizeof(nodeIdStr), "0x%04X", gatewaySensor.nodeId);
 
     ESP_LOGI(TAG, "🏠 Queuing Gateway sensor data (priority %d)", priority);
-    
-    // // Log Gateway sensor data
-    // switch (gatewaySensor.deviceType) {
-    //     case DeviceType::SOIL_SENSOR:
-    //         ESP_LOGI(TAG, "🌱 Gateway Soil - Counter: %u, Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, Batt: %.2fV",
-    //                  gatewaySensor.counter, gatewaySensor.data.soil.soilMoisture, 
-    //                  gatewaySensor.data.soil.soilTemperature, gatewaySensor.data.soil.pH,
-    //                  gatewaySensor.battery);
-    //         break;
-    //     case DeviceType::ENV_SENSOR:
-    //         ESP_LOGI(TAG, "🌡️ Gateway Env - Counter: %u, Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV",
-    //                  gatewaySensor.counter, gatewaySensor.data.environment.temperature, 
-    //                  gatewaySensor.data.environment.humidity, gatewaySensor.battery);
-    //         break;
-    //     default:
-    //         ESP_LOGI(TAG, "📊 Gateway - Counter: %u, Type: %s, Batt: %.2fV",
-    //                  gatewaySensor.counter, deviceTypeToString(gatewaySensor.deviceType), 
-    //                  gatewaySensor.battery);
-    //         break;
-    // }
 
 #ifdef USE_CELLULAR
-    // Cellular mode - direct upload (no queue system)
-    ESP_LOGD(TAG, "Cellular mode - using direct upload");
-    uploadGatewaySensorData();
+    bool queued = false;
+    if (CellularFirebaseQueue::getInstance().isRunning()) {
+        queued = CellularFirebaseQueue::getInstance().enqueueSensorData(gatewaySensor, signalRssi, gatewaySnr, priority);
+    }
+
+    if (!queued) {
+        ESP_LOGW(TAG, "Cellular queue unavailable - using direct gateway sensor upload");
+        uploadGatewaySensorData();
+    }
 #else
     // WiFi mode - use queue if available
     if (firebaseClient->isQueueRunning()) {
@@ -2619,9 +2618,22 @@ void GatewayApp::queueGatewayStatusUpload(uint8_t priority) {
              priority, connectedNodes, totalPacketsReceived, totalPacketsSent, signalRssi, freeHeap, uptimeSeconds);
 
 #ifdef USE_CELLULAR
-    // Cellular mode - direct upload (no queue system)
-    ESP_LOGD(TAG, "Cellular mode - using direct upload");
-    uploadGatewayStatusPeriodic();
+    bool queued = false;
+    if (CellularFirebaseQueue::getInstance().isRunning()) {
+        queued = CellularFirebaseQueue::getInstance().enqueueGatewayStatus(
+            connectedNodes,
+            totalPacketsReceived,
+            totalPacketsSent,
+            signalRssi,
+            freeHeap,
+            uptimeSeconds,
+            priority);
+    }
+
+    if (!queued) {
+        ESP_LOGW(TAG, "Cellular queue unavailable - using direct gateway status upload");
+        uploadGatewayStatusPeriodic();
+    }
 #else
     // WiFi mode - use queue if available
     if (firebaseClient->isQueueRunning()) {
@@ -2751,4 +2763,108 @@ void GatewayApp::netkeyDistributionWorker(void* parameter) {
     
     ESP_LOGI(TAG, "[NETKEY-WORKER] Task completed, deleting self");
     vTaskDelete(NULL);
+}
+
+// 🔔 Queue upload callback handler - processes actual upload results
+void GatewayApp::handleQueueUploadResult(CellularFirebaseQueue::Operation op, bool success, const sensorData* data, uint8_t attempts) {
+    if (!data) {
+        ESP_LOGW(TAG, "[QUEUE-CALLBACK] Invalid data pointer in upload result");
+        return;
+    }
+
+    if (op != CellularFirebaseQueue::Operation::SensorData) {
+        // Other operation types don't need buffer tracking
+        return;
+    }
+
+    char nodeIdStr[16];
+    snprintf(nodeIdStr, sizeof(nodeIdStr), "0x%04X", data->nodeId);
+    String nodeIdStr_obj(nodeIdStr);
+    uint16_t bufferId = data->nodeId;  // Use nodeId as buffer key
+
+    if (success) {
+        // ✅ Upload confirmed successful - remove from buffer and pending map
+        ESP_LOGI(TAG, "[QUEUE-CALLBACK] ✅ SensorData upload SUCCESS for node %s (counter: %u, attempts: %u)",
+                 nodeIdStr, data->counter, attempts);
+
+        // Remove from pending uploads
+        auto it = m_pendingBufferUploads.find(bufferId);
+        if (it != m_pendingBufferUploads.end()) {
+            m_pendingBufferUploads.erase(it);
+            ESP_LOGD(TAG, "[QUEUE-CALLBACK] Removed node %s from pending buffer uploads", nodeIdStr);
+        }
+
+        // Remove from offline buffer (data successfully uploaded)
+        if (OfflineDataBuffer::removeOldest()) {
+            ESP_LOGD(TAG, "[QUEUE-CALLBACK] Removed oldest buffer entry for node %s after successful upload", nodeIdStr);
+        } else {
+            ESP_LOGD(TAG, "[QUEUE-CALLBACK] No buffer entries to remove for node %s (already empty or failed)", nodeIdStr);
+        }
+
+    } else {
+        // ❌ Upload failed after max retries - keep in pending for later retry
+        ESP_LOGW(TAG, "[QUEUE-CALLBACK] ❌ SensorData upload FAILED for node %s after %u attempts (counter: %u)",
+                 nodeIdStr, attempts, data->counter);
+
+        // Track in pending uploads if not already there
+        auto it = m_pendingBufferUploads.find(bufferId);
+        if (it == m_pendingBufferUploads.end()) {
+            // New pending item
+            PendingBufferItem item;
+            item.nodeId = nodeIdStr_obj;
+            item.data = *data;
+            item.queuedAtMs = millis();
+            item.attempts = attempts;
+            m_pendingBufferUploads[bufferId] = item;
+            ESP_LOGI(TAG, "[QUEUE-CALLBACK] Added node %s to pending buffer (will retry after 15s timeout)", nodeIdStr);
+        } else {
+            // Update existing pending item with new timestamp
+            it->second.queuedAtMs = millis();
+            it->second.attempts = attempts;
+            ESP_LOGD(TAG, "[QUEUE-CALLBACK] Updated pending buffer item for node %s", nodeIdStr);
+        }
+
+        // Data stays in offline buffer - will be retried by processPendingBufferUploads()
+    }
+}
+
+// ⏱️ Timeout handler for pending buffer uploads - re-queue abandoned items
+void GatewayApp::processPendingBufferUploads() {
+    if (m_pendingBufferUploads.empty()) {
+        return;  // No pending items
+    }
+
+    uint32_t currentMs = millis();
+    std::vector<uint16_t> timedOutIds;
+
+    // Check for timeout items
+    for (auto it = m_pendingBufferUploads.begin(); it != m_pendingBufferUploads.end(); ++it) {
+        uint16_t bufferId = it->first;
+        PendingBufferItem& item = it->second;
+        uint32_t elapsedMs = currentMs - item.queuedAtMs;
+
+        if (elapsedMs >= PENDING_UPLOAD_TIMEOUT_MS) {
+            // 15 second timeout reached - re-queue for upload
+            ESP_LOGI(TAG, "[PENDING-TIMEOUT] Node %s timed out after %u ms (attempts: %u) - re-queuing",
+                     item.nodeId.c_str(), elapsedMs, item.attempts);
+
+            // Re-queue the sensor data
+            if (CellularFirebaseQueue::getInstance().isRunning()) {
+                if (CellularFirebaseQueue::getInstance().enqueueSensorData(item.data, 0, 0.0f, 2)) {
+                    ESP_LOGI(TAG, "[PENDING-TIMEOUT] ✅ Re-queued sensor data for node %s", item.nodeId.c_str());
+                    timedOutIds.push_back(bufferId);  // Mark for removal from pending
+                } else {
+                    ESP_LOGW(TAG, "[PENDING-TIMEOUT] ❌ Queue full - cannot re-queue node %s (will try again later)",
+                             item.nodeId.c_str());
+                }
+            } else {
+                ESP_LOGW(TAG, "[PENDING-TIMEOUT] Queue not running - cannot re-queue node %s", item.nodeId.c_str());
+            }
+        }
+    }
+
+    // Remove items that were successfully re-queued
+    for (uint16_t id : timedOutIds) {
+        m_pendingBufferUploads.erase(id);
+    }
 }

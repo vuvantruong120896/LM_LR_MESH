@@ -10,6 +10,7 @@
     #include "components/cellular/include/cellular_ssl_client.h"
     #include "components/cellular/include/cellular_firebase_https_client.h"
     #include "components/cellular/include/firebase_command_queue.h"
+    #include "components/cellular/include/cellular_firebase_queue.h"
     #include "../../services/cellular_firebase_command_poller.h"
 #else
     #include "firebase_client.h"
@@ -107,6 +108,16 @@ private:
     // Counter tracking to prevent duplicate data storage
     std::map<uint16_t, uint32_t> lastProcessedCounter;
     
+    // 🔔 Pending buffer upload tracking (callback system)
+    struct PendingBufferItem {
+        String nodeId;           // Node identifier for NVS buffer removal
+        sensorData data;         // Copy of sensor data for re-queueing
+        uint32_t queuedAtMs;     // Timestamp when queued
+        uint8_t attempts;        // Retry count from queue
+    };
+    std::map<uint16_t, PendingBufferItem> m_pendingBufferUploads;  // Track items waiting for upload confirmation
+    static constexpr uint32_t PENDING_UPLOAD_TIMEOUT_MS = 15000;   // 15 second timeout for pending uploads
+    
     // Private methods
     void setupLoRaMesher();
     
@@ -119,6 +130,12 @@ private:
     void setupFirebase();
     void setupTimeSync();
     void broadcastTimeSync();
+    
+    // 🔔 Callback handlers for queue upload results
+#ifdef USE_CELLULAR
+    void handleQueueUploadResult(CellularFirebaseQueue::Operation op, bool success, const sensorData* data, uint8_t attempts);
+    void processPendingBufferUploads();  // Timeout handler for pending items
+#endif
     
 #ifdef USE_CELLULAR
     bool syncTimeFromModem();  // Get time from cellular modem via AT+CCLK?

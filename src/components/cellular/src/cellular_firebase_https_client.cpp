@@ -16,9 +16,9 @@ uint32_t getSyncedUnixTimestamp() {
 }
 
 uint32_t resolveMeasurementTimestamp(const sensorData& data) {
-    if (data.timestamp > 0) {
-        return data.timestamp;
-    }
+    // if (data.timestamp > 0) {
+    //     return data.timestamp;
+    // }
     return getSyncedUnixTimestamp();
 }
 }
@@ -132,7 +132,7 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::sendHTTPS
     // Send request
     int sent = m_sslClient->send(request);
     if (sent <= 0) {
-        m_sslClient->disconnect();
+        // m_sslClient->disconnect();
         result.message = "Failed to send request";
         ESP_LOGE(TAG, "%s", result.message.c_str());
         return result;
@@ -284,33 +284,27 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::uploadSen
 
     String jsonBody = buildSensorDataJSON(data, rssi, snr, timestamp);
 
-    // Path 2: Time-series data (historical charts)
-    String path2 = "/sensor_data/" + m_userUID + "/0x" + nodeId + "/" + String(timestamp) + ".json";
-    UploadResult result2 = sendHTTPSRequest("PUT", path2, jsonBody);
-    
 
-    vTaskDelay(200 / portTICK_PERIOD_MS); // Short delay between requests
-
-     // Path 1: Latest data (real-time dashboard) - matching WiFi mode with .json
+    // Path 1: Latest data (real-time dashboard) - matching WiFi mode with .json
+    ESP_LOGI(TAG, "📤 Uploading sensor data for node 0x%s", nodeId.c_str());
     String path1 = "/nodes/" + m_userUID + "/" + m_gatewayMAC + 
                    "/0x" + nodeId + "/latest_data.json";
-    
-    ESP_LOGI(TAG, "📤 Uploading sensor data for node 0x%s", nodeId.c_str());
-    
     UploadResult result1 = sendHTTPSRequest("PUT", path1, jsonBody);
-    
-    // // Return success if both uploads succeed
-    // UploadResult result;
-    // result.success = result1.success && result2.success;
-    // result.httpCode = result1.httpCode;
-    // result.message = result1.success ? result2.message : result1.message;
-    // result.responseTime = result1.responseTime + result2.responseTime;
 
+    vTaskDelay(500 / portTICK_PERIOD_MS); // Short delay between requests
+
+    // Path 2: Time-series data (historical charts)
+    ESP_LOGI(TAG, "📤 Uploading time-series sensor data for node 0x%s", nodeId.c_str());
+    String path2 = "/sensor_data/" + m_userUID + "/0x" + nodeId + "/" + String(timestamp) + ".json";
+    UploadResult result2 = sendHTTPSRequest("PUT", path2, jsonBody);
+
+    
+    // Return success if both uploads succeed
     UploadResult result;
-    result.success = result1.success;
+    result.success = result1.success && result2.success;
     result.httpCode = result1.httpCode;
-    result.message = result1.message;
-    result.responseTime = result1.responseTime;
+    result.message = result1.success ? result2.message : result1.message;
+    result.responseTime = result1.responseTime + result2.responseTime;
     return result;
 }
 
