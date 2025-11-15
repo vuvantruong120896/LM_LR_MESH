@@ -29,8 +29,9 @@ public:
         String params;          // JSON string with parameters
         uint32_t timestamp;     // Command creation timestamp
         uint8_t priority;       // Priority: 0=high, 1=normal, 2=low
+        uint32_t processingStartTime;  // When command moved to processing (for timeout detection)
         
-        Command() : timestamp(0), priority(1) {}
+        Command() : timestamp(0), priority(1), processingStartTime(0) {}
     };
 
     /**

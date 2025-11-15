@@ -14,7 +14,8 @@ CellularFirebaseCommandPoller::CellularFirebaseCommandPoller(
       m_gatewayMAC(gatewayMAC), 
       m_hasCommand(false), 
       m_lastPoll(0),
-      m_pollInterval(30000),  // Poll every 30 seconds (cellular bandwidth conservation)
+      m_lastPollStartTime(0),
+      m_pollInterval(30000),  // Fixed: Poll every 30 seconds (cellular bandwidth conservation)
       m_enabled(true),
       m_pollingTaskHandle(nullptr),
       m_taskRunning(false) {
@@ -69,6 +70,8 @@ void CellularFirebaseCommandPoller::begin(uint32_t stackSize, uint8_t priority, 
 void CellularFirebaseCommandPoller::pollingTask(void* parameter) {
     CellularFirebaseCommandPoller* poller = static_cast<CellularFirebaseCommandPoller*>(parameter);
     ESP_LOGI(TAG, "[CELLULAR-POLLER-TASK] Command polling task started");
+    ESP_LOGI(TAG, "[CELLULAR-POLLER-TASK] Poll interval: 30 seconds");
+    ESP_LOGI(TAG, "[CELLULAR-POLLER-TASK] Poll stuck timeout: 45 seconds (if poll takes longer, force next poll)");
     
     // Stack monitoring
     UBaseType_t stackHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
@@ -83,31 +86,48 @@ void CellularFirebaseCommandPoller::pollingTask(void* parameter) {
         
         uint32_t now = millis();
         
-        // Check poll interval
+        // FIX #1: Check if previous poll is stuck (> 45 seconds)
+        if (poller->m_lastPollStartTime > 0) {
+            uint32_t pollDuration = now - poller->m_lastPollStartTime;
+            if (pollDuration > POLL_STUCK_TIMEOUT_MS) {
+                ESP_LOGW(TAG, "[CELLULAR-POLLER-TASK] ⚠️ Poll stuck! Duration: %u ms (limit: %u ms)", 
+                         pollDuration, POLL_STUCK_TIMEOUT_MS);
+                ESP_LOGW(TAG, "[CELLULAR-POLLER-TASK] 🔄 Force resetting poll timer to trigger next poll immediately");
+                poller->m_lastPoll = 0;  // Force next poll immediately
+                poller->m_lastPollStartTime = 0;
+            }
+        }
+        
+        // Check poll interval (30 seconds fixed)
         if (now - poller->m_lastPoll < poller->m_pollInterval) {
             vTaskDelay(pdMS_TO_TICKS(1000)); // Sleep 1s and check again
             continue;
         }
         
+        // Mark poll start time
+        poller->m_lastPollStartTime = now;
         poller->m_lastPoll = now;
         
-        ESP_LOGD(TAG, "[CELLULAR-POLLER-TASK] Polling for pending commands...");
+        ESP_LOGD(TAG, "🔎 [CELLULAR-POLLER-TASK] Polling for pending commands...");
         bool foundCommand = poller->fetchPendingCommands();
         
         if (foundCommand) {
-            ESP_LOGI(TAG, "[CELLULAR-POLLER-TASK] ✅ Command found and ready for processing");
+            ESP_LOGI(TAG, "✅ [CELLULAR-POLLER-TASK] Command found and ready for processing");
         }
+        
+        // Mark poll end (successful completion)
+        poller->m_lastPollStartTime = 0;
         
         // Stack monitoring (periodic)
         stackHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
         if (stackHighWaterMark < 1024) {
-            ESP_LOGW(TAG, "[CELLULAR-POLLER-TASK] ⚠️ Low stack: %u bytes free", stackHighWaterMark);
+            ESP_LOGW(TAG, "⚠️ [CELLULAR-POLLER-TASK] Low stack: %u bytes free", stackHighWaterMark);
         }
         
         vTaskDelay(pdMS_TO_TICKS(500)); // Small delay before next iteration
     }
     
-    ESP_LOGI(TAG, "[CELLULAR-POLLER-TASK] Task stopping...");
+    ESP_LOGI(TAG, "🎯 [CELLULAR-POLLER-TASK] Task stopping...");
     vTaskDelete(NULL);
 }
 
@@ -286,6 +306,9 @@ bool CellularFirebaseCommandPoller::moveToProcessing(const Command& cmd) {
         ESP_LOGW(TAG, "Failed to delete from pending: %s", result.message.c_str());
         // Not critical - command is in processing anyway
     }
+    
+    // Update current command with processing start time (for timeout detection)
+    m_currentCommand.processingStartTime = millis();
     
     ESP_LOGI(TAG, "Command moved to processing successfully");
     return true;

@@ -536,6 +536,51 @@ void GatewayApp::loop() {
         }
     }
     
+    // FIX #2: Check for commands stuck in processing > 5 minutes and auto-move to failed
+#ifdef USE_CELLULAR
+    if (cellularCommandPoller && gatewayState.firebaseConnected) {
+        const CellularFirebaseCommandPoller::Command& cmd = cellularCommandPoller->getCurrentCommand();
+#else
+    if (commandPoller && gatewayState.firebaseConnected) {
+        const FirebaseCommandPoller::Command& cmd = commandPoller->getCurrentCommand();
+#endif
+        
+        // Only check if command has been in processing for > 5 minutes (300000 ms)
+        if (!cmd.id.isEmpty() && cmd.processingStartTime > 0) {
+            uint32_t processingDuration = currentTime - cmd.processingStartTime;
+            const uint32_t COMMAND_PROCESSING_TIMEOUT_MS = 300000;  // 5 minutes
+            
+            if (processingDuration > COMMAND_PROCESSING_TIMEOUT_MS) {
+                ESP_LOGE(TAG, "⚠️ Command stuck in processing for %u ms (timeout: %u ms)", 
+                        processingDuration, COMMAND_PROCESSING_TIMEOUT_MS);
+                ESP_LOGE(TAG, "📤 Auto-moving command %s to failed status", cmd.id.c_str());
+                
+                // Create command object for moving to failed
+#ifdef USE_CELLULAR
+                CellularFirebaseCommandPoller::Command failedCmd;
+                failedCmd.id = cmd.id;
+                failedCmd.type = cmd.type;
+                failedCmd.timestamp = cmd.timestamp;
+                failedCmd.priority = cmd.priority;
+                failedCmd.processingStartTime = cmd.processingStartTime;
+                
+                cellularCommandPoller->moveToFailed(failedCmd, "COMMAND_TIMEOUT", 
+                    "Command processing exceeded 5 minute timeout");
+#else
+                FirebaseCommandPoller::Command failedCmd;
+                failedCmd.id = cmd.id;
+                failedCmd.type = cmd.type;
+                failedCmd.timestamp = cmd.timestamp;
+                failedCmd.priority = cmd.priority;
+                failedCmd.processingStartTime = cmd.processingStartTime;
+                
+                commandPoller->moveToFailed(failedCmd, "COMMAND_TIMEOUT", 
+                    "Command processing exceeded 5 minute timeout");
+#endif
+            }
+        }
+    }
+    
     // 🔔 Process pending buffer uploads (timeout handler for failed items)
 #ifdef USE_CELLULAR
     static uint32_t lastPendingCheck = 0;
@@ -869,19 +914,20 @@ void GatewayApp::setupFirebase() {
         firebaseClient->logEvent("gateway_started", gatewayMAC, "Gateway initialized with cellular HTTPS");
     }
     
-    // // Initialize Cellular Command Poller
-    // cellularCommandPoller = new CellularFirebaseCommandPoller(
-    //     firebaseClient,
-    //     userUID,
-    //     gatewayMAC
-    // );
+    // Initialize Cellular Command Poller
+    cellularCommandPoller = new CellularFirebaseCommandPoller(
+        firebaseClient,  // CellularFirebaseHTTPSClient instance
+        userUID,
+        gatewayMAC
+    );
 
-    // // Start command polling task on CPU1 (same as WiFi mode)
-    // // Stack: 8KB, Priority: 1, Core: 1 (CPU1)
-    // cellularCommandPoller->begin(8192, 1, 1);
-    // ESP_LOGI(TAG, "✅ Cellular Command Poller initialized (30s interval, CPU1 task)");
+    // Start command polling task on CPU1
+    // Poll interval: Fixed 30 seconds
+    cellularCommandPoller->begin(10240, 1, 1);
+    ESP_LOGI(TAG, "✅ Cellular Command Poller initialized");
+    ESP_LOGI(TAG, "   ⏱️ Poll interval: 30 seconds (fixed)");
     
-    // ESP_LOGI(TAG, "✅ Cellular Firebase ready (HTTPS mode with command polling on CPU1)");
+    ESP_LOGI(TAG, "✅ Cellular Firebase ready (HTTPS mode with 30s command polling)");
     
 #else
     // WiFi-based Firebase client (existing code)
@@ -1933,11 +1979,34 @@ bool GatewayApp::syncTimeFromModem() {
         return false;
     }
 
+    // The modem time is in local timezone (indicated by tzValue)
+    // tzValue is in 15-minute increments. E.g., +28 means UTC+7 (28*15 = 420 minutes = 7 hours)
+    // We need to convert from local time to UTC
     int tzMinutes = tzValue * 15;  // value is in 15-minute increments
     if (tzSignChar == '-') {
         tzMinutes = -tzMinutes;
     }
-    time_t utcSeconds = localSeconds - (tzMinutes * 60);
+    
+    // mktime() uses the system's timezone setting, but we need to interpret this as UTC
+    // First, we temporarily use UTC timezone to parse the time correctly
+    const char* tz_backup = getenv("TZ");
+    setenv("TZ", "UTC0", 1);
+    tzset();  // Apply timezone change
+    
+    time_t utcSeconds = mktime(&localTime);
+    
+    // Restore original timezone
+    if (tz_backup) {
+        setenv("TZ", tz_backup, 1);
+    } else {
+        unsetenv("TZ");
+    }
+    tzset();  // Restore timezone
+    
+    // Now adjust for the modem's local timezone to get actual UTC
+    // If modem is at UTC+7, subtract 7 hours to get UTC
+    utcSeconds -= (tzMinutes * 60);
+    
     if (utcSeconds <= 0) {
         ESP_LOGE(TAG, "Computed UTC timestamp invalid (%ld)", (long)utcSeconds);
         return false;

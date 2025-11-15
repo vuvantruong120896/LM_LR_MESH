@@ -29,8 +29,9 @@ public:
         String params;          // JSON string with parameters
         uint32_t timestamp;     // Command creation timestamp
         uint8_t priority;       // Priority: 0=high, 1=normal, 2=low
+        uint32_t processingStartTime;  // When command moved to processing (for timeout detection)
         
-        Command() : timestamp(0), priority(1) {}
+        Command() : timestamp(0), priority(1), processingStartTime(0) {}
     };
 
     /**
@@ -127,6 +128,18 @@ public:
      * @param enabled true to enable
      */
     void setEnabled(bool enabled) { m_enabled = enabled; }
+    
+    /**
+     * @brief Set current signal strength (RSSI) for adaptive polling
+     * @param rssi Signal strength in dBm (e.g., -70 is good, -100 is poor)
+     */
+    void setCurrentSignalStrength(int16_t rssi);
+    
+    /**
+     * @brief Get current polling interval
+     * @return Poll interval in milliseconds
+     */
+    uint32_t getPollInterval() const { return m_pollInterval; }
 
 private:
     CellularFirebaseHTTPSClient* m_httpsClient; // HTTPS client
@@ -137,8 +150,12 @@ private:
     Command m_currentCommand;       // Current command being processed
     bool m_hasCommand;              // Flag: has command to process
     uint32_t m_lastPoll;            // Last poll timestamp
-    uint32_t m_pollInterval;        // Poll interval in milliseconds
+    uint32_t m_lastPollStartTime;   // When the last poll started (to detect stuck polls)
+    uint32_t m_pollInterval;        // Poll interval: fixed at 30s for cellular bandwidth conservation
     bool m_enabled;                 // Polling enabled flag
+    
+    // Constants
+    static constexpr uint32_t POLL_STUCK_TIMEOUT_MS = 45000;  // If poll takes > 45s, force reset
     
     // Task management
     TaskHandle_t m_pollingTaskHandle; // FreeRTOS task handle

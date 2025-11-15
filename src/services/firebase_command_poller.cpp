@@ -338,6 +338,9 @@ void FirebaseCommandPoller::moveToProcessing(const Command& cmd) {
         ESP_LOGE(TAG, "❌ Failed to move to processing: %s", m_fbdo->errorReason().c_str());
     }
     
+    // Update current command with processing start time (for timeout detection)
+    m_currentCommand.processingStartTime = millis();
+    
     // Update command_results for real-time UI updates
     updateCommandResult(cmd.id, "processing", "Command is being executed");
 }
