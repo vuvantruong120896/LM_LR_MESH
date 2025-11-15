@@ -1223,7 +1223,7 @@ std::vector<RouteNode> GatewayApp::buildFirebaseRoutingTable() {
         }
         
         rtList->releaseInUse();
-        ESP_LOGD(TAG, "Copied %d nodes from original routing table", firebaseRoutingTable.size());
+        ESP_LOGI(TAG, "✅ Copied %d nodes from original routing table", firebaseRoutingTable.size());
     }
     
     // Step 2: Add Gateway as a node entry
@@ -1246,7 +1246,7 @@ std::vector<RouteNode> GatewayApp::buildFirebaseRoutingTable() {
     
     firebaseRoutingTable.push_back(gatewayNode);
     
-    ESP_LOGD(TAG, "Built Firebase routing table: %d total nodes (%d original + Gateway 0x%04X)", 
+    ESP_LOGI(TAG, "🌐 Built Firebase routing table: %d total nodes (%d original + Gateway 0x%04X with RSSI=-50, SNR=10)", 
              firebaseRoutingTable.size(), firebaseRoutingTable.size() - 1, gatewayNodeId);
     
     return firebaseRoutingTable;
@@ -2515,45 +2515,23 @@ void GatewayApp::queueRoutingTableUpload(uint8_t priority) {
         return;
     }
 
-    // Access routing table from RoutingTableService
-    LM_LinkedList<RouteNode>* rtList = RoutingTableService::routingTableList;
-    if (!rtList) {
-        ESP_LOGW(TAG, "Routing table is null");
-        return;
-    }
-
-    rtList->setInUse();
-    size_t tableSize = rtList->getLength();
-
-    // Convert LinkedList to vector for Firebase upload
-    std::vector<RouteNode> routingTable;
-    routingTable.reserve(tableSize);
-
-    if (rtList->moveToStart()) {
-        do {
-            RouteNode* node = rtList->getCurrent();
-            if (node) {
-                routingTable.push_back(*node);
-            }
-        } while (rtList->next());
-    }
-
-    rtList->releaseInUse();
-
-    if (routingTable.size() == 0) {
+    // 🌐 Build Firebase routing table (includes Gateway + all nodes)
+    std::vector<RouteNode> firebaseRoutingTable = buildFirebaseRoutingTable();
+    
+    if (firebaseRoutingTable.size() == 0) {
         ESP_LOGI(TAG, "📡 Queuing EMPTY routing table to clear Firebase data");
     } else {
-        ESP_LOGI(TAG, "📡 Queuing routing table (%d nodes, priority %d)", routingTable.size(), priority);
+        ESP_LOGI(TAG, "📡 Queuing Firebase routing table (%d nodes, includes Gateway, priority %d)", firebaseRoutingTable.size(), priority);
     }
 
 #ifdef USE_CELLULAR
     bool queued = false;
     if (CellularFirebaseQueue::getInstance().isRunning()) {
-        queued = CellularFirebaseQueue::getInstance().enqueueRoutingTable(routingTable, priority);
+        queued = CellularFirebaseQueue::getInstance().enqueueRoutingTable(firebaseRoutingTable, priority);
     }
 
     if (queued) {
-        ESP_LOGD(TAG, "✅ Cellular routing table enqueued successfully");
+        ESP_LOGD(TAG, "✅ Cellular Firebase routing table enqueued successfully");
     } else {
         ESP_LOGW(TAG, "Cellular queue unavailable - using direct routing table upload");
         uploadRoutingTable();
@@ -2561,11 +2539,11 @@ void GatewayApp::queueRoutingTableUpload(uint8_t priority) {
 #else
     // WiFi mode - use queue if available
     if (firebaseClient->isQueueRunning()) {
-        bool success = firebaseClient->queueRoutingTable(routingTable, priority);
+        bool success = firebaseClient->queueRoutingTable(firebaseRoutingTable, priority);
         if (success) {
-            ESP_LOGD(TAG, "✅ Routing table queued successfully");
+            ESP_LOGD(TAG, "✅ Firebase routing table queued successfully");
         } else {
-            ESP_LOGW(TAG, "❌ Failed to queue routing table");
+            ESP_LOGW(TAG, "❌ Failed to queue Firebase routing table");
         }
     } else {
         // Fallback to direct upload
