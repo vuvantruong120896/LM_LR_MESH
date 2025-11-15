@@ -5,6 +5,8 @@
 #include "cellular_uart.h"
 #include <functional>
 #include <vector>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 /**
  * @brief AT Command Handler for A7682S Module
@@ -182,10 +184,12 @@ public:
 private:
     CellularUART* m_uart;
     URCCallback m_urcCallback;
+    SemaphoreHandle_t m_commandMutex;  ///< Mutex to serialize AT commands
     
     static const char* TAG;
     static constexpr uint32_t DEFAULT_TIMEOUT_MS = 1000;
     static constexpr uint32_t LONG_TIMEOUT_MS = 10000;
+    static constexpr uint32_t MUTEX_TIMEOUT_MS = 5000;  ///< Max wait for command mutex
 
     /**
      * @brief Read response from module

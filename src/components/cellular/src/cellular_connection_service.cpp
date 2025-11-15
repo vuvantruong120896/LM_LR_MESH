@@ -218,17 +218,34 @@ CellularConnectionService::Status CellularConnectionService::getStatus() const {
 }
 
 void CellularConnectionService::update() {
-    // Process URCs
+    // Process URCs first (non-blocking)
     if (m_atHandler) {
         m_atHandler->processURCs();
     }
 
-    // Update signal quality periodically (every 30 seconds)
+    // 🔄 Staggered periodic updates to avoid AT command conflicts
+    // Signal quality every 30s, registration state offset by 15s
     static uint32_t lastSignalUpdate = 0;
-    if (millis() - lastSignalUpdate > 30000) {
-        lastSignalUpdate = millis();
-        updateSignalQuality();
-        updateRegistrationState();
+    static uint32_t lastRegistrationUpdate = 15000;  // Offset by 15s
+    
+    uint32_t now = millis();
+    
+    // Update signal quality every 30 seconds
+    if (now - lastSignalUpdate > 30000) {
+        lastSignalUpdate = now;
+        ESP_LOGD(TAG, "Periodic signal quality update...");
+        if (!updateSignalQuality()) {
+            ESP_LOGD(TAG, "Signal quality update failed, relying on URC updates");
+        }
+    }
+    
+    // Update registration state every 30 seconds, but offset by 15s from signal update
+    if (now - lastRegistrationUpdate > 30000) {
+        lastRegistrationUpdate = now;
+        ESP_LOGD(TAG, "Periodic registration state update...");
+        if (!updateRegistrationState()) {
+            ESP_LOGD(TAG, "Registration state update failed, relying on URC updates");
+        }
     }
 
     // Check connection status
@@ -558,47 +575,103 @@ bool CellularConnectionService::detachGPRS() {
 }
 
 bool CellularConnectionService::updateSignalQuality() {
-    auto resp = m_atHandler->sendCommand("+CSQ");
+    // First, process URCs to catch any pending +CSQ notifications
+    if (m_atHandler) {
+        m_atHandler->processURCs();
+    }
     
-    if (resp.success) {
-        String value = ATCommandHandler::extractValue(resp.data, "+CSQ:");
-        auto parts = ATCommandHandler::splitValues(value);
+    // Try with increased timeout and retry logic
+    const uint32_t timeout = 3000;  // Increased from default 1000ms to 3000ms
+    const uint8_t maxRetries = 2;
+    
+    for (uint8_t retry = 0; retry < maxRetries; retry++) {
+        auto resp = m_atHandler->sendCommand("+CSQ", timeout);
         
-        if (parts.size() >= 1) {
-            int8_t newRSSI = parts[0].toInt();
+        if (resp.success) {
+            String value = ATCommandHandler::extractValue(resp.data, "+CSQ:");
+            auto parts = ATCommandHandler::splitValues(value);
             
-            if (newRSSI != m_currentRSSI) {
-                m_currentRSSI = newRSSI;
+            if (parts.size() >= 1) {
+                int8_t newRSSI = parts[0].toInt();
                 
-                // Check if signal is weak
-                if (m_currentRSSI < m_signalThreshold && m_currentRSSI != 99) {
-                    ESP_LOGW(TAG, "⚠️  Weak signal: RSSI=%d", m_currentRSSI);
-                    triggerEvent(Event::SIGNAL_LOW, m_currentRSSI);
+                if (newRSSI != m_currentRSSI) {
+                    m_currentRSSI = newRSSI;
+                    
+                    // Check if signal is weak
+                    if (m_currentRSSI < m_signalThreshold && m_currentRSSI != 99) {
+                        ESP_LOGW(TAG, "⚠️  Weak signal: RSSI=%d", m_currentRSSI);
+                        triggerEvent(Event::SIGNAL_LOW, m_currentRSSI);
+                    }
+                }
+                
+                ESP_LOGD(TAG, "Signal quality updated: RSSI=%d (attempt %d/%d)", m_currentRSSI, retry + 1, maxRetries);
+                return true;
+            }
+        } else {
+            ESP_LOGD(TAG, "Signal quality query failed (attempt %d/%d): %s", 
+                     retry + 1, maxRetries, resp.errorMessage.c_str());
+            
+            // Process URCs between retries - may catch delayed response
+            if (retry < maxRetries - 1) {
+                delay(100);
+                if (m_atHandler) {
+                    m_atHandler->processURCs();
                 }
             }
-            
-            return true;
         }
     }
     
+    ESP_LOGW(TAG, "Failed to update signal quality after %d attempts", maxRetries);
     return false;
 }
 
 bool CellularConnectionService::updateRegistrationState() {
-    auto resp = m_atHandler->sendCommand("+CREG?");
+    // First, process URCs to catch any pending +CREG notifications
+    if (m_atHandler) {
+        m_atHandler->processURCs();
+    }
     
-    if (resp.success) {
-        // Parse: +CREG: <n>,<stat>
-        String value = ATCommandHandler::extractValue(resp.data, "+CREG:");
-        auto parts = ATCommandHandler::splitValues(value);
+    // Try with increased timeout and retry logic
+    const uint32_t timeout = 3000;  // Increased from default 1000ms to 3000ms
+    const uint8_t maxRetries = 2;
+    
+    for (uint8_t retry = 0; retry < maxRetries; retry++) {
+        auto resp = m_atHandler->sendCommand("+CREG?", timeout);
         
-        if (parts.size() >= 2) {
-            int stat = parts[1].toInt();
-            m_registrationState = static_cast<RegState>(stat);
-            return true;
+        if (resp.success) {
+            // Parse: +CREG: <n>,<stat>
+            String value = ATCommandHandler::extractValue(resp.data, "+CREG:");
+            auto parts = ATCommandHandler::splitValues(value);
+            
+            if (parts.size() >= 2) {
+                int stat = parts[1].toInt();
+                RegState newState = static_cast<RegState>(stat);
+                
+                if (newState != m_registrationState) {
+                    ESP_LOGI(TAG, "Registration state changed: %s -> %s", 
+                             regStateToString(m_registrationState), regStateToString(newState));
+                    m_registrationState = newState;
+                }
+                
+                ESP_LOGD(TAG, "Registration state updated: %s (attempt %d/%d)", 
+                         regStateToString(m_registrationState), retry + 1, maxRetries);
+                return true;
+            }
+        } else {
+            ESP_LOGD(TAG, "Registration state query failed (attempt %d/%d): %s", 
+                     retry + 1, maxRetries, resp.errorMessage.c_str());
+            
+            // Process URCs between retries - may catch delayed response
+            if (retry < maxRetries - 1) {
+                delay(100);
+                if (m_atHandler) {
+                    m_atHandler->processURCs();
+                }
+            }
         }
     }
     
+    ESP_LOGW(TAG, "Failed to update registration state after %d attempts", maxRetries);
     return false;
 }
 

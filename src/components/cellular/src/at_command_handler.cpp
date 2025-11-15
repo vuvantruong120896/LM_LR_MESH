@@ -6,10 +6,23 @@ const char* ATCommandHandler::TAG = "AT_CMD";
 ATCommandHandler::ATCommandHandler(CellularUART* uart)
     : m_uart(uart)
     , m_urcCallback(nullptr)
+    , m_commandMutex(nullptr)
 {
+    // Create mutex for AT command serialization
+    m_commandMutex = xSemaphoreCreateMutex();
+    if (!m_commandMutex) {
+        ESP_LOGE(TAG, "Failed to create command mutex");
+    } else {
+        ESP_LOGD(TAG, "AT command mutex created");
+    }
 }
 
 ATCommandHandler::~ATCommandHandler() {
+    if (m_commandMutex) {
+        vSemaphoreDelete(m_commandMutex);
+        m_commandMutex = nullptr;
+        ESP_LOGD(TAG, "AT command mutex deleted");
+    }
 }
 
 ATCommandHandler::Response ATCommandHandler::sendCommand(
@@ -23,6 +36,13 @@ ATCommandHandler::Response ATCommandHandler::sendCommand(
     if (!m_uart) {
         ESP_LOGE(TAG, "UART not initialized");
         response.errorMessage = "UART not initialized";
+        return response;
+    }
+
+    // 🔒 Acquire mutex to serialize AT commands
+    if (!m_commandMutex || xSemaphoreTake(m_commandMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGW(TAG, "Failed to acquire command mutex (timeout %ums)", MUTEX_TIMEOUT_MS);
+        response.errorMessage = "Command serialization timeout";
         return response;
     }
 
@@ -45,6 +65,9 @@ ATCommandHandler::Response ATCommandHandler::sendCommand(
     response = readResponse(timeoutMs, expectOK);
     response.responseTimeMs = millis() - startTime;
 
+    // 🔓 Release mutex
+    xSemaphoreGive(m_commandMutex);
+
     ESP_LOGD(TAG, "RX: %s [%s, %dms]",
              response.data.c_str(),
              response.success ? "OK" : "ERROR",
@@ -66,6 +89,13 @@ ATCommandHandler::Response ATCommandHandler::sendRawCommand(
         return response;
     }
 
+    // 🔒 Acquire mutex to serialize AT commands
+    if (!m_commandMutex || xSemaphoreTake(m_commandMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGW(TAG, "Failed to acquire command mutex for raw command");
+        response.errorMessage = "Command serialization timeout";
+        return response;
+    }
+
     ESP_LOGD(TAG, "TX (raw): %s", rawCommand.c_str());
 
     m_uart->flush();
@@ -73,6 +103,9 @@ ATCommandHandler::Response ATCommandHandler::sendRawCommand(
 
     response = readResponse(timeoutMs, true);
     response.responseTimeMs = millis() - startTime;
+
+    // 🔓 Release mutex
+    xSemaphoreGive(m_commandMutex);
 
     return response;
 }
@@ -85,12 +118,21 @@ ATCommandHandler::Response ATCommandHandler::sendDataCommand(
 ) {
     Response response;
 
+    // 🔒 Acquire mutex to serialize AT commands (data commands are multi-step)
+    if (!m_commandMutex || xSemaphoreTake(m_commandMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGW(TAG, "Failed to acquire command mutex for data command");
+        response.errorMessage = "Command serialization timeout";
+        return response;
+    }
+
     // Step 1: Send initial command WITHOUT consuming the prompt
     // Build full AT command like sendCommand(), but don't call readResponse
     ESP_LOGD(TAG, "Data command step 1: %s", command.c_str());
     if (!m_uart) {
         response.success = false;
         response.errorMessage = "UART not initialized";
+        // 🔓 Release mutex before return
+        xSemaphoreGive(m_commandMutex);
         return response;
     }
 
@@ -120,6 +162,8 @@ ATCommandHandler::Response ATCommandHandler::sendDataCommand(
         ESP_LOGE(TAG, "Timeout waiting for prompt '%c'", promptChar);
         response.success = false;
         response.errorMessage = "Timeout waiting for prompt";
+        // 🔓 Release mutex before return
+        xSemaphoreGive(m_commandMutex);
         return response;
     }
 
@@ -130,6 +174,10 @@ ATCommandHandler::Response ATCommandHandler::sendDataCommand(
 
     // Step 4: Wait for final response (OK/SEND OK or errors)
     response = readResponse(timeoutMs, true);
+    
+    // 🔓 Release mutex after completion
+    xSemaphoreGive(m_commandMutex);
+    
     return response;
 }
 
