@@ -33,7 +33,8 @@ CellularFirebaseHTTPSClient::CellularFirebaseHTTPSClient(
     : m_sslClient(sslClient),
       m_firebaseHost(firebaseHost),
       m_authSecret(authSecret),
-      m_gatewayId(gatewayId) {
+      m_gatewayId(gatewayId),
+      m_requestMutex(nullptr) {
     
     // Remove protocol prefix if present
     if (m_firebaseHost.startsWith("https://")) {
@@ -46,6 +47,20 @@ CellularFirebaseHTTPSClient::CellularFirebaseHTTPSClient(
     // Remove trailing slash
     if (m_firebaseHost.endsWith("/")) {
         m_firebaseHost = m_firebaseHost.substring(0, m_firebaseHost.length() - 1);
+    }
+    
+    // Create mutex for HTTP transaction protection
+    m_requestMutex = xSemaphoreCreateMutex();
+    if (!m_requestMutex) {
+        ESP_LOGE(TAG, "Failed to create HTTP transaction mutex");
+    }
+}
+
+CellularFirebaseHTTPSClient::~CellularFirebaseHTTPSClient() {
+    // Cleanup mutex
+    if (m_requestMutex) {
+        vSemaphoreDelete(m_requestMutex);
+        m_requestMutex = nullptr;
     }
 }
 
@@ -92,6 +107,22 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::sendHTTPS
     const String& method, const String& path, const String& body) {
     
     UploadResult result;
+    
+    // 🔐 MUTEX: Protect entire HTTP transaction from concurrent access
+    // This prevents polling (GET) and queue uploads (PUT) from interfering
+    if (!m_requestMutex) {
+        result.message = "Mutex not initialized";
+        ESP_LOGE(TAG, "❌ HTTP request mutex not available!");
+        return result;
+    }
+    
+    if (xSemaphoreTake(m_requestMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        result.message = "Mutex timeout - another HTTP request in progress";
+        ESP_LOGW(TAG, "⚠️ %s request blocked - %s timeout after %ums", 
+                 method.c_str(), result.message.c_str(), MUTEX_TIMEOUT_MS);
+        return result;
+    }
+    
     uint32_t startTime = millis();
 
     // Connect to Firebase
@@ -108,6 +139,7 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::sendHTTPS
     if (!m_sslClient->connect(host, 443, 30000)) {
         result.message = "SSL connection failed";
         ESP_LOGE(TAG, "%s", result.message.c_str());
+        xSemaphoreGive(m_requestMutex);  // Release mutex before returning
         return result;
     }
 
@@ -135,6 +167,7 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::sendHTTPS
         // m_sslClient->disconnect();
         result.message = "Failed to send request";
         ESP_LOGE(TAG, "%s", result.message.c_str());
+        xSemaphoreGive(m_requestMutex);  // Release mutex before returning
         return result;
     }
 
@@ -147,6 +180,7 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::sendHTTPS
         result.responseTime = millis() - startTime;
         ESP_LOGI(TAG, "✅ %s request sent successfully (%d bytes) - not waiting for response", method.c_str(), sent);
         // m_sslClient->disconnect();
+        xSemaphoreGive(m_requestMutex);  // Release mutex
         return result;
     }
 
@@ -220,6 +254,7 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::sendHTTPS
     if (totalReceived == 0) {
         result.message = "No response received (timeout after 8s)";
         ESP_LOGW(TAG, "%s - Check cellular network latency", result.message.c_str());
+        xSemaphoreGive(m_requestMutex);  // Release mutex before returning
         return result;
     }
 
@@ -229,6 +264,7 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::sendHTTPS
     if (response.length() < 10) {
         result.message = "Response too short, possible truncation";
         ESP_LOGW(TAG, "%s (received: %d bytes)", result.message.c_str(), totalReceived);
+        xSemaphoreGive(m_requestMutex);  // Release mutex before returning
         return result;
     }
 
@@ -245,6 +281,7 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::sendHTTPS
         ESP_LOGW(TAG, "HTTP error %d", result.httpCode);
     }
 
+    xSemaphoreGive(m_requestMutex);  // Release mutex after successful operation
     return result;
 }
 

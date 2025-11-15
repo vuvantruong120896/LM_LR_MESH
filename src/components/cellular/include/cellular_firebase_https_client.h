@@ -14,6 +14,8 @@
 #include "mesh_utils.h"  // For sensorData, RouteNode
 #include <ArduinoJson.h>
 #include <vector>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 /**
  * @brief Firebase HTTPS Client for secure connections
@@ -43,6 +45,11 @@ public:
                                const String& firebaseHost,
                                const String& authSecret,
                                const String& gatewayId);
+
+    /**
+     * @brief Destructor - cleanup mutex
+     */
+    ~CellularFirebaseHTTPSClient();
 
     /**
      * @brief Initialize client
@@ -110,6 +117,10 @@ private:
     String m_gatewayId;
     String m_userUID;
     String m_gatewayMAC;
+    
+    // Thread synchronization (Nov 16, 2025)
+    SemaphoreHandle_t m_requestMutex;   // Mutex for HTTP transaction protection
+    static const uint32_t MUTEX_TIMEOUT_MS = 10000;  // 10 second timeout
 
     // Helper methods
     String buildFirebaseURL(const String& path);
