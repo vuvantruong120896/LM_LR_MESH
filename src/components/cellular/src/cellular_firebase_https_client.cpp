@@ -285,13 +285,13 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::uploadSen
     String jsonBody = buildSensorDataJSON(data, rssi, snr, timestamp);
 
 
-    // Path 1: Latest data (real-time dashboard) - matching WiFi mode with .json
-    ESP_LOGI(TAG, "📤 Uploading sensor data for node 0x%s", nodeId.c_str());
-    String path1 = "/nodes/" + m_userUID + "/" + m_gatewayMAC + 
-                   "/0x" + nodeId + "/latest_data.json";
-    UploadResult result1 = sendHTTPSRequest("PUT", path1, jsonBody);
+    // // Path 1: Latest data (real-time dashboard) - matching WiFi mode with .json
+    // ESP_LOGI(TAG, "📤 Uploading sensor data for node 0x%s", nodeId.c_str());
+    // String path1 = "/nodes/" + m_userUID + "/" + m_gatewayMAC + 
+    //                "/0x" + nodeId + "/latest_data.json";
+    // UploadResult result1 = sendHTTPSRequest("PUT", path1, jsonBody);
 
-    vTaskDelay(500 / portTICK_PERIOD_MS); // Short delay between requests
+    // vTaskDelay(500 / portTICK_PERIOD_MS); // Short delay between requests
 
     // Path 2: Time-series data (historical charts)
     ESP_LOGI(TAG, "📤 Uploading time-series sensor data for node 0x%s", nodeId.c_str());
@@ -299,12 +299,20 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::uploadSen
     UploadResult result2 = sendHTTPSRequest("PUT", path2, jsonBody);
 
     
+    // // Return success if both uploads succeed
+    // UploadResult result;
+    // result.success = result1.success && result2.success;
+    // result.httpCode = result1.httpCode;
+    // result.message = result1.success ? result2.message : result1.message;
+    // result.responseTime = result1.responseTime + result2.responseTime;
+    // return result;
+
     // Return success if both uploads succeed
     UploadResult result;
-    result.success = result1.success && result2.success;
-    result.httpCode = result1.httpCode;
-    result.message = result1.success ? result2.message : result1.message;
-    result.responseTime = result1.responseTime + result2.responseTime;
+    result.success = result2.success;
+    result.httpCode = result2.httpCode;
+    result.message = result2.message;
+    result.responseTime = result2.responseTime;
     return result;
 }
 
