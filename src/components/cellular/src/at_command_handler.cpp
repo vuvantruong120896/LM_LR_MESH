@@ -269,9 +269,12 @@ void ATCommandHandler::registerURCCallback(URCCallback callback) {
 
 void ATCommandHandler::processURCs() {
     // Non-blocking URC processing
+    // Use SHORT timeout (50ms) as compromise:
+    // - Fast enough to not block background task
+    // - Long enough to read complete URC lines
     while (m_uart->available()) {
         char buffer[512];  // Increased for TCP data responses
-        size_t len = m_uart->readLine(buffer, sizeof(buffer), 100);
+        size_t len = m_uart->readLine(buffer, sizeof(buffer), 50);  // 50ms timeout
         
         if (len > 0) {
             String line(buffer);
@@ -284,6 +287,9 @@ void ATCommandHandler::processURCs() {
                     m_urcCallback(line);
                 }
             }
+        } else {
+            // Timeout or no more data - exit loop
+            break;
         }
     }
 }
@@ -419,6 +425,12 @@ ATCommandHandler::Response ATCommandHandler::readResponse(uint32_t timeoutMs, bo
 
     if (!gotFinalResponse && expectOK) {
         ESP_LOGW(TAG, "Timeout waiting for final response");
+        // Diagnostic: Check if UART has any data stuck
+        if (m_uart && m_uart->available() > 0) {
+            ESP_LOGW(TAG, "⚠️  UART has %d bytes available but no valid response!", m_uart->available());
+        } else {
+            ESP_LOGW(TAG, "⚠️  UART has NO data available - module may not be responding!");
+        }
         response.success = false;
         response.errorMessage = "Timeout";
     } else if (!expectOK) {

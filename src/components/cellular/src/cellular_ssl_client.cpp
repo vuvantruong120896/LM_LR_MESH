@@ -127,8 +127,7 @@ bool CellularSSLClient::stopHTTPService() {
 
 bool CellularSSLClient::connect(const String& host, uint16_t port, uint32_t timeoutMs) {
     if (m_state == State::CONNECTED) {
-        ESP_LOGW(TAG, "Already connected, disconnecting first");
-        // disconnect();
+        ESP_LOGW(TAG, "Already connected");
     }
 
     if (!m_httpServiceStarted && !initialize()) {
@@ -151,7 +150,7 @@ bool CellularSSLClient::connect(const String& host, uint16_t port, uint32_t time
 
     // AT+CCHOPEN can take 5-10 seconds to establish SSL connection
     // Increased from 5000ms to 10000ms
-    ATCommandHandler::Response resp = m_atHandler->sendCommand(cmd.c_str(), 10000);
+    ATCommandHandler::Response resp = m_atHandler->sendCommand(cmd.c_str(), 5000);
     if (!resp.success) {
         ESP_LOGE(TAG, "Failed to send AT+CCHOPEN command");
         m_state = State::ERROR;
@@ -188,49 +187,7 @@ bool CellularSSLClient::connect(const String& host, uint16_t port, uint32_t time
     m_state = State::CONNECTED;
     m_availableBytes = 0; // reset any pending counters
     
-    // Optional: Add longer delay to let modem complete TLS handshake for cellular
-    delay(1500);  // increased from 1200ms to 1500ms for better cellular reliability
-    
     return true;
-    
-    /* ORIGINAL URC-BASED APPROACH (doesn't work for CCHOPEN):
-    
-    // Wait for +CCHOPEN URC (asynchronous response)
-    // URC format: +CCHOPEN: <sessionid>,<err>
-    ESP_LOGI(TAG, "Waiting for +CCHOPEN URC (timeout: %ums)...", timeoutMs);
-    
-    // Reset URC flags
-    m_cchOpenReceived = false;
-    m_cchOpenSessionId = -1;
-    m_cchOpenErrorCode = -1;
-    
-    uint32_t startTime = millis();
-    
-    while (millis() - startTime < timeoutMs) {
-        // Process URCs (this will trigger handleURC callback)
-        m_atHandler->processURCs();
-        
-        // Check if URC was received
-        if (m_cchOpenReceived) {
-            if (m_cchOpenErrorCode == 0) {
-                m_sessionId = m_cchOpenSessionId;
-                m_state = State::CONNECTED;
-                ESP_LOGI(TAG, "✅ HTTPS connection opened, session ID: %d", m_sessionId);
-                return true;
-            } else {
-                ESP_LOGE(TAG, "HTTPS connection failed with error code: %d", m_cchOpenErrorCode);
-                m_state = State::ERROR;
-                return false;
-            }
-        }
-        
-        delay(100);  // Small delay between URC checks
-    }
-
-    ESP_LOGE(TAG, "Timeout waiting for +CCHOPEN URC");
-    m_state = State::ERROR;
-    return false;
-    */
 }
 
 int CellularSSLClient::send(const String& request) {
@@ -275,21 +232,21 @@ int CellularSSLClient::receive(char* buffer, size_t maxLength, uint32_t timeoutM
         return -1;
     }
 
-    // Prefer URC-gated receive: wait for +CCHRECV URC with extended timeout
-    // Polling after CCHSEND causes ERROR because session may be in transient state
+    // Use callback-based URC handling (no manual processURCs polling needed)
+    // URC +CCHRECV will automatically call handleURC() callback which sets m_availableBytes
+    // Simply wait for m_availableBytes to be populated by the callback
     uint32_t start = millis();
-    const uint32_t urcWaitMs = timeoutMs > 0 ? min<uint32_t>(timeoutMs, 5000) : 0; // increased from 2s to 5s for Firebase processing
+    const uint32_t urcWaitMs = timeoutMs > 0 ? min<uint32_t>(timeoutMs, 5000) : 0;
+    
     if (m_availableBytes <= 0 && urcWaitMs > 0) {
-        while ((millis() - start) < urcWaitMs) {
-            // Pump URCs so +CCHRECV indications are captured
-            if (m_atHandler) m_atHandler->processURCs();
-            if (m_availableBytes > 0) break;
-            delay(30);  // increased from 20ms to 30ms for cellular processing
+        // Wait for callback to populate m_availableBytes
+        // No need to call processURCs() - URC handler runs asynchronously via callback
+        while ((millis() - start) < urcWaitMs && m_availableBytes <= 0) {
+            delay(30);  // Small delay to avoid busy waiting
         }
     }
 
-    // Fallback polling DISABLED: At+CCHRECV after CCHSEND may hit closed session
-    // Better to extend URC wait timeout than poll closed session
+    // Data received via URC callback, or timeout occurred
     
     if (m_availableBytes <= 0) {
         // Still no data available

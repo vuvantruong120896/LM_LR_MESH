@@ -295,6 +295,18 @@ public:
      */
     String getMACAddress() const { return getIMEI(); }
 
+    /**
+     * @brief Update signal quality (called periodically by queue)
+     * @return true if update successful
+     */
+    bool updateSignalQuality();
+
+    /**
+     * @brief Update registration state (called periodically by queue)
+     * @return true if update successful
+     */
+    bool updateRegistrationState();
+
 private:
     // Hardware
     CellularUART* m_uart;
@@ -333,6 +345,9 @@ private:
     
     // Secondary URC callback (for SSL/TCP clients)
     SecondaryURCCallback m_secondaryURCCallback;
+    
+    // URC processing task
+    TaskHandle_t m_urcProcessingTask;
 
     // Constants
     static const char* TAG;
@@ -350,12 +365,23 @@ private:
     bool activatePDPContext();
     bool deactivatePDPContext();
     bool detachGPRS();
-    bool updateSignalQuality();
-    bool updateRegistrationState();
     bool updateIPAddress();
     void resetReconnectBackoff();
     void triggerEvent(Event event, int8_t rssi = 0);
     void handleURC(const String& urc);
+    
+    /**
+     * @brief Start dedicated URC processing task
+     * 
+     * This task continuously processes URCs from the modem in the background,
+     * eliminating the need for manual processURCs() calls throughout the codebase.
+     */
+    void startURCProcessingTask();
+    
+    /**
+     * @brief URC processing task function (static, called by FreeRTOS)
+     */
+    static void urcProcessingTaskFunction(void* parameter);
     
     /**
      * @brief Convert RegState to string for logging

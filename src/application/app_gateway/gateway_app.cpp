@@ -693,9 +693,9 @@ void GatewayApp::loop() {
 
     // Upload gateway status every 60 seconds (use queue for non-blocking)
     static uint32_t lastStatusUploadTime = 0;
-    const uint32_t STATUS_UPLOAD_INTERVAL = 60000; // 60 seconds
+    const uint32_t STATUS_UPLOAD_INTERVAL = 300000; // 300 seconds
     if (currentTime - lastStatusUploadTime >= STATUS_UPLOAD_INTERVAL) {
-    queueGatewayStatusUpload(1); // Low priority for periodic status
+        queueGatewayStatusUpload(1); // Low priority for periodic status
         lastStatusUploadTime = currentTime;
     }
 
@@ -914,20 +914,20 @@ void GatewayApp::setupFirebase() {
         firebaseClient->logEvent("gateway_started", gatewayMAC, "Gateway initialized with cellular HTTPS");
     }
     
-    // Initialize Cellular Command Poller
-    cellularCommandPoller = new CellularFirebaseCommandPoller(
-        firebaseClient,  // CellularFirebaseHTTPSClient instance
-        userUID,
-        gatewayMAC
-    );
+    // // Initialize Cellular Command Poller
+    // cellularCommandPoller = new CellularFirebaseCommandPoller(
+    //     firebaseClient,  // CellularFirebaseHTTPSClient instance
+    //     userUID,
+    //     gatewayMAC
+    // );
 
-    // Start command polling task on CPU1
-    // Poll interval: Fixed 30 seconds
-    cellularCommandPoller->begin(10240, 1, 1);
-    ESP_LOGI(TAG, "✅ Cellular Command Poller initialized");
-    ESP_LOGI(TAG, "   ⏱️ Poll interval: 30 seconds (fixed)");
+    // // Start command polling task on CPU1
+    // // Poll interval: Fixed 30 seconds
+    // cellularCommandPoller->begin(10240, 1, 1);
+    // ESP_LOGI(TAG, "✅ Cellular Command Poller initialized");
+    // ESP_LOGI(TAG, "   ⏱️ Poll interval: 30 seconds (fixed)");
     
-    ESP_LOGI(TAG, "✅ Cellular Firebase ready (HTTPS mode with 30s command polling)");
+    // ESP_LOGI(TAG, "✅ Cellular Firebase ready (HTTPS mode with 30s command polling)");
     
 #else
     // WiFi-based Firebase client (existing code)

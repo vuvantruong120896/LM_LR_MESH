@@ -102,15 +102,16 @@ int CellularTCPClient::connect(const String& host, uint16_t port, uint32_t timeo
         return -1;
     }
 
-    // Wait for +CIPOPEN URC
+    // Wait for +CIPOPEN URC via callback (no manual processURCs needed)
     ESP_LOGI(TAG, "Waiting for +CIPOPEN URC (timeout: %ums)...", timeoutMs);
     uint32_t startTime = millis();
     
     while (millis() - startTime < timeoutMs) {
-        // Process URCs
-        m_atHandler->processURCs();
+        // URC callback will automatically update m_sockets[linkNum].state
+        // No need to call processURCs() - it runs asynchronously
+        delay(10);
         
-        // Check socket state
+        // Check socket state (updated by URC callback)
         if (m_sockets[linkNum].state == SocketState::CONNECTED) {
             m_sockets[linkNum].connectTime = millis();
             m_sockets[linkNum].lastActivityTime = millis();
@@ -506,10 +507,12 @@ bool CellularTCPClient::resolveHost(const String& hostname, String& resultIP, ui
     }
 
     // Wait for +CDNSGIP URC (fallback if not in immediate response)
+    // URC callback will automatically update m_dnsState
     uint32_t startTime = millis();
     
     while (millis() - startTime < timeoutMs) {
-        m_atHandler->processURCs();
+        // No need to call processURCs() - URC callback handles it asynchronously
+        delay(100);
         
         if (!m_dnsState.pending) {
             if (m_dnsState.success) {
@@ -522,8 +525,6 @@ bool CellularTCPClient::resolveHost(const String& hostname, String& resultIP, ui
                 return false;
             }
         }
-        
-        delay(100);
     }
 
     ESP_LOGE(TAG, "DNS timeout");
@@ -578,9 +579,8 @@ void CellularTCPClient::onEvent(EventCallback callback) {
 }
 
 void CellularTCPClient::update() {
-    if (m_atHandler) {
-        m_atHandler->processURCs();
-    }
+    // URC callbacks already handle asynchronous processing
+    // No manual processURCs() needed - events are handled via registered callbacks
 }
 
 CellularTCPClient::ConnectError CellularTCPClient::getLastError() const {

@@ -24,6 +24,8 @@ public:
         GatewayStatus,
         RoutingTable,
         LogEvent,
+        SignalQualityCheck,      // Periodic AT+CSQ query
+        RegistrationStateCheck,  // Periodic AT+CREG? query
         Shutdown
     };
 
@@ -49,6 +51,9 @@ public:
 
     bool initialize(CellularFirebaseHTTPSClient* client);
     void shutdown();
+    void setConnectionService(class CellularConnectionService* service) {
+        m_connectionService = service;
+    }
     bool isRunning() const { return m_workerTask != nullptr; }
     
     // Register callback to receive upload results
@@ -69,6 +74,8 @@ public:
                          const String& nodeId,
                          const String& details,
                          uint8_t priority = 2);
+    bool enqueueSignalQualityCheck(uint8_t priority = 1);
+    bool enqueueRegistrationStateCheck(uint8_t priority = 1);
 
     QueueStats getStats() const;
 
@@ -104,6 +111,10 @@ private:
             char nodeId[48] = {0};
             char details[128] = {0};
         } log;
+
+        struct {
+            // Placeholder for periodic checks (no additional data needed)
+        } periodicCheck;
     };
 
     CellularFirebaseQueue() = default;
@@ -115,6 +126,7 @@ private:
     bool handleProcessResult(QueueItem& item, bool success);
 
     CellularFirebaseHTTPSClient* m_client = nullptr;
+    class CellularConnectionService* m_connectionService = nullptr;
     QueueHandle_t m_queue = nullptr;
     TaskHandle_t m_workerTask = nullptr;
     SemaphoreHandle_t m_statsMutex = nullptr;

@@ -1,4 +1,5 @@
 #include "cellular_connection_service.h"
+#include "cellular_firebase_queue.h"
 #include <esp_log.h>
 #include <time.h>
 #include <sys/time.h>
@@ -27,6 +28,7 @@ CellularConnectionService::CellularConnectionService(
     , m_eventCallback(nullptr)
     , m_netOpenSuccess(false)
     , m_netOpenReceived(false)
+    , m_urcProcessingTask(nullptr)
 {
     // Initialize statistics
     memset(&m_stats, 0, sizeof(Stats));
@@ -76,6 +78,9 @@ bool CellularConnectionService::initialize() {
     m_atHandler->registerURCCallback([this](const String& urc) {
         this->handleURC(urc);
     });
+    
+    // Start dedicated URC processing task (non-blocking, runs asynchronously)
+    startURCProcessingTask();
 
     // Test AT communication
     // Increased retries from 5 to 10 for slower/unresponsive modules
@@ -108,6 +113,9 @@ bool CellularConnectionService::initialize() {
 
     // Update signal quality
     updateSignalQuality();
+
+    // Register this service with the Firebase queue for periodic checks
+    CellularFirebaseQueue::getInstance().setConnectionService(this);
 
     ESP_LOGI(TAG, "Initialization complete");
     return true;
@@ -218,34 +226,25 @@ CellularConnectionService::Status CellularConnectionService::getStatus() const {
 }
 
 void CellularConnectionService::update() {
-    // Process URCs first (non-blocking)
-    if (m_atHandler) {
-        m_atHandler->processURCs();
-    }
+    // URC processing is handled by background task - no need to call processURCs() here
 
-    // 🔄 Staggered periodic updates to avoid AT command conflicts
-    // Signal quality every 30s, registration state offset by 15s
+    // Periodic checks are now enqueued to the Firebase queue to maintain
+    // single-threaded AT command access
     static uint32_t lastSignalUpdate = 0;
     static uint32_t lastRegistrationUpdate = 15000;  // Offset by 15s
     
     uint32_t now = millis();
     
-    // Update signal quality every 30 seconds
-    if (now - lastSignalUpdate > 30000) {
+    // Enqueue signal quality check every 60 seconds (priority 1 = low)
+    if (now - lastSignalUpdate > 60000) {
         lastSignalUpdate = now;
-        ESP_LOGD(TAG, "Periodic signal quality update...");
-        if (!updateSignalQuality()) {
-            ESP_LOGD(TAG, "Signal quality update failed, relying on URC updates");
-        }
+        CellularFirebaseQueue::getInstance().enqueueSignalQualityCheck(1);
     }
     
-    // Update registration state every 30 seconds, but offset by 15s from signal update
-    if (now - lastRegistrationUpdate > 30000) {
+    // Enqueue registration state check every 60 seconds, offset by 15s (priority 1 = low)
+    if (now - lastRegistrationUpdate > 60000) {
         lastRegistrationUpdate = now;
-        ESP_LOGD(TAG, "Periodic registration state update...");
-        if (!updateRegistrationState()) {
-            ESP_LOGD(TAG, "Registration state update failed, relying on URC updates");
-        }
+        CellularFirebaseQueue::getInstance().enqueueRegistrationStateCheck(1);
     }
 
     // Check connection status
@@ -529,8 +528,9 @@ bool CellularConnectionService::activatePDPContext() {
     uint32_t startTime = millis();
     
     while (millis() - startTime < 30000) {  // 30s timeout
-        // Process URCs (this will trigger handleURC which sets the flags)
-        m_atHandler->processURCs();
+        // URC callback will automatically update flags (background task handles URCs)
+        // No need to call processURCs() - it runs in background task
+        delay(100);
         
         // Check flags set by handleURC
         if (m_netOpenReceived) {
@@ -545,8 +545,6 @@ bool CellularConnectionService::activatePDPContext() {
                 return false;
             }
         }
-        
-        delay(100);
     }
     
     ESP_LOGE(TAG, "Timeout waiting for +NETOPEN URC");
@@ -575,10 +573,7 @@ bool CellularConnectionService::detachGPRS() {
 }
 
 bool CellularConnectionService::updateSignalQuality() {
-    // First, process URCs to catch any pending +CSQ notifications
-    if (m_atHandler) {
-        m_atHandler->processURCs();
-    }
+    // URC processing is handled by background task - no manual processURCs() needed
     
     // Try with increased timeout and retry logic
     const uint32_t timeout = 3000;  // Increased from default 1000ms to 3000ms
@@ -604,19 +599,16 @@ bool CellularConnectionService::updateSignalQuality() {
                     }
                 }
                 
-                ESP_LOGD(TAG, "Signal quality updated: RSSI=%d (attempt %d/%d)", m_currentRSSI, retry + 1, maxRetries);
+                ESP_LOGD(TAG, "📶 Signal quality updated: RSSI=%d (attempt %d/%d)", m_currentRSSI, retry + 1, maxRetries);
                 return true;
             }
         } else {
             ESP_LOGD(TAG, "Signal quality query failed (attempt %d/%d): %s", 
                      retry + 1, maxRetries, resp.errorMessage.c_str());
             
-            // Process URCs between retries - may catch delayed response
+            // Between retries, just wait a bit (background task handles URCs)
             if (retry < maxRetries - 1) {
                 delay(100);
-                if (m_atHandler) {
-                    m_atHandler->processURCs();
-                }
             }
         }
     }
@@ -626,10 +618,7 @@ bool CellularConnectionService::updateSignalQuality() {
 }
 
 bool CellularConnectionService::updateRegistrationState() {
-    // First, process URCs to catch any pending +CREG notifications
-    if (m_atHandler) {
-        m_atHandler->processURCs();
-    }
+    // URC processing is handled by background task - no manual processURCs() needed
     
     // Try with increased timeout and retry logic
     const uint32_t timeout = 3000;  // Increased from default 1000ms to 3000ms
@@ -661,12 +650,9 @@ bool CellularConnectionService::updateRegistrationState() {
             ESP_LOGD(TAG, "Registration state query failed (attempt %d/%d): %s", 
                      retry + 1, maxRetries, resp.errorMessage.c_str());
             
-            // Process URCs between retries - may catch delayed response
+            // Between retries, just wait a bit (background task handles URCs)
             if (retry < maxRetries - 1) {
                 delay(100);
-                if (m_atHandler) {
-                    m_atHandler->processURCs();
-                }
             }
         }
     }
@@ -853,4 +839,58 @@ bool CellularConnectionService::syncTimeFromNetwork() {
     ESP_LOGI(TAG, "🕒 System time set from modem: %04d-%02d-%02d %02d:%02d:%02d", 
              t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
     return true;
+}
+
+void CellularConnectionService::startURCProcessingTask() {
+    if (m_urcProcessingTask) {
+        ESP_LOGW(TAG, "URC processing task already running");
+        return;
+    }
+    
+    if (!m_atHandler) {
+        ESP_LOGE(TAG, "AT handler not available - cannot start URC processing task");
+        return;
+    }
+    
+    BaseType_t taskCreated = xTaskCreatePinnedToCore(
+        urcProcessingTaskFunction,      // Task function
+        "CellularURCProcessor",         // Task name
+        4096,                           // Stack size
+        this,                           // Parameter (this pointer)
+        5,                              // Priority
+        &m_urcProcessingTask,           // Task handle
+        1                               // Core (Core 1)
+    );
+    
+    if (taskCreated != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create URC processing task");
+        m_urcProcessingTask = nullptr;
+        return;
+    }
+    
+    ESP_LOGI(TAG, "✅ URC processing task started (non-blocking, asynchronous)");
+}
+
+void CellularConnectionService::urcProcessingTaskFunction(void* parameter) {
+    auto* self = static_cast<CellularConnectionService*>(parameter);
+    
+    if (!self || !self->m_atHandler) {
+        ESP_LOGE("CellularURCProcessor", "Invalid parameters");
+        vTaskDelete(nullptr);
+        return;
+    }
+    
+    ESP_LOGI("CellularURCProcessor", "URC processing task started on Core %d", xPortGetCoreID());
+    
+    // Continuously process URCs in background
+    while (true) {
+        // Check if data available - processURCs() with 20ms timeout won't block long
+        if (self->m_uart && self->m_uart->available() > 0) {
+            // Process available URCs
+            self->m_atHandler->processURCs();
+        } else {
+            // No data available - sleep longer to save CPU
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+    }
 }

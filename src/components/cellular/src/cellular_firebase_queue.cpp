@@ -161,6 +161,24 @@ bool CellularFirebaseQueue::enqueueLogEvent(const String& eventType,
     return enqueueItem(item);
 }
 
+bool CellularFirebaseQueue::enqueueSignalQualityCheck(uint8_t priority) {
+    QueueItem item;
+    item.operation = Operation::SignalQualityCheck;
+    item.priority = priority;
+    item.maxRetries = 1;  // Only retry once for periodic checks
+    item.queuedAtMs = millis();
+    return enqueueItem(item);
+}
+
+bool CellularFirebaseQueue::enqueueRegistrationStateCheck(uint8_t priority) {
+    QueueItem item;
+    item.operation = Operation::RegistrationStateCheck;
+    item.priority = priority;
+    item.maxRetries = 1;  // Only retry once for periodic checks
+    item.queuedAtMs = millis();
+    return enqueueItem(item);
+}
+
 CellularFirebaseQueue::QueueStats CellularFirebaseQueue::getStats() const {
     QueueStats copy;
     if (m_statsMutex && xSemaphoreTake(m_statsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
@@ -221,40 +239,9 @@ void CellularFirebaseQueue::workerTask(void* parameter) {
             break;
         }
 
-        // **KEY FIX**: MUCH longer delay between operations to avoid overwhelming cellular modem
-        // Modem needs proper time to:
-        // 1. Close previous SSL connection gracefully
-        // 2. Release AT channel resources
-        // 3. Handle any pending unsolicited result codes (URCs)
-        // 4. Be ready for next AT+CCHOPEN command
-        //
-        // Observations from logs:
-        // - AT+CCHOPEN timeout = 10+ seconds (modem unresponsive)
-        // - This suggests modem is in bad state from previous connection
-        // - Solution: Give modem MUCH longer recovery time (5-10s between operations)
-        
-        uint32_t minDelayMs = 5000;  // 5s minimum delay
-        
-        // Adaptive delay based on cellular health
-        if (consecutiveFailures > 0) {
-            // Backoff when there are failures
-            minDelayMs = 5000 + (consecutiveFailures * 2000);
-            if (minDelayMs > 15000) minDelayMs = 15000;  // Cap at 15s
-            ESP_LOGW(TAG, "⚠️ Cellular degraded (failures: %d) - delay: %dms", 
-                     consecutiveFailures, minDelayMs);
-        }
-        
-        // Circuit breaker: if 3+ failures in 30s, pause longer for modem recovery
-        if (consecutiveFailures >= 3 && (millis() - lastFailureTime) < 30000) {
-            ESP_LOGW(TAG, "🔴 CIRCUIT BREAKER ACTIVE - Modem health critical, pausing 20s");
-            vTaskDelay(pdMS_TO_TICKS(20000));  // 20s modem recovery
-            consecutiveFailures = 0;  // Reset after recovery
-        }
-        
-        // Apply delay before processing
-        vTaskDelay(pdMS_TO_TICKS(minDelayMs));
-
         self->processItem(item, consecutiveFailures, lastFailureTime);
+
+        vTaskDelay(pdMS_TO_TICKS(5000)); // 5 second delay between items
     }
 
     ESP_LOGI(TAG, "Cellular Firebase worker exiting");
@@ -279,16 +266,20 @@ void CellularFirebaseQueue::processItem(QueueItem& item, uint32_t& consecutiveFa
 
     switch (item.operation) {
         case Operation::SensorData: {
+            ESP_LOGI(TAG, "📡 Uploading sensor data (Node ID: %u, Counter: %u)",
+                     item.sensor.data.nodeId,
+                     item.sensor.data.counter);
             auto result = m_client->uploadSensorData(item.sensor.data,
                                                      static_cast<int8_t>(item.sensor.rssi),
                                                      item.sensor.snr);
             success = result.success;
             if (!success) {
-                ESP_LOGW(TAG, "Sensor upload failed: %s", result.message.c_str());
+                ESP_LOGW(TAG, "✗✗✗✗  Sensor upload failed: %s", result.message.c_str());
             }
             break;
         }
         case Operation::GatewayStatus: {
+            ESP_LOGI(TAG, "📊 Uploading gateway status");
             auto result = m_client->uploadGatewayStatus(
                 item.status.connectedNodes,
                 item.status.totalPacketsReceived,
@@ -303,6 +294,7 @@ void CellularFirebaseQueue::processItem(QueueItem& item, uint32_t& consecutiveFa
             break;
         }
         case Operation::RoutingTable: {
+            ESP_LOGI(TAG, "📚 Uploading routing table");
             if (!item.routing.table) {
                 ESP_LOGE(TAG, "Routing table payload missing");
                 success = false;
@@ -316,11 +308,34 @@ void CellularFirebaseQueue::processItem(QueueItem& item, uint32_t& consecutiveFa
             break;
         }
         case Operation::LogEvent: {
+            ESP_LOGI(TAG, "📝 Uploading log event: %s", item.log.eventType);
             success = m_client->logEvent(String(item.log.eventType),
                                          String(item.log.nodeId),
                                          String(item.log.details));
             if (!success) {
                 ESP_LOGW(TAG, "Log event upload failed for %s", item.log.eventType);
+            }
+            break;
+        }
+        case Operation::SignalQualityCheck: {
+            ESP_LOGD(TAG, "📶 Periodic signal quality check (AT+CSQ)");
+            if (m_connectionService) {
+                m_connectionService->updateSignalQuality();
+                success = true;
+            } else {
+                ESP_LOGW(TAG, "CellularConnectionService not set for signal quality check");
+                success = false;
+            }
+            break;
+        }
+        case Operation::RegistrationStateCheck: {
+            ESP_LOGD(TAG, "📋 Periodic registration state check (AT+CREG?)");
+            if (m_connectionService) {
+                m_connectionService->updateRegistrationState();
+                success = true;
+            } else {
+                ESP_LOGW(TAG, "CellularConnectionService not set for registration state check");
+                success = false;
             }
             break;
         }

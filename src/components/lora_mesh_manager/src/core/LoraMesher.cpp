@@ -966,9 +966,6 @@ void LoraMesher::routingTableManager() {
             UBaseType_t stackHighWater = uxTaskGetStackHighWaterMark(NULL);
             uint32_t freeHeap = esp_get_free_heap_size();
             
-            ESP_LOGI(LM_TAG, "=== Periodic Routing Table Display (every 30s) ===");
-            ESP_LOGD(LM_TAG, "Stack free: %u bytes, Heap free: %u bytes", stackHighWater, freeHeap);
-            
             // CRITICAL: Check for stack overflow danger
             if (stackHighWater < 512) {
                 ESP_LOGE(LM_TAG, "⚠️ STACK OVERFLOW DANGER! Only %u bytes free!", stackHighWater);
