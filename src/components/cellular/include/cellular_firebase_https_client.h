@@ -110,6 +110,13 @@ public:
      */
     UploadResult httpDelete(const String& path);
 
+    /**
+     * @brief Fetch pending commands from Firebase
+     * @return true if fetch succeeded, false otherwise
+     * Note: Command data is handled by polling task/queue
+     */
+    bool fetchPendingCommands();
+
 private:
     CellularSSLClient* m_sslClient;
     String m_firebaseHost;

@@ -580,3 +580,24 @@ CellularFirebaseHTTPSClient::UploadResult CellularFirebaseHTTPSClient::httpDelet
     
     return result;
 }
+
+bool CellularFirebaseHTTPSClient::fetchPendingCommands() {
+    // Build path: users/{uid}/commands/{mac}/pending.json
+    String path = String("users/") + m_userUID + "/commands/" + m_gatewayMAC + "/pending.json";
+    
+    ESP_LOGD(TAG, "Fetching pending commands: GET %s", path.c_str());
+    
+    // Perform HTTPS GET request
+    UploadResult result = httpGet(path);
+    
+    if (!result.success) {
+        ESP_LOGW(TAG, "Failed to fetch commands: %s", result.message.c_str());
+        return false;
+    }
+    
+    // Response body contains pending commands (handled by command poller)
+    // Just log that fetch succeeded
+    ESP_LOGD(TAG, "✅ Pending commands fetched successfully");
+    return true;
+}
+

@@ -1,5 +1,6 @@
 #include "cellular_firebase_command_poller.h"
 #include "../components/cellular/include/cellular_firebase_https_client.h"
+#include "../components/cellular/include/cellular_firebase_queue.h"
 #include <esp_log.h>
 #include <ArduinoJson.h>
 
@@ -15,7 +16,7 @@ CellularFirebaseCommandPoller::CellularFirebaseCommandPoller(
       m_hasCommand(false), 
       m_lastPoll(0),
       m_lastPollStartTime(0),
-      m_pollInterval(30000),  // Fixed: Poll every 30 seconds (cellular bandwidth conservation)
+      m_pollInterval(45000),  // Fixed: Poll every 45 seconds (cellular bandwidth conservation)
       m_enabled(true),
       m_pollingTaskHandle(nullptr),
       m_taskRunning(false) {
@@ -69,9 +70,9 @@ void CellularFirebaseCommandPoller::begin(uint32_t stackSize, uint8_t priority, 
 
 void CellularFirebaseCommandPoller::pollingTask(void* parameter) {
     CellularFirebaseCommandPoller* poller = static_cast<CellularFirebaseCommandPoller*>(parameter);
-    ESP_LOGI(TAG, "[CELLULAR-POLLER-TASK] Command polling task started");
-    ESP_LOGI(TAG, "[CELLULAR-POLLER-TASK] Poll interval: 30 seconds");
-    ESP_LOGI(TAG, "[CELLULAR-POLLER-TASK] Poll stuck timeout: 45 seconds (if poll takes longer, force next poll)");
+    ESP_LOGI(TAG, "[CELLULAR-POLLER-TASK] Command polling task started (queue-based mode)");
+    ESP_LOGI(TAG, "[CELLULAR-POLLER-TASK] Poll interval: 45 seconds");
+    ESP_LOGI(TAG, "[CELLULAR-POLLER-TASK] Polling runs in queue worker context - no race conditions");
     
     // Stack monitoring
     UBaseType_t stackHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
@@ -86,37 +87,26 @@ void CellularFirebaseCommandPoller::pollingTask(void* parameter) {
         
         uint32_t now = millis();
         
-        // FIX #1: Check if previous poll is stuck (> 45 seconds)
-        if (poller->m_lastPollStartTime > 0) {
-            uint32_t pollDuration = now - poller->m_lastPollStartTime;
-            if (pollDuration > POLL_STUCK_TIMEOUT_MS) {
-                ESP_LOGW(TAG, "[CELLULAR-POLLER-TASK] ⚠️ Poll stuck! Duration: %u ms (limit: %u ms)", 
-                         pollDuration, POLL_STUCK_TIMEOUT_MS);
-                ESP_LOGW(TAG, "[CELLULAR-POLLER-TASK] 🔄 Force resetting poll timer to trigger next poll immediately");
-                poller->m_lastPoll = 0;  // Force next poll immediately
-                poller->m_lastPollStartTime = 0;
-            }
-        }
-        
-        // Check poll interval (30 seconds fixed)
+        // Check poll interval (45 seconds)
         if (now - poller->m_lastPoll < poller->m_pollInterval) {
             vTaskDelay(pdMS_TO_TICKS(1000)); // Sleep 1s and check again
             continue;
         }
         
         // Mark poll start time
-        poller->m_lastPollStartTime = now;
         poller->m_lastPoll = now;
         
-        ESP_LOGD(TAG, "🔎 [CELLULAR-POLLER-TASK] Polling for pending commands...");
-        bool foundCommand = poller->fetchPendingCommands();
+        ESP_LOGD(TAG, "🔎 [CELLULAR-POLLER-TASK] Enqueuing command fetch operation (priority 1)");
         
-        if (foundCommand) {
-            ESP_LOGI(TAG, "✅ [CELLULAR-POLLER-TASK] Command found and ready for processing");
+        // Enqueue fetch command into queue - this runs in queue worker context (Core 1)
+        // No direct HTTPS calls here - all serialized through queue
+        bool enqueued = CellularFirebaseQueue::getInstance().enqueueFetchCommands(1);
+        
+        if (enqueued) {
+            ESP_LOGD(TAG, "✅ [CELLULAR-POLLER-TASK] Fetch command enqueued successfully");
+        } else {
+            ESP_LOGW(TAG, "⚠️ [CELLULAR-POLLER-TASK] Failed to enqueue fetch command (queue full?)");
         }
-        
-        // Mark poll end (successful completion)
-        poller->m_lastPollStartTime = 0;
         
         // Stack monitoring (periodic)
         stackHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
@@ -127,7 +117,7 @@ void CellularFirebaseCommandPoller::pollingTask(void* parameter) {
         vTaskDelay(pdMS_TO_TICKS(500)); // Small delay before next iteration
     }
     
-    ESP_LOGI(TAG, "🎯 [CELLULAR-POLLER-TASK] Task stopping...");
+    ESP_LOGI(TAG, "🎯 [CELLULAR-POLLER-TASK] Polling task stopping...");
     vTaskDelete(NULL);
 }
 

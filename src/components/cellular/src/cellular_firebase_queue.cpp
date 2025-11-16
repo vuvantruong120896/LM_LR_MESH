@@ -179,6 +179,15 @@ bool CellularFirebaseQueue::enqueueRegistrationStateCheck(uint8_t priority) {
     return enqueueItem(item);
 }
 
+bool CellularFirebaseQueue::enqueueFetchCommands(uint8_t priority) {
+    QueueItem item;
+    item.operation = Operation::FetchCommands;
+    item.priority = priority;
+    item.maxRetries = 1;  // Only retry once for polling
+    item.queuedAtMs = millis();
+    return enqueueItem(item);
+}
+
 CellularFirebaseQueue::QueueStats CellularFirebaseQueue::getStats() const {
     QueueStats copy;
     if (m_statsMutex && xSemaphoreTake(m_statsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
@@ -335,6 +344,18 @@ void CellularFirebaseQueue::processItem(QueueItem& item, uint32_t& consecutiveFa
                 success = true;
             } else {
                 ESP_LOGW(TAG, "CellularConnectionService not set for registration state check");
+                success = false;
+            }
+            break;
+        }
+        case Operation::FetchCommands: {
+            ESP_LOGD(TAG, "🔎 Polling Firebase for pending commands");
+            // Fetch commands via HTTPS (runs in queue worker context, no race condition)
+            if (m_client) {
+                // This is safe because queue worker is on Core 1, serialized UART access
+                success = m_client->fetchPendingCommands();
+            } else {
+                ESP_LOGW(TAG, "HTTPS client not set for command polling");
                 success = false;
             }
             break;

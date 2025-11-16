@@ -26,6 +26,7 @@ public:
         LogEvent,
         SignalQualityCheck,      // Periodic AT+CSQ query
         RegistrationStateCheck,  // Periodic AT+CREG? query
+        FetchCommands,           // Poll Firebase for pending commands
         Shutdown
     };
 
@@ -76,7 +77,8 @@ public:
                          uint8_t priority = 2);
     bool enqueueSignalQualityCheck(uint8_t priority = 1);
     bool enqueueRegistrationStateCheck(uint8_t priority = 1);
-
+    bool enqueueFetchCommands(uint8_t priority = 1);
+    
     QueueStats getStats() const;
 
 private:
