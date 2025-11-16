@@ -914,20 +914,20 @@ void GatewayApp::setupFirebase() {
         firebaseClient->logEvent("gateway_started", gatewayMAC, "Gateway initialized with cellular HTTPS");
     }
     
-    // Initialize Cellular Command Poller
-    cellularCommandPoller = new CellularFirebaseCommandPoller(
-        firebaseClient,  // CellularFirebaseHTTPSClient instance
-        userUID,
-        gatewayMAC
-    );
+    // // Initialize Cellular Command Poller
+    // cellularCommandPoller = new CellularFirebaseCommandPoller(
+    //     firebaseClient,  // CellularFirebaseHTTPSClient instance
+    //     userUID,
+    //     gatewayMAC
+    // );
 
-    // Start command polling task on CPU1
-    // Poll interval: Fixed 45 seconds
-    cellularCommandPoller->begin(10240, 1, 1);
-    ESP_LOGI(TAG, "✅ Cellular Command Poller initialized");
-    ESP_LOGI(TAG, "   ⏱️ Poll interval: 45 seconds (fixed)");
+    // // Start command polling task on CPU1
+    // // Poll interval: Fixed 45 seconds
+    // cellularCommandPoller->begin(10240, 1, 1);
+    // ESP_LOGI(TAG, "✅ Cellular Command Poller initialized");
+    // ESP_LOGI(TAG, "   ⏱️ Poll interval: 45 seconds (fixed)");
     
-    ESP_LOGI(TAG, "✅ Cellular Firebase ready (HTTPS mode with 30s command polling)");
+    // ESP_LOGI(TAG, "✅ Cellular Firebase ready (HTTPS mode with 30s command polling)");
     
 #else
     // WiFi-based Firebase client (existing code)
