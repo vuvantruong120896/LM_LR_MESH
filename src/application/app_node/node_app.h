@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include "node_config.h"
 #include "led_control.h"
+#include "provision_manager_node.h"
 #include "../common/mesh_utils.h"
 #include "components/lora_mesh_manager/include/LoraMesher.h"
 #include "components/lora_mesh_manager/src/services/NetkeyDistributionService.h"
@@ -14,12 +15,12 @@
 #include "components/lora_mesh_manager/include/mesh_security.h"
 #include "components/lora_mesh_manager/src/services/TimeSyncService.h"
 
-// Node provisioning states
+// Node provisioning states (kept for backward compatibility, but now using BLE provisioning)
 enum NodeProvisioningState {
-    NODE_STATE_UNPROVISIONED = 0,   // No network key, need to provision
-    NODE_STATE_PROVISIONING = 1,    // Sent provision request, waiting response
+    NODE_STATE_UNPROVISIONED = 0,   // No network key, need to provision via BLE
+    NODE_STATE_PROVISIONING = 1,    // BLE provisioning in progress (deprecated)
     NODE_STATE_PROVISIONED = 2,     // Has valid network key, fully joined
-    NODE_STATE_PROVISION_FAILED = 3 // Provisioning failed, will retry
+    NODE_STATE_PROVISION_FAILED = 3 // Provisioning failed (deprecated)
 };
 
 class NodeApp {
@@ -32,13 +33,19 @@ public:
     
     // Public method for time sync packet handling (called from mesh_utils)
     void handleTimeSyncPacket(AppPacket<TimeSyncService::TimeSyncPacket>* packet);
+    
+    // Public getter for provision manager (for gateway address lookup)
+    ProvisionManagerNode* getProvisionManager() const { return provisionManager; }
 
 private:
     LoraMesher& radio;
     uint32_t dataCounter;
     dataPacket* nodePacket;
     
-    // Provisioning state management
+    // BLE Provisioning Manager (NEW)
+    ProvisionManagerNode* provisionManager;
+    
+    // Provisioning state management (deprecated - now using BLE provisioning)
     NodeProvisioningState provisioningState;
     uint32_t lastProvisionAttempt;
     uint8_t provisionRetryCount;

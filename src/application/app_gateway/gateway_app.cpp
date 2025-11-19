@@ -481,10 +481,26 @@ void GatewayApp::loop() {
 #endif
             
             // Handle command based on type
+            // NOTE: start_provisioning and stop_provisioning are DEPRECATED
+            // Nodes now provision via BLE (KAGRI-NODE-XXXX), not via mesh discovery
             if (cmd.type == "start_provisioning") {
-                handleStartProvisioning(cmd);
+                // DEPRECATED: Nodes use BLE provisioning now
+                ESP_LOGW(TAG, "start_provisioning command is deprecated - use BLE provisioning");
+                String message = "Command deprecated: Nodes now provision via BLE (KAGRI-NODE-XXXX)";
+#ifdef USE_CELLULAR
+                cellularCommandPoller->moveToFailed(cmd, "DEPRECATED", message);
+#else
+                commandPoller->moveToFailed(cmd, "DEPRECATED", message);
+#endif
             } else if (cmd.type == "stop_provisioning") {
-                handleStopProvisioning(cmd);
+                // DEPRECATED: Nodes use BLE provisioning now
+                ESP_LOGW(TAG, "stop_provisioning command is deprecated - use BLE provisioning");
+                String message = "Command deprecated: Nodes now provision via BLE (KAGRI-NODE-XXXX)";
+#ifdef USE_CELLULAR
+                cellularCommandPoller->moveToFailed(cmd, "DEPRECATED", message);
+#else
+                commandPoller->moveToFailed(cmd, "DEPRECATED", message);
+#endif
             } else if (cmd.type == "assign_netkey") {
                 handleAssignNetkey(cmd);
             } else {
@@ -2302,75 +2318,19 @@ void GatewayApp::uploadGatewayStatusPeriodic() {
 
 // Command handler implementations (both WiFi and Cellular modes)
 
+// ==================================================================================
+// DEPRECATED: start_provisioning and stop_provisioning
+// These commands are no longer used. Nodes provision via BLE (KAGRI-NODE-XXXX).
+// Keep functions for backward compatibility but mark as deprecated.
+// ==================================================================================
+
 #ifdef USE_CELLULAR
 void GatewayApp::handleStartProvisioning(const CellularFirebaseCommandPoller::Command& cmd) {
 #else
 void GatewayApp::handleStartProvisioning(const FirebaseCommandPoller::Command& cmd) {
 #endif
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "╔════════════════════════════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║  START PROVISIONING via Firebase Command                  ║");
-    ESP_LOGI(TAG, "╚════════════════════════════════════════════════════════════╝");
-    ESP_LOGI(TAG, "Command ID: %s", cmd.id.c_str());
-    
-    // Parse parameters from JSON
-    JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, cmd.params);
-    
-    uint32_t durationMs = 600000;  // Default: 10 minutes
-    uint16_t maxNodes = 0;         // Default: unlimited
-    
-    if (!error) {
-        if (doc["durationMs"].is<uint32_t>()) {
-            durationMs = doc["durationMs"];
-        }
-        if (doc["maxNodes"].is<uint16_t>()) {
-            maxNodes = doc["maxNodes"];
-        }
-    } else {
-        ESP_LOGW(TAG, "Failed to parse params, using defaults");
-    }
-    
-    ESP_LOGI(TAG, "Parameters:");
-    ESP_LOGI(TAG, "  Duration: %u ms (%.1f minutes)", durationMs, durationMs / 60000.0f);
-    ESP_LOGI(TAG, "  Max nodes: %d (0 = unlimited)", maxNodes);
-    
-    // Start fast discovery mode on Gateway
-    radio.startFastDiscoveryMode(durationMs);
-    ESP_LOGI(TAG, "✅ Gateway entered fast discovery mode (HELLO every 30s)");
-    
-    // Broadcast to all existing nodes to enter fast discovery mode
-    radio.broadcastHelloModeChange(HELLO_MODE_FAST_DISCOVERY, durationMs);
-    ESP_LOGI(TAG, "✅ Broadcasted fast discovery command to all nodes");
-    
-    // Update gateway state
-    gatewayState.provisioningActive = true;
-    gatewayState.provisioningStartTime = millis();
-    gatewayState.provisioningEndTime = millis() + durationMs;
-    gatewayState.provisioningCommandId = cmd.id;
-    gatewayState.nodesDiscoveredDuringProvisioning = 0;
-    
-    // Update command result for Mobile App
-#ifdef USE_CELLULAR
-    if (cellularCommandPoller) {
-        cellularCommandPoller->updateProgress(cmd.id, 0, durationMs);
-#else
-    if (commandPoller) {
-        commandPoller->updateCommandResult(
-            cmd.id,
-            "processing",
-            "Fast discovery mode activated - waiting for nodes to join"
-        );
-#endif
-    }
-    
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "╔════════════════════════════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║  Provisioning Mode ACTIVE                                  ║");
-    ESP_LOGI(TAG, "║  - New nodes can join automatically                        ║");
-    ESP_LOGI(TAG, "║  - Will stop automatically in %.1f minutes                 ║", durationMs / 60000.0f);
-    ESP_LOGI(TAG, "╚════════════════════════════════════════════════════════════╝");
-    ESP_LOGI(TAG, "");
+    ESP_LOGW(TAG, "handleStartProvisioning called but DEPRECATED - Nodes use BLE provisioning now");
+    // Function kept for backward compatibility but does nothing
 }
 
 #ifdef USE_CELLULAR
@@ -2378,60 +2338,18 @@ void GatewayApp::handleStopProvisioning(const CellularFirebaseCommandPoller::Com
 #else
 void GatewayApp::handleStopProvisioning(const FirebaseCommandPoller::Command& cmd) {
 #endif
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "╔════════════════════════════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║  STOP PROVISIONING via Firebase Command                   ║");
-    ESP_LOGI(TAG, "╚════════════════════════════════════════════════════════════╝");
-    ESP_LOGI(TAG, "Command ID: %s", cmd.id.c_str());
-    
-    if (!gatewayState.provisioningActive) {
-        ESP_LOGW(TAG, "Provisioning not active - nothing to stop");
-        
-        if (COMMAND_POLLER) {
-            COMMAND_POLLER->moveToFailed(cmd, "NOT_ACTIVE", 
-                                       "Provisioning mode is not active");
-        }
-        return;
-    }
-    
-    // Stop fast discovery mode
-    radio.stopFastDiscoveryMode();
-    ESP_LOGI(TAG, "✅ Gateway returned to normal mode (HELLO every 120s)");
-    
-    // Broadcast to all nodes to return to normal mode
-    radio.broadcastHelloModeChange(HELLO_MODE_NORMAL, 0);
-    ESP_LOGI(TAG, "✅ Broadcasted normal mode command to all nodes");
-    
-    // Calculate statistics
-    uint32_t duration = millis() - gatewayState.provisioningStartTime;
-    
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "Provisioning Statistics:");
-    ESP_LOGI(TAG, "  Duration: %.1f seconds", duration / 1000.0f);
-    ESP_LOGI(TAG, "  Nodes discovered: %d", gatewayState.nodesDiscoveredDuringProvisioning);
-    
-    // Mark command as completed
-    if (COMMAND_POLLER) {
-        String message = "Provisioning stopped. ";
-        message += String(gatewayState.nodesDiscoveredDuringProvisioning);
-        message += " nodes discovered in ";
-        message += String(duration / 1000);
-        message += " seconds";
-        
-        COMMAND_POLLER->moveToCompleted(cmd, "success", message);
-    }
-    
-    // Reset provisioning state
-    gatewayState.provisioningActive = false;
-    gatewayState.provisioningCommandId = "";
-    
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "╔════════════════════════════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║  Provisioning Mode STOPPED                                 ║");
-    ESP_LOGI(TAG, "║  Gateway returned to normal operation                      ║");
-    ESP_LOGI(TAG, "╚════════════════════════════════════════════════════════════╝");
-    ESP_LOGI(TAG, "");
+    ESP_LOGW(TAG, "handleStopProvisioning called but DEPRECATED - Nodes use BLE provisioning now");
+    // Function kept for backward compatibility but does nothing
 }
+
+// ==================================================================================
+// END DEPRECATED SECTION
+// ==================================================================================
+
+
+// ==================================================================================
+// END DEPRECATED SECTION
+// ==================================================================================
 
 #ifdef USE_CELLULAR
 void GatewayApp::handleAssignNetkey(const CellularFirebaseCommandPoller::Command& cmd) {

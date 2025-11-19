@@ -21,7 +21,8 @@ bool ProvisionManager::isProvisioned() {
     bool provisioned = _prefs.getBool(NVS_KEY_PROVISIONED, false);
     _prefs.end();
     
-    ESP_LOGI(TAG, "Provisioning status: %s", provisioned ? "YES" : "NO");
+    // Don't log here - this function is called every loop cycle
+    // ESP_LOGI(TAG, "Provisioning status: %s", provisioned ? "YES" : "NO");
     return provisioned;
 }
 
@@ -63,11 +64,16 @@ void ProvisionManager::handleProvisionData(const BleProvisioning::ProvisionData&
     
     // Save to NVS (kagri_prov namespace)
     if (saveProvisionData(data.ssid, data.password, data.userUID, netkey)) {
-        ESP_LOGI(TAG, "✓ Provisioning data saved successfully");
-        ESP_LOGI(TAG, "  WiFi: %s", data.ssid.c_str());
-        ESP_LOGI(TAG, "  User: %s", data.userUID.c_str());
-        ESP_LOGI(TAG, "  MAC: %s", CryptoUtils::getGatewayMAC().c_str());
-        ESP_LOGI(TAG, "  Netkey: %s", CryptoUtils::toHexString(netkey, 16).c_str());
+        #ifdef USE_CELLULAR
+            ESP_LOGI(TAG, "✓ Provisioning data saved successfully (CELLULAR MODE)");
+            ESP_LOGI(TAG, "  Mode: Cellular (no WiFi)");
+        #else
+            ESP_LOGI(TAG, "✓ Provisioning data saved successfully (WIFI MODE)");
+            ESP_LOGI(TAG, "  WiFi SSID: %s", data.ssid.c_str());
+        #endif
+        ESP_LOGI(TAG, "  User UID: %s", data.userUID.c_str());
+        ESP_LOGI(TAG, "  Gateway MAC: %s", CryptoUtils::getGatewayMAC().c_str());
+        ESP_LOGI(TAG, "  Network Key: %s", CryptoUtils::toHexString(netkey, 16).c_str());
         
         // CRITICAL: Sync netkey to mesh_config namespace for assign_netkey command
         ESP_LOGI(TAG, "🔄 Syncing netkey to mesh_config namespace...");
@@ -113,11 +119,22 @@ bool ProvisionManager::saveProvisionData(const String& ssid, const String& passw
     _prefs.begin(NVS_NAMESPACE, false); // read-write
     
     bool success = true;
-    success &= _prefs.putString(NVS_KEY_WIFI_SSID, ssid) > 0;
-    success &= _prefs.putString(NVS_KEY_WIFI_PASS, password) > 0;
-    success &= _prefs.putString(NVS_KEY_USER_UID, userUID) > 0;
-    success &= _prefs.putBytes(NVS_KEY_NETKEY, netkey, 16) == 16;
-    success &= _prefs.putBool(NVS_KEY_PROVISIONED, true);
+    
+    #ifdef USE_CELLULAR
+        // Cellular mode: Only save userUID and netkey (no WiFi credentials)
+        ESP_LOGI(TAG, "Saving provisioning data (Cellular mode - no WiFi credentials)");
+        success &= _prefs.putString(NVS_KEY_USER_UID, userUID) > 0;
+        success &= _prefs.putBytes(NVS_KEY_NETKEY, netkey, 16) == 16;
+        success &= _prefs.putBool(NVS_KEY_PROVISIONED, true);
+    #else
+        // WiFi mode: Save all credentials including WiFi
+        ESP_LOGI(TAG, "Saving provisioning data (WiFi mode - including WiFi credentials)");
+        success &= _prefs.putString(NVS_KEY_WIFI_SSID, ssid) > 0;
+        success &= _prefs.putString(NVS_KEY_WIFI_PASS, password) > 0;
+        success &= _prefs.putString(NVS_KEY_USER_UID, userUID) > 0;
+        success &= _prefs.putBytes(NVS_KEY_NETKEY, netkey, 16) == 16;
+        success &= _prefs.putBool(NVS_KEY_PROVISIONED, true);
+    #endif
     
     _prefs.end();
     
@@ -125,12 +142,21 @@ bool ProvisionManager::saveProvisionData(const String& ssid, const String& passw
 }
 
 bool ProvisionManager::getWiFiConfig(String& ssid, String& password) {
-    _prefs.begin(NVS_NAMESPACE, true);
-    ssid = _prefs.getString(NVS_KEY_WIFI_SSID, "");
-    password = _prefs.getString(NVS_KEY_WIFI_PASS, "");
-    _prefs.end();
-    
-    return !ssid.isEmpty();
+    #ifdef USE_CELLULAR
+        // Cellular mode: No WiFi credentials stored
+        ESP_LOGD(TAG, "Cellular mode - no WiFi credentials available");
+        ssid = "";
+        password = "";
+        return false;
+    #else
+        // WiFi mode: Retrieve WiFi credentials
+        _prefs.begin(NVS_NAMESPACE, true);
+        ssid = _prefs.getString(NVS_KEY_WIFI_SSID, "");
+        password = _prefs.getString(NVS_KEY_WIFI_PASS, "");
+        _prefs.end();
+        
+        return !ssid.isEmpty();
+    #endif
 }
 
 bool ProvisionManager::getWiFiCredentials(String& ssid, String& password) {

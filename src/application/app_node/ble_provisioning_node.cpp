@@ -1,29 +1,29 @@
-#include "ble_provisioning.h"
+#include "ble_provisioning_node.h"
 #include <ArduinoJson.h>
 
-static const char* TAG = "BLEProv";
+static const char* TAG = "BLEProvNode";
 
-BleProvisioning::BleProvisioning() 
+BleProvisioningNode::BleProvisioningNode() 
     : _active(false), _server(nullptr), _commandChar(nullptr), _responseChar(nullptr) {
 }
 
-BleProvisioning::~BleProvisioning() {
+BleProvisioningNode::~BleProvisioningNode() {
     stop();
 }
 
-bool BleProvisioning::begin() {
+bool BleProvisioningNode::begin() {
     if (_active) {
         ESP_LOGW(TAG, "BLE already active");
         return true;
     }
     
-    ESP_LOGI(TAG, "Initializing BLE provisioning...");
+    ESP_LOGI(TAG, "Initializing BLE provisioning for Node...");
     
     // Get device MAC for advertising name
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
     char deviceName[32];
-    snprintf(deviceName, sizeof(deviceName), "KAGRI-GW-%02X%02X", mac[4], mac[5]);
+    snprintf(deviceName, sizeof(deviceName), "KAGRI-NODE-%02X%02X", mac[4], mac[5]);
     
     // Initialize NimBLE
     NimBLEDevice::init(deviceName);
@@ -33,7 +33,7 @@ bool BleProvisioning::begin() {
     _server = NimBLEDevice::createServer();
     _server->setCallbacks(new ServerCallbacks(this));
     
-    // Create Provisioning Service
+    // Create Provisioning Service (different UUID from Gateway)
     NimBLEService* service = _server->createService(SERVICE_UUID);
     
     // Create Command Characteristic (Write)
@@ -43,7 +43,7 @@ bool BleProvisioning::begin() {
     );
     _commandChar->setCallbacks(new CommandCharCallbacks(this));
     
-    // Create Response Characteristic (Notify - optional)
+    // Create Response Characteristic (Notify)
     _responseChar = service->createCharacteristic(
         RESPONSE_CHAR_UUID,
         NIMBLE_PROPERTY::NOTIFY
@@ -62,11 +62,12 @@ bool BleProvisioning::begin() {
     
     _active = true;
     ESP_LOGI(TAG, "BLE provisioning started. Device name: %s", deviceName);
+    ESP_LOGI(TAG, "Service UUID: %s (different from Gateway)", SERVICE_UUID);
     
     return true;
 }
 
-void BleProvisioning::stop() {
+void BleProvisioningNode::stop() {
     if (!_active) return;
     
     ESP_LOGI(TAG, "Stopping BLE provisioning...");
@@ -87,7 +88,7 @@ void BleProvisioning::stop() {
 }
 
 // Command Characteristic Write Callback
-void BleProvisioning::CommandCharCallbacks::onWrite(NimBLECharacteristic* pCharacteristic) {
+void BleProvisioningNode::CommandCharCallbacks::onWrite(NimBLECharacteristic* pCharacteristic) {
     std::string value = pCharacteristic->getValue();
     
     if (value.empty()) {
@@ -119,78 +120,53 @@ void BleProvisioning::CommandCharCallbacks::onWrite(NimBLECharacteristic* pChara
     
     // Extract provisioning data
     ProvisionData data;
-    data.ssid = doc["ssid"] | "";
-    data.password = doc["password"] | "";
     data.userUID = doc["userUID"] | "";
+    data.gatewayMAC = doc["gatewayMAC"] | "";
+    data.nodeAddress = doc["nodeAddress"] | 0;  // 0 = auto-generate from MAC
     
-    // Validate data based on mode
-    #ifdef USE_CELLULAR
-        // Cellular mode: Only userUID is required
-        if (data.userUID.isEmpty()) {
-            ESP_LOGE(TAG, "Missing required field: userUID (Cellular mode)");
-            
-            if (_parent->_responseChar) {
-                JsonDocument responseDoc;
-                responseDoc["status"] = "error";
-                responseDoc["message"] = "Missing required field: userUID";
-                String response;
-                serializeJson(responseDoc, response);
-                _parent->_responseChar->setValue(response.c_str());
-                _parent->_responseChar->notify();
-            }
-            return;
-        }
+    // Validate data: userUID and gatewayMAC are required for Node
+    if (data.userUID.isEmpty() || data.gatewayMAC.isEmpty()) {
+        ESP_LOGE(TAG, "Missing required fields: userUID and gatewayMAC");
         
-        ESP_LOGI(TAG, "Provisioning data validated (Cellular mode):");
-        ESP_LOGI(TAG, "  UserUID: %s", data.userUID.c_str());
-        if (!data.ssid.isEmpty()) {
-            ESP_LOGW(TAG, "  SSID provided but not used in Cellular mode");
+        if (_parent->_responseChar) {
+            JsonDocument responseDoc;
+            responseDoc["status"] = "error";
+            responseDoc["message"] = "Missing required fields: userUID and gatewayMAC";
+            String response;
+            serializeJson(responseDoc, response);
+            _parent->_responseChar->setValue(response.c_str());
+            _parent->_responseChar->notify();
         }
-    #else
-        // WiFi mode: ssid and userUID are required
-        if (data.ssid.isEmpty() || data.userUID.isEmpty()) {
-            ESP_LOGE(TAG, "Missing required fields (WiFi mode: ssid and userUID)");
-            
-            if (_parent->_responseChar) {
-                JsonDocument responseDoc;
-                responseDoc["status"] = "error";
-                responseDoc["message"] = "Missing required fields: ssid and userUID";
-                String response;
-                serializeJson(responseDoc, response);
-                _parent->_responseChar->setValue(response.c_str());
-                _parent->_responseChar->notify();
-            }
-            return;
-        }
-        
-        ESP_LOGI(TAG, "Provisioning data validated (WiFi mode):");
-        ESP_LOGI(TAG, "  SSID: %s", data.ssid.c_str());
-        ESP_LOGI(TAG, "  UserUID: %s", data.userUID.c_str());
-        ESP_LOGI(TAG, "  Password: %s", data.password.isEmpty() ? "<empty>" : "***");
-    #endif
+        return;
+    }
     
-    // Send success response
-    if (_parent->_responseChar) {
-        // Get Gateway MAC to include in response (for Node provisioning)
+    ESP_LOGI(TAG, "Provisioning data validated:");
+    ESP_LOGI(TAG, "  UserUID: %s", data.userUID.c_str());
+    ESP_LOGI(TAG, "  Gateway MAC: %s", data.gatewayMAC.c_str());
+    if (data.nodeAddress != 0) {
+        ESP_LOGI(TAG, "  Node Address: 0x%04X (specified by app)", data.nodeAddress);
+    } else {
+        ESP_LOGI(TAG, "  Node Address: 0x0000 (will auto-generate from MAC)");
+    }
+    
+    // Generate Node address from MAC if not specified
+    uint16_t finalNodeAddress = data.nodeAddress;
+    if (finalNodeAddress == 0) {
+        // Auto-generate from last 2 bytes of MAC
         uint8_t mac[6];
         esp_read_mac(mac, ESP_MAC_WIFI_STA);
-        char macStr[18];
-        snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-        
-        // Create JSON response with explicit size
+        finalNodeAddress = (mac[4] << 8) | mac[5];
+        ESP_LOGI(TAG, "Auto-generated Node Address: 0x%04X from MAC", finalNodeAddress);
+    }
+    
+    // Send success response with nodeAddress
+    if (_parent->_responseChar) {
         StaticJsonDocument<256> responseDoc;
         responseDoc["status"] = "success";
-        responseDoc["gatewayMAC"] = macStr;  // IMPORTANT: Mobile App needs this for Node provisioning
-        #ifdef USE_CELLULAR
-            responseDoc["message"] = "Provisioning received (Cellular mode)";
-            responseDoc["mode"] = "cellular";
-        #else
-            responseDoc["message"] = "Provisioning received (WiFi mode)";
-            responseDoc["mode"] = "wifi";
-        #endif
+        responseDoc["message"] = "Node provisioning received";
+        responseDoc["deviceType"] = "node";
+        responseDoc["nodeAddress"] = finalNodeAddress;  // IMPORTANT: Mobile App needs this
         
-        // Serialize to String
         String response;
         serializeJson(responseDoc, response);
         
@@ -201,7 +177,7 @@ void BleProvisioning::CommandCharCallbacks::onWrite(NimBLECharacteristic* pChara
         // Set value with explicit length to prevent truncation
         _parent->_responseChar->setValue((uint8_t*)response.c_str(), response.length());
         _parent->_responseChar->notify();
-        ESP_LOGI(TAG, "Success response sent via notify (Gateway MAC: %s)", macStr);
+        ESP_LOGI(TAG, "Success response sent via notify (Node Address: 0x%04X)", finalNodeAddress);
     } else {
         ESP_LOGW(TAG, "Response characteristic not available");
     }
@@ -216,13 +192,13 @@ void BleProvisioning::CommandCharCallbacks::onWrite(NimBLECharacteristic* pChara
 }
 
 // Server Connection Callbacks
-void BleProvisioning::ServerCallbacks::onConnect(NimBLEServer* pServer) {
-    ESP_LOGI(TAG, "Client connected");
+void BleProvisioningNode::ServerCallbacks::onConnect(NimBLEServer* pServer) {
+    ESP_LOGI(TAG, "Client connected to Node");
     pServer->updateConnParams(pServer->getPeerInfo(0).getConnHandle(), 24, 48, 0, 60);
 }
 
-void BleProvisioning::ServerCallbacks::onDisconnect(NimBLEServer* pServer) {
-    ESP_LOGI(TAG, "Client disconnected");
+void BleProvisioningNode::ServerCallbacks::onDisconnect(NimBLEServer* pServer) {
+    ESP_LOGI(TAG, "Client disconnected from Node");
     // Restart advertising
     NimBLEDevice::startAdvertising();
 }

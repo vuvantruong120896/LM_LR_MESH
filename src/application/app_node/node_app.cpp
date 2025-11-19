@@ -12,6 +12,7 @@
 static uint16_t findGatewayAddress();
 static void saveRoutingTableToNVS();
 static void loadRoutingTableFromNVS();
+static void onRoutingTableChanged();  // SCENARIO 2: Callback for buffer sync on gateway detection
 
 // Compute a 16-bit Node ID using the last 2 bytes of the WiFi MAC (STA MAC)
 static uint16_t computeNodeIdFromWifiMac() {
@@ -25,6 +26,10 @@ static uint16_t computeNodeIdFromWifiMac() {
 // Static instance pointer for callbacks
 static NodeApp* nodeAppInstance = nullptr;
 
+// SCENARIO 2: Static variables for buffer sync on gateway availability
+static bool wasGatewayAvailable = false;  // Track previous gateway state
+static uint16_t lastKnownGateway = 0;     // Cache last known gateway address
+
 // Static member initialization
 NodeApp* NodeApp::instance = nullptr;
 TaskHandle_t NodeApp::timeSyncTaskHandle = nullptr;
@@ -33,6 +38,7 @@ NodeApp::NodeApp()
     : radio(LoraMesher::getInstance()), 
       dataCounter(0), 
       nodePacket(new dataPacket),
+      provisionManager(nullptr),
       provisioningState(NODE_STATE_UNPROVISIONED),
       lastProvisionAttempt(0),
       provisionRetryCount(0),
@@ -50,18 +56,32 @@ NodeApp::NodeApp()
 
 NodeApp::~NodeApp() {
     delete nodePacket;
+    delete provisionManager;
 }
 
-// Helper function to find gateway node - check NVS cache first, then routing table
+// Helper function to find gateway node - use provisioned gateway first, then cache, then routing table
 static uint16_t findGatewayAddress() {
-    // First, try to load cached gateway info from NVS and validate it against the routing table
+    // PRIORITY 1: Use gateway address from provisioning (most reliable)
+    // When Node is provisioned with a Gateway, the gateway address is stored in NVS
+    if (NodeApp::instance) {
+        ProvisionManagerNode* provMgr = NodeApp::instance->getProvisionManager();
+        if (provMgr) {
+            uint16_t provisionedGateway = 0;
+            if (provMgr->getGatewayAddress(provisionedGateway)) {
+                ESP_LOGI(LM_TAG, "✅ Using provisioned gateway address: 0x%04X (from provision data)", provisionedGateway);
+                return provisionedGateway;
+            }
+        }
+    }
+    
+    // PRIORITY 2: Check NVS cache from previous routing table discovery
     GatewayInfo cachedGateway;
     if (cachedGateway.isValid && NVSStorageService::loadGatewayInfo(cachedGateway)) {
         if (cachedGateway.address != 0) {
             // Validate that the cached gateway still exists in the routing table and has a next-hop
             if (RoutingTableService::hasAddressRoutingTable(cachedGateway.address) &&
                 RoutingTableService::getNextHop(cachedGateway.address) != 0) {
-                ESP_LOGI(LM_TAG, "Using cached gateway: 0x%04X (hops: %u)", cachedGateway.address, cachedGateway.hopCount);
+                ESP_LOGI(LM_TAG, "🔄 Using cached gateway from NVS: 0x%04X (hops: %u)", cachedGateway.address, cachedGateway.hopCount);
                 return cachedGateway.address;
             }
 
@@ -72,7 +92,8 @@ static uint16_t findGatewayAddress() {
         ESP_LOGD(LM_TAG, "No cached gateway info found, searching routing table");
     }
     
-    // Fallback: ask RoutingTableService for the best gateway by role (it already picks the nearest)
+    // PRIORITY 3: Fallback to routing table discovery (best gateway by role)
+    // This is for Nodes that haven't been provisioned yet or in mesh scenarios without provisioning
     RouteNode* bestGateway = RoutingTableService::getBestNodeByRole(ROLE_GATEWAY);
 
     if (bestGateway) {
@@ -80,7 +101,7 @@ static uint16_t findGatewayAddress() {
         uint16_t nextHop = RoutingTableService::getNextHop(bestGateway->networkNode.address);
         if (nextHop != 0) {
             uint16_t selected = bestGateway->networkNode.address;
-            ESP_LOGI(LM_TAG, "Selected gateway from routing table: 0x%04X (hops: %d) via next-hop 0x%04X",
+            ESP_LOGI(LM_TAG, "🔍 Selected gateway from routing table: 0x%04X (hops: %d) via next-hop 0x%04X",
                      selected, bestGateway->networkNode.metric, nextHop);
 
             // Cache the found gateway for future use (store the gateway address and hop count)
@@ -102,7 +123,7 @@ static uint16_t findGatewayAddress() {
             ESP_LOGW(LM_TAG, "Best gateway 0x%04X has no known next-hop (stale entry)", bestGateway->networkNode.address);
         }
     } else {
-        ESP_LOGW(LM_TAG, "No gateway nodes found in routing table");
+        ESP_LOGW(LM_TAG, "⚠️ No gateway nodes found in routing table, using broadcast");
     }
 
     // If no valid gateway was found return broadcast so provisioning packets can reach any bridge
@@ -116,6 +137,35 @@ void NodeApp::setup() {
     
     led_init();
     led_pattern_startup();
+    
+    // ===== BLE PROVISIONING CHECK =====
+    // Create provision manager and check if node is provisioned
+    provisionManager = new ProvisionManagerNode();
+    
+    if (!provisionManager->isProvisioned()) {
+        ESP_LOGW(LM_TAG, "⚠️ Node not provisioned! Starting BLE provisioning mode");
+        ESP_LOGI(LM_TAG, "- Mesh network: DISABLED (no network key)");
+        ESP_LOGI(LM_TAG, "- BLE Advertising: ACTIVE (KAGRI-NODE-XXXX)");
+        ESP_LOGI(LM_TAG, "");
+        ESP_LOGI(LM_TAG, "To provision, use mobile app to connect via BLE");
+        led_pattern_error(); // Indicate provisioning required
+        
+        // Start BLE provisioning (blocking - don't initialize mesh)
+        provisionManager->startProvisioningIfNeeded();
+        
+        ESP_LOGI(LM_TAG, "🔵 Node in BLE provisioning mode - waiting for mobile app...");
+        return; // Don't continue setup until provisioned
+    } else {
+        ESP_LOGI(LM_TAG, "✅ Node is provisioned, continuing setup...");
+        
+        // Load provisioned node address
+        uint16_t provisionedAddress = 0;
+        if (provisionManager->getNodeAddress(provisionedAddress)) {
+            assignedAddress = provisionedAddress;
+            ESP_LOGI(LM_TAG, "  Provisioned Address: 0x%04X", assignedAddress);
+        }
+    }
+    // ===== END BLE PROVISIONING CHECK =====
     
     // NOTE: Do not clear gateway cache here. We'll restore routing table from NVS after
     // NVS is initialized so cached gateway validation can check restored routes.
@@ -186,9 +236,10 @@ void NodeApp::setup() {
     ESP_LOGI(LM_TAG, "Netkey Distribution Service initialized for node");
     
     // Register callback for routing table changes (when nodes are removed due to timeout)
+    // SCENARIO 2: Now also detects when Gateway becomes available and triggers buffer sync
     // This ensures routing table is saved to NVS when nodes become inactive
-    RoutingTableService::setRoutingTableChangedCallback(saveRoutingTableToNVS);
-    ESP_LOGI(LM_TAG, "Routing table change callback registered for automatic NVS save");
+    RoutingTableService::setRoutingTableChangedCallback(onRoutingTableChanged);
+    ESP_LOGI(LM_TAG, "Routing table change callback registered for NVS save + buffer sync detection");
     
     // Initialize Node offline buffer for sensor data when gateway unavailable
     if (NodeOfflineBuffer::initialize()) {
@@ -229,6 +280,36 @@ void NodeApp::setup() {
 }
 
 void NodeApp::loop() {
+    // Check if BLE provisioning just completed
+    if (provisionManager && provisionManager->provisionSucceeded()) {
+        ESP_LOGI(LM_TAG, "");
+        ESP_LOGI(LM_TAG, "╔════════════════════════════════════════════════════════════╗");
+        ESP_LOGI(LM_TAG, "║  🎉 NODE PROVISIONING SUCCESSFUL! 🎉                       ║");
+        ESP_LOGI(LM_TAG, "╚════════════════════════════════════════════════════════════╝");
+        ESP_LOGI(LM_TAG, "");
+        
+        // Show success LED pattern for 5 seconds
+        led_pattern_connected();
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        
+        // Clear flag and restart
+        provisionManager->clearProvisionSuccessFlag();
+        
+        if (provisionManager->needsRestart()) {
+            ESP_LOGI(LM_TAG, "Restarting Node to apply provisioning...");
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            ESP.restart();
+        }
+        return;
+    }
+    
+    // If not provisioned, stay in BLE provisioning mode
+    if (!provisionManager || !provisionManager->isProvisioned()) {
+        // BLE provisioning is active, just wait
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        return;
+    }
+    
     // Send sensor data periodically if provisioned
     uint32_t currentTime = millis();
 
@@ -237,8 +318,25 @@ void NodeApp::loop() {
         static uint32_t lastDataSend = 0;
         static uint32_t lastRoutingSave = 0;
         static uint32_t lastBufferSync = 0;
+        static uint32_t setupTime = 0;
+        static bool firstDataSent = false;  // Track if first data has been sent
         
-        if (currentTime - lastDataSend >= SEND_INTERVAL_MS) {
+        // Initialize setup time on first call
+        if (setupTime == 0) {
+            setupTime = currentTime;
+        }
+        
+        // Send data 30 seconds after setup, then use normal interval
+        bool shouldSendData = false;
+        if (!firstDataSent && (currentTime - setupTime >= 30000)) {
+            shouldSendData = true;
+            firstDataSent = true;
+            ESP_LOGI(LM_TAG, "📤 Sending initial sensor data (30s after setup)");
+        } else if (firstDataSent && (currentTime - lastDataSend >= SEND_INTERVAL_MS)) {
+            shouldSendData = true;
+        }
+        
+        if (shouldSendData) {
             // Check if we're in provisioning mode (Fast Discovery)
             // Don't send sensor data during provisioning - only Hello packets
             uint8_t currentMode = radio.getCurrentHelloMode();
@@ -316,19 +414,35 @@ void NodeApp::loop() {
                 uint16_t dst = findGatewayAddress();
                 
                 if (dst != BROADCAST_ADDR) {
-                    ESP_LOGI(LM_TAG, "📤 Syncing buffered data: %u samples pending", bufferedCount);
+                    // SCENARIO 2: Urgent sync detection
+                    // If gateway just became available (wasGatewayAvailable transition), use aggressive sync
+                    bool isUrgentSync = wasGatewayAvailable && lastKnownGateway != 0;
                     
-                    // Send up to 3 buffered samples per sync cycle to avoid network congestion
-                    const uint16_t MAX_SYNC_PER_CYCLE = 3;
+                    // Determine sync rate based on context
+                    uint16_t maxSyncPerCycle = 3;  // Default: 3 samples per cycle
+                    if (isUrgentSync && bufferedCount >= 5) {
+                        maxSyncPerCycle = 10;  // SCENARIO 2: Urgent sync → 10 samples per cycle
+                        ESP_LOGI(LM_TAG, "");
+                        ESP_LOGI(LM_TAG, "⚡ URGENT SYNC MODE: Transmitting buffered data at maximum rate!");
+                        ESP_LOGI(LM_TAG, "");
+                    } else if (bufferedCount >= 30) {
+                        maxSyncPerCycle = 5;   // Many samples: moderate rate
+                    }
+                    
+                    ESP_LOGI(LM_TAG, "📤 Syncing buffered data: %u samples pending (rate: %u/cycle)", 
+                             bufferedCount, maxSyncPerCycle);
+                    
                     uint16_t synced = 0;
                     
-                    for (uint16_t i = 0; i < MAX_SYNC_PER_CYCLE && bufferedCount > 0; i++) {
+                    for (uint16_t i = 0; i < maxSyncPerCycle && bufferedCount > 0; i++) {
                         sensorData bufferedData;
                         if (NodeOfflineBuffer::getOldestData(bufferedData)) {
                             // Send buffered data to gateway
-                            ESP_LOGI(LM_TAG, "📤 Sending buffered sample #%d (counter: %u, age: %us)", 
-                                     i+1, bufferedData.counter, 
-                                     (currentTime/1000) - bufferedData.timestamp);
+                            uint32_t dataAge = (currentTime/1000) - bufferedData.timestamp;
+                            ESP_LOGI(LM_TAG, "📤 Sending buffered sample #%d/%u (counter: %u, age: %us)", 
+                                     i+1, bufferedCount + synced, bufferedData.counter, dataAge);
+                            
+                            // Send with high priority to ensure quick transmission
                             radio.createPacketAndSend<sensorData>(dst, &bufferedData, 1);
                             
                             // Remove from buffer after sending
@@ -337,8 +451,9 @@ void NodeApp::loop() {
                             bufferedCount--;
                             synced++;
                             
-                            // Add delay between sends to avoid congestion (500ms spacing)
-                            vTaskDelay(pdMS_TO_TICKS(500));
+                            // Adjust delay based on sync mode
+                            uint32_t delayMs = isUrgentSync ? 200 : 500;  // Faster in urgent mode
+                            vTaskDelay(pdMS_TO_TICKS(delayMs));
                         } else {
                             ESP_LOGW(LM_TAG, "Failed to retrieve buffered data");
                             break;
@@ -346,10 +461,25 @@ void NodeApp::loop() {
                     }
                     
                     if (bufferedCount > 0) {
-                        ESP_LOGI(LM_TAG, "📦 Synced %u samples, %u remaining (will sync in next cycle)", 
-                                 synced, bufferedCount);
+                        if (isUrgentSync) {
+                            ESP_LOGI(LM_TAG, "⚡ Urgent sync: Synced %u samples, %u remaining (continue urgent mode)", 
+                                     synced, bufferedCount);
+                        } else {
+                            ESP_LOGI(LM_TAG, "📦 Synced %u samples, %u remaining (will sync in next cycle)", 
+                                     synced, bufferedCount);
+                        }
                     } else {
-                        ESP_LOGI(LM_TAG, "✅ All buffered data synced successfully (%u samples)", synced);
+                        if (isUrgentSync) {
+                            ESP_LOGI(LM_TAG, "");
+                            ESP_LOGI(LM_TAG, "╔════════════════════════════════════════════════════════════╗");
+                            ESP_LOGI(LM_TAG, "║  ✅ ALL BUFFERED DATA SYNCED SUCCESSFULLY!                ║");
+                            ESP_LOGI(LM_TAG, "╚════════════════════════════════════════════════════════════╝");
+                            ESP_LOGI(LM_TAG, "");
+                            ESP_LOGI(LM_TAG, "Synced %u samples to gateway 0x%04X", synced, dst);
+                            led_pattern_connected();
+                        } else {
+                            ESP_LOGI(LM_TAG, "✅ All buffered data synced successfully (%u samples)", synced);
+                        }
                     }
                 } else {
                     ESP_LOGD(LM_TAG, "📦 %u samples buffered, but no gateway available for sync", bufferedCount);
@@ -428,10 +558,10 @@ void NodeApp::setupLoRaMesher() {
         config.loraIo1 = LORA_IO1;
         config.module = LORA_MODULE;
     #elif DEVICE_MODE == 3  // Node mode
-        config.loraCs = 5;
-        config.loraRst = 4;
-        config.loraIrq = 15;
-        config.loraIo1 = -1;
+        config.loraCs = LORA_CS;
+        config.loraRst = LORA_RST;
+        config.loraIrq = LORA_IRQ;
+        config.loraIo1 = LORA_IO1;
         config.module = LORA_MODULE;
     #endif 
     
@@ -818,6 +948,74 @@ static void loadRoutingTableFromNVS() {
     
     delete[] entries;
     ESP_LOGI(LM_TAG, "loadRoutingTableFromNVS: Completed");
+}
+
+/**
+ * @brief SCENARIO 2: Callback triggered when routing table changes
+ * 
+ * Detects when Gateway becomes available after being offline and triggers
+ * immediate sync of buffered sensor data from NodeOfflineBuffer.
+ * 
+ * This solves Scenario 2:
+ * - Node A has buffered data (gateway unavailable)
+ * - Routing table updates (Gateway C found)
+ * - Immediately syncs ALL buffered data to gateway
+ * 
+ * Optimization: Only sync when gateway transitions from unavailable → available
+ */
+static void onRoutingTableChanged() {
+    // Save routing table for persistence (original functionality)
+    saveRoutingTableToNVS();
+    
+    // SCENARIO 2: Check if gateway just became available
+    uint16_t currentGateway = findGatewayAddress();
+    bool isGatewayAvailable = (currentGateway != BROADCAST_ADDR);
+    
+    // Transition: Gateway was unavailable → NOW AVAILABLE
+    if (!wasGatewayAvailable && isGatewayAvailable) {
+        ESP_LOGI(LM_TAG, "");
+        ESP_LOGI(LM_TAG, "╔════════════════════════════════════════════════════════════╗");
+        ESP_LOGI(LM_TAG, "║  🎯 SCENARIO 2: GATEWAY DETECTED AFTER OFFLINE!           ║");
+        ESP_LOGI(LM_TAG, "╚════════════════════════════════════════════════════════════╝");
+        ESP_LOGI(LM_TAG, "");
+        
+        uint16_t bufferedCount = NodeOfflineBuffer::getBufferedCount();
+        if (bufferedCount > 0) {
+            ESP_LOGI(LM_TAG, "📤 URGENT SYNC: Gateway 0x%04X is NOW AVAILABLE", currentGateway);
+            ESP_LOGI(LM_TAG, "📦 Triggering immediate sync of %u buffered samples", bufferedCount);
+            
+            // Set flag for urgent sync in main loop
+            // The main loop will detect this and sync all buffered data immediately
+            // (See node_app.cpp loop() - BUFFER_SYNC_URGENT section)
+            
+            // Priority indicator: Send all buffered data in rapid succession
+            // Temporary increased sync rate: Send up to 10 samples per cycle (vs normal 3)
+            ESP_LOGI(LM_TAG, "⚡ Urgent sync mode activated - will transmit buffered data at maximum rate");
+        } else {
+            ESP_LOGI(LM_TAG, "✅ Gateway 0x%04X detected but no buffered data", currentGateway);
+        }
+        
+        // Update state
+        wasGatewayAvailable = true;
+        lastKnownGateway = currentGateway;
+        
+        // Visual indication
+        led_pattern_connected();
+    }
+    // Transition: Gateway was available → NOW UNAVAILABLE
+    else if (wasGatewayAvailable && !isGatewayAvailable) {
+        ESP_LOGW(LM_TAG, "");
+        ESP_LOGW(LM_TAG, "⚠️ Gateway 0x%04X is now UNAVAILABLE - will buffer sensor data", lastKnownGateway);
+        ESP_LOGW(LM_TAG, "");
+        
+        wasGatewayAvailable = false;
+        led_pattern_error();
+    }
+    // Transition: Gateway changed
+    else if (isGatewayAvailable && currentGateway != lastKnownGateway) {
+        ESP_LOGI(LM_TAG, "🔄 Gateway changed: 0x%04X → 0x%04X", lastKnownGateway, currentGateway);
+        lastKnownGateway = currentGateway;
+    }
 }
 
 void NodeApp::setupTimeSync() {
