@@ -1,6 +1,8 @@
 #include "node_app.h"
 #include "node_offline_buffer.h"
 #include "mesh_security_config.h"
+#include "soil_sensor_service.h"
+#include "sensor_task.h"
 #include "components/lora_mesh_manager/src/services/ProvisioningService.h"
 #include "components/lora_mesh_manager/src/services/NetkeyDistributionService.h"
 #include "components/lora_mesh_manager/src/services/RoutingTableService.h"
@@ -138,6 +140,66 @@ void NodeApp::setup() {
     led_init();
     led_pattern_startup();
     
+    // ===== RS485 SOIL SENSOR INITIALIZATION =====
+    // Initialize RS485 soil sensor for soil parameter monitoring
+    ESP_LOGI(LM_TAG, "Initializing RS485 Soil Sensor...");
+    if (!SoilSensorService::initialize()) {
+        ESP_LOGW(LM_TAG, "⚠️ Soil sensor initialization failed - will use simulated data");
+        ESP_LOGW(LM_TAG, "   Check RS485 connections (TX=21, RX=20, DE=42)");
+        ESP_LOGW(LM_TAG, "   Check baud rate: 9600 bps");
+        ESP_LOGW(LM_TAG, "   Check sensor address: 0x01");
+    } else {
+        ESP_LOGI(LM_TAG, "✅ Soil sensor initialized successfully");
+        
+        // Perform Phase 1 startup sequence (read device version + sensor ID)
+        if (SoilSensorService::performStartupSequence()) {
+            int16_t deviceVersion = SoilSensorService::readDeviceVersion();
+            uint32_t sensorID = SoilSensorService::readSensorID();
+            ESP_LOGI(LM_TAG, "🌱 Sensor Info - Version: 0x%04X, ID: 0x%04X", deviceVersion, sensorID);
+            
+            // ===== INITIAL SENSOR READ AT STARTUP =====
+            ESP_LOGI(LM_TAG, "📡 Reading initial sensor values at startup...");
+            sensorData initialReading = SoilSensorService::readData();
+            if (!initialReading.error) {
+                ESP_LOGI(LM_TAG, "✅ Initial sensor reading:");
+                ESP_LOGI(LM_TAG, "   Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f", 
+                         initialReading.data.soil.soilMoisture, 
+                         initialReading.data.soil.soilTemperature, 
+                         initialReading.data.soil.pH);
+                ESP_LOGI(LM_TAG, "   EC: %.2f µS/cm, N: %.1f, P: %.1f, K: %.1f mg/kg",
+                         initialReading.data.soil.conductivity,
+                         initialReading.data.soil.nitrogen,
+                         initialReading.data.soil.phosphorus,
+                         initialReading.data.soil.potassium);
+            } else {
+                ESP_LOGW(LM_TAG, "⚠️ Initial sensor read failed");
+            }
+            // ===== END INITIAL SENSOR READ =====
+        } else {
+            ESP_LOGW(LM_TAG, "⚠️ Sensor startup sequence failed");
+        }
+        
+        // ===== START SENSOR TASK (CORE 0, 10-MIN INTERVAL) =====
+        // Start dedicated FreeRTOS task on core 0 for periodic sensor reading
+        if (SensorTaskManager::initialize()) {
+            ESP_LOGI(LM_TAG, "✅ Sensor task initialized - will read every 10 minutes on core 0");
+            
+            // Push initial reading into queue (for immediate use in loop)
+            sensorData initialReading = SoilSensorService::readData();
+            if (!initialReading.error) {
+                if (SensorTaskManager::putData(initialReading)) {
+                    ESP_LOGI(LM_TAG, "✅ Initial sensor reading pushed to queue");
+                } else {
+                    ESP_LOGW(LM_TAG, "⚠️ Failed to queue initial sensor reading");
+                }
+            }
+        } else {
+            ESP_LOGW(LM_TAG, "⚠️ Failed to start sensor task - periodic reading disabled");
+        }
+        // ===== END SENSOR TASK STARTUP =====
+    }
+    // ===== END RS485 SOIL SENSOR INITIALIZATION =====
+    
     // ===== BLE PROVISIONING CHECK =====
     // Create provision manager and check if node is provisioned
     provisionManager = new ProvisionManagerNode();
@@ -266,6 +328,21 @@ void NodeApp::setup() {
     ESP_LOGI(LM_TAG, "Initializing node provisioning...");
     generateDeviceUUID();
     
+    // Initialize Soil Sensor Service (RS485 Modbus RTU)
+    if (!SoilSensorService::initialize()) {
+        ESP_LOGE(LM_TAG, "⚠️ Failed to initialize Soil Sensor Service - sensor data will be unavailable");
+        // Don't return - allow node to continue without sensor
+    } else {
+        ESP_LOGI(LM_TAG, "✅ Soil Sensor Service initialized - ready to read 7-parameter soil sensor");
+    }
+    
+    // Start sensor reading task on core 0 (10-minute interval, non-blocking)
+    if (!SensorTaskManager::initialize()) {
+        ESP_LOGW(LM_TAG, "⚠️ Failed to start sensor task - will read sensor in main loop instead");
+    } else {
+        ESP_LOGI(LM_TAG, "✅ Sensor task started on core 0 - 10-minute read interval");
+    }
+    
     setupLoRaMesher();
     setupTimeSync();  // Initialize time sync service for node
 
@@ -348,8 +425,19 @@ void NodeApp::loop() {
                 return;
             }
             
-            // Create and send sensor data
-            sensorData s = simulateSensorData();
+            // Get sensor data from task queue (non-blocking, 0ms timeout)
+            // SensorTaskManager::getData returns latest reading if available
+            // If no new data from sensor task, this will be false and we skip sensor send
+            sensorData s;
+            bool hasSensorData = SensorTaskManager::getData(s, 0);
+            
+            if (!hasSensorData) {
+                // No new sensor data available yet from task
+                // Use previous sensor data if available, or create error-filled struct
+                s.error = true;  // Mark as error/stale data
+                s.deviceType = DeviceType::SOIL_SENSOR;
+                ESP_LOGD(LM_TAG, "No new sensor data available from task queue");
+            }
 
             // Populate sensor metadata - use local LoRa address from LoraMesher
             uint16_t localAddr = LoraMesher::getInstance().getLocalAddress();
@@ -360,16 +448,21 @@ void NodeApp::loop() {
             // Log with appropriate icon based on device type
             switch (s.deviceType) {
                 case DeviceType::SOIL_SENSOR:
-                    ESP_LOGI(LM_TAG, "🌱 Sending soil sensor data #%d - Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, Batt: %.2fV",
-                             s.counter, s.data.soil.soilMoisture, s.data.soil.soilTemperature, s.data.soil.pH, s.battery);
+                    if (hasSensorData && !s.error) {
+                        ESP_LOGI(LM_TAG, "🌱 Sending soil sensor data #%d - Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, Batt: %.2fV",
+                                 s.counter, s.data.soil.soilMoisture, s.data.soil.soilTemperature, s.data.soil.pH, s.battery);
+                    } else {
+                        ESP_LOGD(LM_TAG, "📤 Sending packet #%d (no new sensor data from task yet)",
+                                 s.counter);
+                    }
                     break;
                 case DeviceType::ENV_SENSOR:
                     ESP_LOGI(LM_TAG, "🌡️ Sending environment sensor data #%d - Temp: %.1f°C, Hum: %.1f%%, Batt: %.2fV",
                              s.counter, s.data.environment.temperature, s.data.environment.humidity, s.battery);
                     break;
                 default:
-                    ESP_LOGI(LM_TAG, "📊 Sending sensor data #%d - Type: %s, Batt: %.2fV",
-                             s.counter, deviceTypeToString(s.deviceType), s.battery);
+                    ESP_LOGI(LM_TAG, "📊 Sending sensor data #%d - Type: %d, Batt: %.2fV",
+                             s.counter, (uint8_t)s.deviceType, s.battery);
                     break;
             }
 
@@ -513,34 +606,67 @@ sensorData NodeApp::simulateSensorData() {
     // Set device type - This node simulates a soil sensor
     data.deviceType = DeviceType::SOIL_SENSOR;
     
-    // Simulate realistic soil sensor readings
-    data.data.soil.soilMoisture = 20.0 + (random(0, 600) / 10.0);      // 20-80% moisture
-    data.data.soil.soilTemperature = 18.0 + (random(0, 150) / 10.0);  // 18-33°C
-    data.data.soil.pH = 5.5 + (random(0, 250) / 100.0);                // pH 5.5-8.0
-    data.data.soil.ec = 0.3 + (random(0, 300) / 100.0);                // 0.3-3.3 mS/cm (electrical conductivity)
-    data.data.soil.nitrogen = 50.0 + (random(0, 2000) / 10.0);         // 50-250 mg/kg
-    data.data.soil.phosphorus = 20.0 + (random(0, 1000) / 10.0);       // 20-120 mg/kg
-    data.data.soil.potassium = 80.0 + (random(0, 1500) / 10.0);        // 80-230 mg/kg
+    // ===== TRY TO READ FROM QUEUE FIRST (populated by SensorTaskManager on core 0) =====
+    if (SensorTaskManager::getData(data, 0)) {
+        ESP_LOGI(LM_TAG, "✅ Real sensor data from queue: Moisture=%.1f%%, Temp=%.1f°C, pH=%.2f, EC=%.2f",
+                 data.data.soil.soilMoisture, data.data.soil.soilTemperature,
+                 data.data.soil.pH, data.data.soil.conductivity);
+        
+        // Use real timestamp if synchronized, otherwise use millis() as fallback
+        if (TimeSyncService::isTimeSynced()) {
+            data.timestamp = TimeSyncService::getCurrentTimestamp();
+        } else {
+            data.timestamp = millis() / 1000;
+        }
+        
+        return data;
+    }
     
-    // Battery simulation
-    data.battery = 3.2 + (random(0, 80) / 100.0);  // 3.2-4.0V
+    // ===== PRIORITY 2: READ DIRECTLY FROM SENSOR (if task not running) =====
+    if (SoilSensorService::isConnected()) {
+        ESP_LOGD(LM_TAG, "📡 Reading soil data directly from RS485 sensor (task not available)...");
+        sensorData sensorResult = SoilSensorService::readData();  // Returns sensorData
+        if (!sensorResult.error) {  // Check if read was successful
+            data = sensorResult;
+            ESP_LOGI(LM_TAG, "✅ Real sensor data (direct): Moisture=%.1f%%, Temp=%.1f°C, pH=%.2f, EC=%.2f",
+                     data.data.soil.soilMoisture, data.data.soil.soilTemperature,
+                     data.data.soil.pH, data.data.soil.conductivity);
+            
+            // Use real timestamp if synchronized, otherwise use millis() as fallback
+            if (TimeSyncService::isTimeSynced()) {
+                data.timestamp = TimeSyncService::getCurrentTimestamp();
+            } else {
+                data.timestamp = millis() / 1000;
+            }
+            
+            return data;
+        } else {
+            ESP_LOGW(LM_TAG, "⚠️ Sensor read failed - marking as error (NO SIMULATION)");
+            // Return error-filled struct, NOT simulation
+            memset(&data.data.soil, 0, sizeof(data.data.soil));
+            data.error = true;
+            data.battery = 0.0f;
+            data.timestamp = millis() / 1000;
+            return data;
+        }
+    }
+    
+    // ===== NO FALLBACK: Return error struct (NO SIMULATION) =====
+    ESP_LOGW(LM_TAG, "❌ Sensor not available - returning error struct (NO SIMULATION)");
+    
+    // Return error-filled struct (NO SIMULATION)
+    memset(&data.data.soil, 0, sizeof(data.data.soil));
+    data.error = true;
+    data.battery = 0.0f;
     
     // Use real timestamp if synchronized, otherwise use millis() as fallback
     if (TimeSyncService::isTimeSynced()) {
         data.timestamp = TimeSyncService::getCurrentTimestamp();
-        ESP_LOGI(LM_TAG, "✅ Using synced timestamp: %u (Unix time)", data.timestamp);
     } else {
-        data.timestamp = millis() / 1000;  // Convert to seconds as fallback
-        ESP_LOGW(LM_TAG, "⚠️ Using fallback timestamp (boot time): %u seconds", data.timestamp);
+        data.timestamp = millis() / 1000;
     }
     
-    ESP_LOGD(LM_TAG, "🌱 Soil sensor simulation - Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, EC: %.2f mS/cm",
-             data.data.soil.soilMoisture, data.data.soil.soilTemperature, 
-             data.data.soil.pH, data.data.soil.ec);
-    ESP_LOGD(LM_TAG, "   NPK values - N: %.1f, P: %.1f, K: %.1f mg/kg",
-             data.data.soil.nitrogen, data.data.soil.phosphorus, data.data.soil.potassium);
-    
-    return data;
+    return data;  // Return error struct
 }
 
 void NodeApp::setupLoRaMesher() {

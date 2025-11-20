@@ -2,6 +2,8 @@
 #include "firebase_queue.h"  // Include Firebase queue system
 #include "components/lora_mesh_manager/src/services/RoutingTableService.h"
 #include "components/lora_mesh_manager/src/core/BuildOptions.h"  // For ROLE_GATEWAY
+#include "soil_sensor_service.h"
+#include "sensor_task.h"
 #include "mesh_security_config.h"
 #include <esp_log.h>
 #include <esp_task_wdt.h>
@@ -104,6 +106,65 @@ void GatewayApp::setup() {
         ESP_LOGI(TAG, "✅ Device is provisioned, continuing setup in ONLINE mode...");
     }
     // ===== END BLE PROVISIONING CHECK =====
+    
+    // ===== RS485 SOIL SENSOR INITIALIZATION (OPTIONAL FOR GATEWAY) =====
+    // If gateway has RS485 sensor hardware connected, initialize it
+    ESP_LOGI(TAG, "Initializing optional RS485 Soil Sensor...");
+    if (!SoilSensorService::initialize()) {
+        ESP_LOGI(TAG, "ℹ️ Soil sensor not available (optional for gateway)");
+        ESP_LOGI(TAG, "   Check RS485 connections if sensor expected");
+        ESP_LOGI(TAG, "   Gateway will continue without local sensor");
+    } else {
+        ESP_LOGI(TAG, "✅ Soil sensor initialized successfully");
+        
+        // Perform Phase 1 startup sequence (read device version + sensor ID)
+        if (SoilSensorService::performStartupSequence()) {
+            int16_t deviceVersion = SoilSensorService::readDeviceVersion();
+            uint32_t sensorID = SoilSensorService::readSensorID();
+            ESP_LOGI(TAG, "🌱 Gateway Sensor Info - Version: 0x%04X, ID: 0x%04X", deviceVersion, sensorID);
+            
+            // ===== INITIAL SENSOR READ AT STARTUP & QUEUE =====
+            ESP_LOGI(TAG, "📡 Reading initial sensor values at startup...");
+            sensorData initialReading = SoilSensorService::readData();
+            if (!initialReading.error) {
+                ESP_LOGI(TAG, "✅ Initial gateway sensor reading:");
+                ESP_LOGI(TAG, "   Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f", 
+                         initialReading.data.soil.soilMoisture, 
+                         initialReading.data.soil.soilTemperature, 
+                         initialReading.data.soil.pH);
+                ESP_LOGI(TAG, "   EC: %.2f µS/cm, N: %.1f, P: %.1f, K: %.1f mg/kg",
+                         initialReading.data.soil.conductivity,
+                         initialReading.data.soil.nitrogen,
+                         initialReading.data.soil.phosphorus,
+                         initialReading.data.soil.potassium);
+            } else {
+                ESP_LOGW(TAG, "⚠️ Initial sensor read failed");
+            }
+            // ===== END INITIAL SENSOR READ =====
+        } else {
+            ESP_LOGW(TAG, "⚠️ Sensor startup sequence failed");
+        }
+        
+        // ===== START SENSOR TASK (CORE 0, 10-MIN INTERVAL) =====
+        // Start dedicated FreeRTOS task on core 0 for periodic sensor reading
+        if (SensorTaskManager::initialize()) {
+            ESP_LOGI(TAG, "✅ Sensor task initialized - will read every 10 minutes on core 0");
+            
+            // Push initial reading into queue (for immediate use in loop)
+            sensorData initialReading = SoilSensorService::readData();
+            if (!initialReading.error) {
+                if (SensorTaskManager::putData(initialReading)) {
+                    ESP_LOGI(TAG, "✅ Initial sensor reading pushed to queue");
+                } else {
+                    ESP_LOGW(TAG, "⚠️ Failed to queue initial sensor reading");
+                }
+            }
+        } else {
+            ESP_LOGW(TAG, "⚠️ Failed to start sensor task - periodic reading disabled");
+        }
+        // ===== END SENSOR TASK STARTUP =====
+    }
+    // ===== END RS485 SOIL SENSOR INITIALIZATION =====
 
     // Initialize mesh security first
     if (!initializeMeshSecurity()) {
@@ -1143,8 +1204,8 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
                              s->counter, s->data.environment.temperature, s->data.environment.humidity, s->battery);
                     break;
                 default:
-                    ESP_LOGI(TAG, "📊 Sensor - Counter: %u, Type: %s, Batt: %.2fV",
-                             s->counter, deviceTypeToString(s->deviceType), s->battery);
+                    ESP_LOGI(TAG, "📊 Sensor - Counter: %u, Type: %d, Batt: %.2fV",
+                             s->counter, (uint8_t)s->deviceType, s->battery);
                     break;
             }
 
@@ -2086,61 +2147,52 @@ void GatewayApp::broadcastTimeSync() {
 sensorData GatewayApp::simulateGatewaySensorData() {
     sensorData data;
     
+    // TRY TO GET REAL SENSOR DATA FROM QUEUE FIRST (if task running on core 0)
+    if (SensorTaskManager::getData(data, 0)) {
+        // Real sensor data available from core 0 task
+        ESP_LOGI(TAG, "🌱 Gateway sensor from queue: Moisture=%.1f%%, Temp=%.1f°C, pH=%.2f, EC=%.2f mS/cm",
+                 data.data.soil.soilMoisture, data.data.soil.soilTemperature, 
+                 data.data.soil.pH, data.data.soil.conductivity);
+        
+        // Update metadata with gateway info
+        data.nodeId = computeNodeIdFromWifiMac();
+        data.counter = ++sensorCounter;
+        
+        if (TimeSyncService::isTimeSynced()) {
+            data.timestamp = TimeSyncService::getCurrentTimestamp();
+        } else {
+            data.timestamp = millis() / 1000;
+        }
+        
+        data.battery = 3.7 + (random(0, 60) / 100.0);  // Gateway battery simulation
+        
+        return data;
+    }
+    
+    // NO FALLBACK: If no real sensor data, return error struct (NO SIMULATION)
+    ESP_LOGW(TAG, "❌ No real sensor data available - returning error struct (NO SIMULATION)");
+    
     // Set device type - Gateway has soil sensor for demo/testing
-    // NOTE: In production, this should be read from NVS/config
     data.deviceType = DeviceType::SOIL_SENSOR;
     
-    // === Common fields (all sensor types) ===
-    data.battery = 3.7 + (random(0, 60) / 100.0);  // 3.7-4.3V LiPo battery simulation
+    // === Return error-filled struct ===
+    memset(&data.data.soil, 0, sizeof(data.data.soil));
+    data.error = true;
+    data.battery = 3.7 + (random(0, 60) / 100.0);  // Gateway battery only
     data.counter = ++sensorCounter;
     data.nodeId = computeNodeIdFromWifiMac();
     
     // Use NTP synchronized timestamp if available
     if (TimeSyncService::isTimeSynced()) {
         data.timestamp = TimeSyncService::getCurrentTimestamp();
-        ESP_LOGI(TAG, "✅ Gateway sensor using synced timestamp: %u (Unix time)", data.timestamp);
     } else {
-        data.timestamp = millis() / 1000;  // Fallback to boot time
-        ESP_LOGW(TAG, "⚠️ Gateway sensor using fallback timestamp: %u seconds", data.timestamp);
+        data.timestamp = millis() / 1000;
     }
     
-    // === Sensor-specific data based on deviceType ===
-    switch (data.deviceType) {
-        case DeviceType::SOIL_SENSOR:
-            // Simulate soil sensor readings (realistic agricultural ranges)
-            data.data.soil.soilMoisture = 20.0 + (random(0, 600) / 10.0);      // 20-80% moisture
-            data.data.soil.soilTemperature = 18.0 + (random(0, 150) / 10.0);   // 18-33°C soil temp
-            data.data.soil.pH = 5.5 + (random(0, 250) / 100.0);                // pH 5.5-8.0
-            data.data.soil.ec = 0.3 + (random(0, 300) / 100.0);                // 0.3-3.3 mS/cm (low to high fertility)
-            data.data.soil.nitrogen = 50.0 + (random(0, 2000) / 10.0);         // 50-250 mg/kg
-            data.data.soil.phosphorus = 20.0 + (random(0, 1000) / 10.0);       // 20-120 mg/kg
-            data.data.soil.potassium = 80.0 + (random(0, 1500) / 10.0);        // 80-230 mg/kg
-            
-            ESP_LOGI(TAG, "🌱 Soil sensor data: Moisture=%.1f%%, Temp=%.1f°C, pH=%.2f, EC=%.2f mS/cm",
-                     data.data.soil.soilMoisture, data.data.soil.soilTemperature, 
-                     data.data.soil.pH, data.data.soil.ec);
-            ESP_LOGI(TAG, "   NPK: N=%.0f, P=%.0f, K=%.0f mg/kg",
-                     data.data.soil.nitrogen, data.data.soil.phosphorus, data.data.soil.potassium);
-            break;
-            
-        case DeviceType::ENV_SENSOR:
-            // Simulate environment sensor (indoor conditions)
-            data.data.environment.temperature = 22.0 + (random(0, 100) / 10.0);    // 22-32°C
-            data.data.environment.humidity = 30.0 + (random(0, 400) / 10.0);       // 30-70%
-            data.data.environment.pressure = 1000.0 + (random(0, 300) / 10.0);     // 1000-1030 hPa
-            data.data.environment.lightIntensity = 100.0 + (random(0, 9000) / 10.0); // 100-1000 lux
-            
-            ESP_LOGI(TAG, "🌡️ Environment sensor: Temp=%.1f°C, Hum=%.1f%%, Pres=%.1f hPa, Light=%.0f lux",
-                     data.data.environment.temperature, data.data.environment.humidity,
-                     data.data.environment.pressure, data.data.environment.lightIntensity);
-            break;
-            
-        default:
-            ESP_LOGW(TAG, "⚠️ Unknown device type, using default values");
-            break;
-    }
+    // No device-specific fields - all zeros for error case
+    // NO SIMULATION - just return error struct
     
-    return data;
+    return data;  // Return error struct
 }
 
 void GatewayApp::uploadGatewaySensorData() {
@@ -2176,8 +2228,8 @@ void GatewayApp::uploadGatewaySensorData() {
                          gatewaySensor.data.environment.humidity, gatewaySensor.battery, nodeIdStr);
                 break;
             default:
-                ESP_LOGI(TAG, "📊 Gateway - Counter: %u, Type: %s, Batt: %.2fV, NodeID: %s",
-                         gatewaySensor.counter, deviceTypeToString(gatewaySensor.deviceType), 
+                ESP_LOGI(TAG, "📊 Gateway - Counter: %u, Type: %d, Batt: %.2fV, NodeID: %s",
+                         gatewaySensor.counter, (uint8_t)gatewaySensor.deviceType, 
                          gatewaySensor.battery, nodeIdStr);
                 break;
         }
@@ -2546,8 +2598,21 @@ void GatewayApp::queueGatewaySensorDataUpload(uint8_t priority) {
         return;
     }
 
-    // Generate gateway sensor data
-    sensorData gatewaySensor = simulateGatewaySensorData();
+    // Get latest sensor reading from queue (non-blocking)
+    // Queue is populated by:
+    // 1. Initial reading at startup
+    // 2. Periodic readings from sensor task (every 10 minutes on core 0)
+    sensorData gatewaySensor;
+    if (!SensorTaskManager::getData(gatewaySensor, 0)) {
+        // No data in queue yet - skip upload
+        ESP_LOGD(TAG, "No sensor data in queue - skipping upload");
+        return;
+    }
+    
+    ESP_LOGI(TAG, "🏠 Got sensor data from queue - preparing to upload (priority %d)", priority);
+    
+    // Setup metadata
+    gatewaySensor.nodeId = computeNodeIdFromWifiMac();
     
     // Get signal strength (WiFi RSSI or Cellular RSSI)
 #ifdef USE_CELLULAR

@@ -416,12 +416,6 @@ String CellularFirebaseHTTPSClient::buildSensorDataJSON(const sensorData& data, 
         case DeviceType::ENV_SENSOR:
             deviceTypeStr = "environment_sensor";
             break;
-        case DeviceType::WATER_SENSOR:
-            deviceTypeStr = "water_sensor";
-            break;
-        case DeviceType::GATEWAY:
-            deviceTypeStr = "gateway";
-            break;
         default:
             deviceTypeStr = "unknown";
     }
@@ -447,7 +441,7 @@ String CellularFirebaseHTTPSClient::buildSensorDataJSON(const sensorData& data, 
             doc["soilMoisture"] = data.data.soil.soilMoisture;
             doc["soilTemperature"] = data.data.soil.soilTemperature;
             doc["pH"] = data.data.soil.pH;
-            doc["ec"] = data.data.soil.ec;
+            doc["conductivity"] = data.data.soil.conductivity;  // EC = Electrical Conductivity
             doc["nitrogen"] = data.data.soil.nitrogen;
             doc["phosphorus"] = data.data.soil.phosphorus;
             doc["potassium"] = data.data.soil.potassium;
@@ -456,21 +450,10 @@ String CellularFirebaseHTTPSClient::buildSensorDataJSON(const sensorData& data, 
             doc["temperature"] = data.data.environment.temperature;
             doc["humidity"] = data.data.environment.humidity;
             doc["pressure"] = data.data.environment.pressure;
-            doc["lightIntensity"] = data.data.environment.lightIntensity;
-            break;
-        case DeviceType::WATER_SENSOR:
-            doc["waterTemp"] = data.data.water.waterTemp;
-            doc["pH"] = data.data.water.pH;
-            doc["tds"] = data.data.water.tds;
-            doc["turbidity"] = data.data.water.turbidity;
+            doc["light"] = data.data.environment.light;  // Light intensity in lux
             break;
         default:
-            // For unknown types, add generic values
-            for (int i = 0; i < 8; i++) {
-                String key = "value";
-                key += i;
-                doc[key] = data.data.values[i];
-            }
+            // Unknown or unsupported type - no additional fields
             break;
     }
     

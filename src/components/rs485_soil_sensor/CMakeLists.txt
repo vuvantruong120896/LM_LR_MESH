@@ -1,0 +1,13 @@
+idf_component_register(
+    SRCS
+        src/modbus_rtu_driver.cpp
+        src/soil_sensor_service.cpp
+        src/sensor_task.cpp
+    INCLUDE_DIRS
+        include
+    PRIV_INCLUDE_DIRS
+        include
+    REQUIRES
+        driver
+        esp_common
+)

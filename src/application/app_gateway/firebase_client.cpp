@@ -657,7 +657,7 @@ String FirebaseClient::createSensorDataJson(const sensorData& data, int8_t rssi,
     StaticJsonDocument<1024> doc;  // 1KB stack buffer (enough for sensor data)
     
     // Common fields for all device types
-    doc["deviceType"] = deviceTypeToString(data.deviceType);
+    doc["deviceType"] = (uint8_t)data.deviceType;  // Use numeric value instead of string
     doc["counter"] = data.counter;
     doc["battery"] = data.battery;
     doc["timestamp"] = m_autoTimestamp ? getCurrentTimestamp() : data.timestamp;
@@ -678,52 +678,32 @@ String FirebaseClient::createSensorDataJson(const sensorData& data, int8_t rssi,
             doc["soilMoisture"] = data.data.soil.soilMoisture;
             doc["soilTemperature"] = data.data.soil.soilTemperature;
             doc["pH"] = data.data.soil.pH;
-            doc["ec"] = data.data.soil.ec;
+            doc["conductivity"] = data.data.soil.conductivity;  // EC = Electrical Conductivity
             doc["nitrogen"] = data.data.soil.nitrogen;
             doc["phosphorus"] = data.data.soil.phosphorus;
             doc["potassium"] = data.data.soil.potassium;
-            // Serial.printf("[Firebase] Soil sensor data - Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, EC: %.2f mS/cm\n",
+            // Serial.printf("[Firebase] Soil sensor data - Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, Conductivity: %.2f µS/cm\n",
             //     data.data.soil.soilMoisture, data.data.soil.soilTemperature, 
-            //     data.data.soil.pH, data.data.soil.ec);
+            //     data.data.soil.pH, data.data.soil.conductivity);
             break;
             
         case DeviceType::ENV_SENSOR:
             doc["temperature"] = data.data.environment.temperature;
             doc["humidity"] = data.data.environment.humidity;
             doc["pressure"] = data.data.environment.pressure;
-            doc["lightIntensity"] = data.data.environment.lightIntensity;
+            doc["light"] = data.data.environment.light;  // Light intensity in lux
             // Serial.printf("[Firebase] Environment sensor data - Temp: %.1f°C, Humidity: %.1f%%\n",
             //     data.data.environment.temperature, data.data.environment.humidity);
             break;
             
-        case DeviceType::WATER_SENSOR:
-            doc["waterTemp"] = data.data.water.waterTemp;
-            doc["pH"] = data.data.water.pH;
-            doc["tds"] = data.data.water.tds;
-            doc["turbidity"] = data.data.water.turbidity;
-            // Serial.printf("[Firebase] Water sensor data - Temp: %.1f°C, pH: %.2f, TDS: %.1f ppm\n",
-            //     data.data.water.waterTemp, data.data.water.pH, data.data.water.tds);
-            break;
-            
-        case DeviceType::GATEWAY:
-            // Gateway may not have sensor data, or may report minimal metrics
-            Serial.println("[Firebase] Gateway status (no sensor data)");
-            break;
-            
-        case DeviceType::UNKNOWN:
         default:
-            // For unknown types, serialize generic values array
-            Serial.printf("[Firebase] Unknown device type: %d\n", (int)data.deviceType);
-            for (int i = 0; i < 8; i++) {
-                String key = "value";
-                key += i;
-                doc[key] = data.data.values[i];
-            }
+            // Unknown or unsupported device type
+            Serial.printf("[Firebase] Device type: %d\n", (int)data.deviceType);
             break;
     }
     
     // Debug: Print JSON payload in pretty format
-    ESP_LOGI(TAG, "[Firebase] Sensor data JSON (node 0x%04X, type: %s):\n", data.nodeId, deviceTypeToString(data.deviceType));
+    ESP_LOGI(TAG, "[Firebase] Sensor data JSON (node 0x%04X, type: %d):\n", data.nodeId, (uint8_t)data.deviceType);
     {
         String pretty;
         serializeJsonPretty(doc, pretty);
