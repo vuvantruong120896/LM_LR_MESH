@@ -20,7 +20,7 @@
 #define CELLULAR_SSL_CLIENT_H
 
 #include <Arduino.h>
-#include "at_command_handler.h"
+#include "at_command_async.h"
 #include "cellular_connection_service.h"
 
 class CellularSSLClient {
@@ -97,11 +97,11 @@ public:
      * @brief Get AT command handler (for advanced usage)
      * @return Pointer to AT handler
      */
-    ATCommandHandler* getATHandler() const;
+    ATCommandAsync* getATHandler() const;
 
 private:
     CellularConnectionService* m_connectionService;
-    ATCommandHandler* m_atHandler;
+    ATCommandAsync* m_atHandler;
     State m_state;
     int m_sessionId;
     bool m_httpServiceStarted;

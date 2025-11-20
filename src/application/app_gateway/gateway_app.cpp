@@ -2015,7 +2015,7 @@ bool GatewayApp::syncTimeFromModem() {
         return false;
     }
     
-    ATCommandHandler* atHandler = cellularService->getATHandler();
+    ATCommandAsync* atHandler = cellularService->getATHandler();
     
     // Step 1: Enabling automatic timezone update
     ESP_LOGI(TAG, "Step 1: Enabling automatic timezone update (AT+CTZU=1)...");

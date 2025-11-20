@@ -67,12 +67,16 @@ bool CellularConnectionService::initialize() {
         return false;
     }
 
-    // Create AT handler
-    m_atHandler = new ATCommandHandler(m_uart);
+    // Create async AT handler
+    m_atHandler = new ATCommandAsync(m_uart);
     if (!m_atHandler) {
-        ESP_LOGE(TAG, "Failed to create AT handler");
+        ESP_LOGE(TAG, "Failed to create async AT handler");
         return false;
     }
+
+    // Initialize async receiver task (runs on separate core)
+    m_atHandler->initialize();
+    ESP_LOGI(TAG, "🚀 Async AT handler initialized - receiver task running independently");
 
     // Register URC callback
     m_atHandler->registerURCCallback([this](const String& urc) {
@@ -82,8 +86,8 @@ bool CellularConnectionService::initialize() {
     // Start dedicated URC processing task (non-blocking, runs asynchronously)
     startURCProcessingTask();
 
-    // Disable echo
-    m_atHandler->setEcho(false);
+    // Disable echo (blocking for init only)
+    m_atHandler->sendCommand("+E0", 1000, true);
 
     // Configure error format (numeric)
     m_atHandler->sendCommand("+CMEE=1");  // Enable error codes
@@ -219,6 +223,10 @@ CellularConnectionService::Status CellularConnectionService::getStatus() const {
 }
 
 void CellularConnectionService::update() {
+    // Process any pending async command responses (non-blocking)
+    // This checks if any of our async queries have completed
+    processPendingAsyncResponses();
+
     // URC processing is handled by background task - no need to call processURCs() here
 
     // Periodic checks are now enqueued to the Firebase queue to maintain
@@ -333,7 +341,7 @@ CellularConnectionService::Stats CellularConnectionService::getStats() const {
     return stats;
 }
 
-ATCommandHandler* CellularConnectionService::getATHandler() const {
+ATCommandAsync* CellularConnectionService::getATHandler() const {
     return m_atHandler;
 }
 
@@ -566,92 +574,173 @@ bool CellularConnectionService::detachGPRS() {
 }
 
 bool CellularConnectionService::updateSignalQuality() {
-    // URC processing is handled by background task - no manual processURCs() needed
-    
-    // Try with increased timeout and retry logic
-    const uint32_t timeout = 3000;  // Increased from default 1000ms to 3000ms
-    const uint8_t maxRetries = 2;
-    
-    for (uint8_t retry = 0; retry < maxRetries; retry++) {
-        auto resp = m_atHandler->sendCommand("+CSQ", timeout);
-        
-        if (resp.success) {
-            String value = ATCommandHandler::extractValue(resp.data, "+CSQ:");
-            auto parts = ATCommandHandler::splitValues(value);
-            
-            if (parts.size() >= 1) {
-                int8_t newRSSI = parts[0].toInt();
-                
-                if (newRSSI != m_currentRSSI) {
-                    m_currentRSSI = newRSSI;
-                    
-                    // Check if signal is weak
-                    if (m_currentRSSI < m_signalThreshold && m_currentRSSI != 99) {
-                        ESP_LOGW(TAG, "⚠️  Weak signal: RSSI=%d", m_currentRSSI);
-                        triggerEvent(Event::SIGNAL_LOW, m_currentRSSI);
+    // Async approach: Check if previous query is done
+    if (m_signalQualityQueryId != 0) {
+        // Previous query is pending - check if it's complete
+        ATCommandAsync::Response resp;
+        if (m_atHandler->isCommandComplete(m_signalQualityQueryId, &resp)) {
+            // Response received!
+            if (resp.success) {
+                // Parse: +CSQ: 25,99
+                String line = resp.data;
+                int colonIdx = line.indexOf(':');
+                if (colonIdx >= 0) {
+                    String value = line.substring(colonIdx + 1);
+                    value.trim();
+                    int commaIdx = value.indexOf(',');
+                    if (commaIdx >= 0) {
+                        String csqStr = value.substring(0, commaIdx);
+                        int8_t newRSSI = csqStr.toInt();
+                        
+                        if (newRSSI != m_currentRSSI) {
+                            m_currentRSSI = newRSSI;
+                            m_stats.currentRSSI = newRSSI;
+                            
+                            // Check if signal is weak
+                            if (m_currentRSSI < m_signalThreshold && m_currentRSSI != 99) {
+                                ESP_LOGW(TAG, "⚠️  Weak signal: RSSI=%d", m_currentRSSI);
+                                triggerEvent(Event::SIGNAL_LOW, m_currentRSSI);
+                            }
+                        }
+                        
+                        ESP_LOGD(TAG, "📶 Signal quality updated: RSSI=%d", m_currentRSSI);
                     }
                 }
-                
-                ESP_LOGD(TAG, "📶 Signal quality updated: RSSI=%d (attempt %d/%d)", m_currentRSSI, retry + 1, maxRetries);
-                return true;
+            } else {
+                ESP_LOGD(TAG, "Signal quality query failed: %s", resp.errorMessage.c_str());
             }
-        } else {
-            ESP_LOGD(TAG, "Signal quality query failed (attempt %d/%d): %s", 
-                     retry + 1, maxRetries, resp.errorMessage.c_str());
             
-            // Between retries, just wait a bit (background task handles URCs)
-            if (retry < maxRetries - 1) {
-                delay(100);
-            }
+            m_signalQualityQueryId = 0;  // Reset for next query
+            m_lastSignalQualityQueryTime = millis();
+            return resp.success;
+        }
+        // Still waiting for response - don't send new query
+        return false;
+    } else {
+        // No pending query - check if we should send new one
+        uint32_t now = millis();
+        if (now - m_lastSignalQualityQueryTime >= m_signalQualityQueryIntervalMs) {
+            // Send new query (non-blocking)
+            m_signalQualityQueryId = m_atHandler->sendCommandAsync("+CSQ", 3000, true);
+            ESP_LOGD(TAG, "📶 Async signal quality query sent (ID: %u)", m_signalQualityQueryId);
+            return true;
         }
     }
     
-    ESP_LOGW(TAG, "Failed to update signal quality after %d attempts", maxRetries);
     return false;
 }
 
 bool CellularConnectionService::updateRegistrationState() {
-    // URC processing is handled by background task - no manual processURCs() needed
-    
-    // Try with increased timeout and retry logic
-    const uint32_t timeout = 3000;  // Increased from default 1000ms to 3000ms
-    const uint8_t maxRetries = 2;
-    
-    for (uint8_t retry = 0; retry < maxRetries; retry++) {
-        auto resp = m_atHandler->sendCommand("+CREG?", timeout);
-        
-        if (resp.success) {
-            // Parse: +CREG: <n>,<stat>
-            String value = ATCommandHandler::extractValue(resp.data, "+CREG:");
-            auto parts = ATCommandHandler::splitValues(value);
-            
-            if (parts.size() >= 2) {
-                int stat = parts[1].toInt();
-                RegState newState = static_cast<RegState>(stat);
-                
-                if (newState != m_registrationState) {
-                    ESP_LOGI(TAG, "Registration state changed: %s -> %s", 
-                             regStateToString(m_registrationState), regStateToString(newState));
-                    m_registrationState = newState;
+    // Async approach: Check if previous query is done
+    if (m_registrationQueryId != 0) {
+        // Previous query is pending - check if it's complete
+        ATCommandAsync::Response resp;
+        if (m_atHandler->isCommandComplete(m_registrationQueryId, &resp)) {
+            // Response received!
+            if (resp.success) {
+                // Parse: +CREG: 0,1 or +CREG: 0,1,0001,DEADBEEF
+                String line = resp.data;
+                int colonIdx = line.indexOf(':');
+                if (colonIdx >= 0) {
+                    String value = line.substring(colonIdx + 1);
+                    value.trim();
+                    int commaIdx = value.indexOf(',');
+                    if (commaIdx >= 0) {
+                        String regStr = value.substring(commaIdx + 1);
+                        regStr.trim();
+                        int regVal = regStr.toInt();
+                        
+                        RegState newState = (RegState)regVal;
+                        if (newState != m_registrationState) {
+                            m_registrationState = newState;
+                            m_stats.registrationState = newState;
+                            ESP_LOGI(TAG, "📡 Registration state changed: %s", regStateToString(newState));
+                        }
+                    }
                 }
-                
-                ESP_LOGD(TAG, "Registration state updated: %s (attempt %d/%d)", 
-                         regStateToString(m_registrationState), retry + 1, maxRetries);
-                return true;
+            } else {
+                ESP_LOGD(TAG, "Registration query failed: %s", resp.errorMessage.c_str());
             }
-        } else {
-            ESP_LOGD(TAG, "Registration state query failed (attempt %d/%d): %s", 
-                     retry + 1, maxRetries, resp.errorMessage.c_str());
             
-            // Between retries, just wait a bit (background task handles URCs)
-            if (retry < maxRetries - 1) {
-                delay(100);
-            }
+            m_registrationQueryId = 0;  // Reset for next query
+            m_lastRegistrationQueryTime = millis();
+            return resp.success;
+        }
+        // Still waiting for response - don't send new query
+        return false;
+    } else {
+        // No pending query - check if we should send new one
+        uint32_t now = millis();
+        if (now - m_lastRegistrationQueryTime >= m_registrationQueryIntervalMs) {
+            // Send new query (non-blocking)
+            m_registrationQueryId = m_atHandler->sendCommandAsync("+CREG?", 3000, true);
+            ESP_LOGD(TAG, "📡 Async registration query sent (ID: %u)", m_registrationQueryId);
+            return true;
         }
     }
     
-    ESP_LOGW(TAG, "Failed to update registration state after %d attempts", maxRetries);
     return false;
+}
+
+// Helper: Process pending async responses (called in update())
+void CellularConnectionService::processPendingAsyncResponses() {
+    // Check signal quality response
+    if (m_signalQualityQueryId != 0) {
+        ATCommandAsync::Response resp;
+        if (m_atHandler->isCommandComplete(m_signalQualityQueryId, &resp)) {
+            if (resp.success) {
+                // Parse: +CSQ: 25,99
+                int colonIdx = resp.data.indexOf(':');
+                if (colonIdx >= 0) {
+                    String value = resp.data.substring(colonIdx + 1);
+                    value.trim();
+                    int commaIdx = value.indexOf(',');
+                    if (commaIdx >= 0) {
+                        String csqStr = value.substring(0, commaIdx);
+                        int8_t newRSSI = csqStr.toInt();
+                        
+                        if (newRSSI != m_currentRSSI) {
+                            m_currentRSSI = newRSSI;
+                            m_stats.currentRSSI = newRSSI;
+                            
+                            if (m_currentRSSI < m_signalThreshold && m_currentRSSI != 99) {
+                                triggerEvent(Event::SIGNAL_LOW, m_currentRSSI);
+                            }
+                        }
+                    }
+                }
+            }
+            m_signalQualityQueryId = 0;
+        }
+    }
+    
+    // Check registration state response
+    if (m_registrationQueryId != 0) {
+        ATCommandAsync::Response resp;
+        if (m_atHandler->isCommandComplete(m_registrationQueryId, &resp)) {
+            if (resp.success) {
+                // Parse: +CREG: 0,1 or +CREG: 0,1,0001,DEADBEEF
+                int colonIdx = resp.data.indexOf(':');
+                if (colonIdx >= 0) {
+                    String value = resp.data.substring(colonIdx + 1);
+                    value.trim();
+                    int commaIdx = value.indexOf(',');
+                    if (commaIdx >= 0) {
+                        String regStr = value.substring(commaIdx + 1);
+                        regStr.trim();
+                        int regVal = regStr.toInt();
+                        
+                        RegState newState = (RegState)regVal;
+                        if (newState != m_registrationState) {
+                            m_registrationState = newState;
+                            m_stats.registrationState = newState;
+                        }
+                    }
+                }
+            }
+            m_registrationQueryId = 0;
+        }
+    }
 }
 
 bool CellularConnectionService::updateIPAddress() {
@@ -664,7 +753,7 @@ bool CellularConnectionService::updateIPAddress() {
         
         if (resp.success) {
             // Response: +IPADDR: <ip>
-            String value = ATCommandHandler::extractValue(resp.data, "+IPADDR:");
+            String value = ATCommandAsync::extractValue(resp.data, "+IPADDR:");
             value.trim();
             
             if (value.length() > 0 && !value.startsWith("ERROR")) {
@@ -875,15 +964,11 @@ void CellularConnectionService::urcProcessingTaskFunction(void* parameter) {
     
     ESP_LOGI("CellularURCProcessor", "URC processing task started on Core %d", xPortGetCoreID());
     
-    // Continuously process URCs in background
+    // Continuously process URCs in background (via ATCommandAsync receiver task)
+    // This task primarily handles high-level URC callbacks
     while (true) {
-        // Check if data available - processURCs() with 20ms timeout won't block long
-        if (self->m_uart && self->m_uart->available() > 0) {
-            // Process available URCs
-            self->m_atHandler->processURCs();
-        } else {
-            // No data available - sleep longer to save CPU
-            vTaskDelay(pdMS_TO_TICKS(100));
-        }
+        // Background receiver task in ATCommandAsync handles UART reading
+        // This task can do additional URC post-processing if needed
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }

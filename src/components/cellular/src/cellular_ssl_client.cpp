@@ -65,7 +65,7 @@ bool CellularSSLClient::initialize() {
 bool CellularSSLClient::configureSSL() {
     // Set SSL version to TLS 1.2 (context index 0)
     // AT+CSSLCFG="sslversion",0,4  (4 = TLS 1.2)
-    ATCommandHandler::Response resp = m_atHandler->sendCommand("+CSSLCFG=\"sslversion\",0,4", 2000);
+    ATCommandAsync::Response resp = m_atHandler->sendCommand("+CSSLCFG=\"sslversion\",0,4", 2000);
     if (!resp.success) {
         ESP_LOGW(TAG, "Failed to set SSL version, continuing anyway");
     }
@@ -96,7 +96,7 @@ bool CellularSSLClient::startHTTPService() {
 
     // Start HTTP service
     // AT+CCHSTART
-    ATCommandHandler::Response resp = m_atHandler->sendCommand("+CCHSTART", 5000);
+    ATCommandAsync::Response resp = m_atHandler->sendCommand("+CCHSTART", 5000);
     if (!resp.success) {
         ESP_LOGE(TAG, "Failed to start HTTP service - response: '%s'", resp.data.c_str());
         return false;
@@ -114,7 +114,7 @@ bool CellularSSLClient::stopHTTPService() {
 
     // Stop HTTP service
     // AT+CCHSTOP
-    ATCommandHandler::Response resp = m_atHandler->sendCommand("+CCHSTOP", 5000);
+    ATCommandAsync::Response resp = m_atHandler->sendCommand("+CCHSTOP", 5000);
     if (!resp.success) {
         ESP_LOGW(TAG, "Failed to stop HTTP service");
         return false;
@@ -150,7 +150,7 @@ bool CellularSSLClient::connect(const String& host, uint16_t port, uint32_t time
 
     // AT+CCHOPEN can take 5-10 seconds to establish SSL connection
     // Increased from 5000ms to 10000ms
-    ATCommandHandler::Response resp = m_atHandler->sendCommand(cmd.c_str(), 5000);
+    ATCommandAsync::Response resp = m_atHandler->sendCommand(cmd.c_str(), 5000);
     if (!resp.success) {
         ESP_LOGE(TAG, "Failed to send AT+CCHOPEN command");
         m_state = State::ERROR;
@@ -207,12 +207,9 @@ int CellularSSLClient::send(const String& request) {
 
     ESP_LOGD(TAG, "Sending %d bytes via HTTPS", dataLength);
 
-    ATCommandHandler::Response resp = m_atHandler->sendDataCommand(
-        cmd, 
-        request, 
-        '>',      // Prompt character to wait for
-        10000     // Timeout
-    );
+    // Note: For now, using sendCommand for CCHSEND
+    // TODO: Implement multi-step sendDataCommandAsync if blocking becomes issue
+    ATCommandAsync::Response resp = m_atHandler->sendCommand(cmd, 10000);
     
     if (!resp.success) {
         ESP_LOGE(TAG, "Failed to send data");
@@ -266,7 +263,7 @@ int CellularSSLClient::receive(char* buffer, size_t maxLength, uint32_t timeoutM
     cmd += ",";
     cmd += String((int)toRead);
 
-    ATCommandHandler::Response resp = m_atHandler->sendCommand(cmd.c_str(), timeoutMs);
+    ATCommandAsync::Response resp = m_atHandler->sendCommand(cmd.c_str(), timeoutMs);
     if (!resp.success) {
         // Treat as no data available to avoid log spam
         return 0;
@@ -325,7 +322,7 @@ bool CellularSSLClient::disconnect() {
 
         ESP_LOGI(TAG, "Closing HTTPS connection (session %d)", m_sessionId);
 
-        ATCommandHandler::Response resp = m_atHandler->sendCommand(cmd.c_str(), 3000);
+        ATCommandAsync::Response resp = m_atHandler->sendCommand(cmd.c_str(), 3000);
 
         if (!resp.success) {
             ESP_LOGW(TAG, "Failed to close HTTPS connection");
@@ -339,15 +336,15 @@ bool CellularSSLClient::disconnect() {
     return true;
 }
 
-ATCommandHandler* CellularSSLClient::getATHandler() const {
+ATCommandAsync* CellularSSLClient::getATHandler() const {
     return m_atHandler;
 }
 
 void CellularSSLClient::handleURC(const String& urc) {
     if (urc.startsWith("+CCHOPEN:")) {
         // Parse: +CCHOPEN: <sessionid>,<err>
-        String value = ATCommandHandler::extractValue(urc, "+CCHOPEN:");
-        auto parts = ATCommandHandler::splitValues(value);
+        String value = ATCommandAsync::extractValue(urc, "+CCHOPEN:");
+        auto parts = ATCommandAsync::splitValues(value);
         
         if (parts.size() >= 2) {
             m_cchOpenSessionId = parts[0].toInt();
@@ -361,10 +358,10 @@ void CellularSSLClient::handleURC(const String& urc) {
         // Two possible formats seen on some firmware versions:
         // 1) +CCHRECV: <session>,<len>
         // 2) +CCHRECV: <len>
-        String value = ATCommandHandler::extractValue(urc, "+CCHRECV:");
+        String value = ATCommandAsync::extractValue(urc, "+CCHRECV:");
         value.trim();
         int len = 0;
-        auto parts = ATCommandHandler::splitValues(value);
+        auto parts = ATCommandAsync::splitValues(value);
         if (parts.size() >= 2) {
             // parts[0] = session, parts[1] = len
             len = parts[1].toInt();
@@ -378,3 +375,4 @@ void CellularSSLClient::handleURC(const String& urc) {
         }
     }
 }
+

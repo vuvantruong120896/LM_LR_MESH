@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include "cellular_uart.h"
-#include "at_command_handler.h"
+#include "at_command_async.h"
 #include <functional>
 
 /**
@@ -246,7 +246,7 @@ public:
      * @brief Get AT command handler for advanced usage
      * @return Pointer to AT handler (do not delete!)
      */
-    ATCommandHandler* getATHandler() const;
+    ATCommandAsync* getATHandler() const;
 
     /**
      * @brief Sync ESP32 system time from modem network time.
@@ -310,7 +310,20 @@ public:
 private:
     // Hardware
     CellularUART* m_uart;
-    ATCommandHandler* m_atHandler;
+    ATCommandAsync* m_atHandler;
+    
+    // Async command tracking (non-blocking operations)
+    uint32_t m_registrationQueryId = 0;      ///< Pending CREG query ID
+    uint32_t m_signalQualityQueryId = 0;     ///< Pending CSQ query ID
+    uint32_t m_timeQueryId = 0;              ///< Pending CCLK query ID
+    uint32_t m_operatorQueryId = 0;          ///< Pending COPS query ID
+    uint32_t m_ipAddressQueryId = 0;         ///< Pending IFCONFIG query ID
+    
+    // Async timing
+    uint32_t m_lastRegistrationQueryTime = 0;
+    uint32_t m_lastSignalQualityQueryTime = 0;
+    uint32_t m_registrationQueryIntervalMs = 30000;  ///< 30 seconds
+    uint32_t m_signalQualityQueryIntervalMs = 60000; ///< 60 seconds
 
     // Configuration
     APNConfig m_apnConfig;
@@ -392,6 +405,14 @@ private:
      * @brief Convert Status to string for logging
      */
     static const char* statusToString(Status status);
+    
+    /**
+     * @brief Process pending async command responses
+     * 
+     * Called in update() to check if any async commands have completed
+     * and process their responses without blocking
+     */
+    void processPendingAsyncResponses();
 };
 
 #endif // CELLULAR_CONNECTION_SERVICE_H
