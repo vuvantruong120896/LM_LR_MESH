@@ -381,10 +381,6 @@ ATCommandHandler::Response ATCommandHandler::readResponse(uint32_t timeoutMs, bo
                     continue;
                 }
 
-                // Suppress per-line debug logging here; we'll log the
-                // aggregated response once when complete or on timeout.
-                // ESP_LOGD(TAG, "  <- %s", line.c_str());
-
                 // Check for final response
                 if (isFinalResponse(line)) {
                     gotFinalResponse = true;

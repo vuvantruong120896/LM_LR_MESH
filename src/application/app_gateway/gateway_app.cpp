@@ -5,6 +5,7 @@
 #include "soil_sensor_service.h"
 #include "sensor_task.h"
 #include "mesh_security_config.h"
+#include "../../utils/factory_reset.h"
 #include <esp_log.h>
 #include <esp_task_wdt.h>
 #include <map>
@@ -251,6 +252,40 @@ void GatewayApp::setup() {
         led_pattern_provisioning();  // Indicate provisioning mode
     }
 
+    // Initialize factory reset button (IO13 - 5 second hold)
+    FactoryReset::initialize();
+    
+    // Register pre-reset callback to clear routing table in Firebase
+    FactoryReset::setPreResetCallback([]() {
+        ESP_LOGW(TAG, "🗑️ Factory Reset: Clearing routing table from Firebase...");
+        
+        // Clear local routing table first
+        if (RoutingTableService::routingTableList) {
+            RoutingTableService::routingTableList->setInUse();
+            RoutingTableService::routingTableList->Clear();
+            RoutingTableService::routingTableList->releaseInUse();
+            ESP_LOGI(TAG, "✅ Local routing table cleared");
+        }
+        
+        // Upload empty routing table to Firebase (if connected)
+        if (GatewayApp::instance && GatewayApp::instance->firebaseClient && 
+            GatewayApp::instance->gatewayState.firebaseConnected) {
+            
+            std::vector<RouteNode> emptyTable;
+            auto result = GatewayApp::instance->firebaseClient->uploadRoutingTable(emptyTable);
+            
+            if (result.success) {
+                ESP_LOGI(TAG, "✅ Empty routing table uploaded to Firebase");
+            } else {
+                ESP_LOGW(TAG, "⚠️ Failed to upload empty routing table");
+            }
+        } else {
+            ESP_LOGW(TAG, "⚠️ Firebase not connected - skipping routing table cleanup");
+        }
+    });
+    
+    ESP_LOGI(TAG, "🔧 Factory reset ready - Hold IO13 for 5 seconds to reset");
+
     ESP_LOGI(TAG, "🎉✨ Setup complete. Gateway is ready! 🚀");
 }
 
@@ -284,6 +319,9 @@ void GatewayApp::initializeServices() {
 }
 
 void GatewayApp::loop() {
+    // Check factory reset button (IO13 - 5 second hold)
+    FactoryReset::loop();
+
     // Check if provisioning just succeeded (show LED success pattern)
     static bool successShown = false;
 

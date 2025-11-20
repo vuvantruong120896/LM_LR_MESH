@@ -82,13 +82,6 @@ bool CellularConnectionService::initialize() {
     // Start dedicated URC processing task (non-blocking, runs asynchronously)
     startURCProcessingTask();
 
-    // Test AT communication
-    // Increased retries from 5 to 10 for slower/unresponsive modules
-    if (!m_atHandler->testAT(10)) {
-        ESP_LOGE(TAG, "Module not responding to AT commands");
-        return false;
-    }
-
     // Disable echo
     m_atHandler->setEcho(false);
 

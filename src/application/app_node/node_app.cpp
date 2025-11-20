@@ -3,6 +3,7 @@
 #include "mesh_security_config.h"
 #include "soil_sensor_service.h"
 #include "sensor_task.h"
+#include "../../utils/factory_reset.h"
 #include "components/lora_mesh_manager/src/services/ProvisioningService.h"
 #include "components/lora_mesh_manager/src/services/NetkeyDistributionService.h"
 #include "components/lora_mesh_manager/src/services/RoutingTableService.h"
@@ -353,10 +354,18 @@ void NodeApp::setup() {
              (provisioningState == NODE_STATE_PROVISIONED) ? "PROVISIONED" : "FAILED");
     ESP_LOGI(LM_TAG, "Node status: HasValidNetworkKey=%s, AssignedAddress=0x%04X, LocalAddress=0x%04X", 
              hasValidNetworkKey ? "YES" : "NO", assignedAddress, runtimeNodeId);
+    
+    // Initialize factory reset button (IO13 - 5 second hold)
+    FactoryReset::initialize();
+    ESP_LOGI(LM_TAG, "🔧 Factory reset ready - Hold IO13 for 5 seconds to reset");
+    
     ESP_LOGI(LM_TAG, "=== NODE SETUP COMPLETED - STARTING MAIN LOOP ===");
 }
 
 void NodeApp::loop() {
+    // Check factory reset button (IO13 - 5 second hold)
+    FactoryReset::loop();
+
     // Check if BLE provisioning just completed
     if (provisionManager && provisionManager->provisionSucceeded()) {
         ESP_LOGI(LM_TAG, "");
