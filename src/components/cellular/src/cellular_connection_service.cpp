@@ -866,7 +866,7 @@ bool CellularConnectionService::syncTimeFromNetwork() {
     if (!m_atHandler) return false;
 
     // Query clock from modem: +CCLK: "yy/MM/dd,hh:mm:ss+zz"
-    auto resp = m_atHandler->sendCommand("+CCLK?", 2000);
+    auto resp = m_atHandler->sendCommand("+CCLK?", 5000);
     if (!resp.success) {
         ESP_LOGW(TAG, "Failed to query modem time (+CCLK?)");
         return false;

@@ -217,7 +217,7 @@ int CellularTCPClient::send(uint8_t linkNum, const uint8_t* data, size_t length)
     // AT+CIPSEND=<link_num>,<length>
     // This command returns '>' prompt instead of OK
     String cmd = "+CIPSEND=" + String(linkNum) + "," + String(length);
-    auto resp = m_atHandler->sendCommand(cmd, 2000, false);  // Don't expect OK
+    auto resp = m_atHandler->sendCommand(cmd, 5000, false);  // Don't expect OK
 
     // Check for '>' prompt
     if (resp.data.indexOf('>') < 0) {

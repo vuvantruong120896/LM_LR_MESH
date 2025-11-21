@@ -2019,7 +2019,7 @@ bool GatewayApp::syncTimeFromModem() {
     
     // Step 1: Enabling automatic timezone update
     ESP_LOGI(TAG, "Step 1: Enabling automatic timezone update (AT+CTZU=1)...");
-    auto ctzuResp = atHandler->sendCommand("+CTZU=1", 3000);
+    auto ctzuResp = atHandler->sendCommand("+CTZU=1", 5000);
     if (!ctzuResp.success) {
         ESP_LOGW(TAG, "CTZU command failed: %s", ctzuResp.data.c_str());
     }
@@ -2033,7 +2033,7 @@ bool GatewayApp::syncTimeFromModem() {
     const uint32_t clockRetryDelayMs = 3000;  // allow network time propagation
     for (int attempt = 0; attempt < maxClockAttempts; attempt++) {
         ESP_LOGD(TAG, "  CCLK attempt %d/%d", attempt + 1, maxClockAttempts);
-        auto clockResp = atHandler->sendCommand("+CCLK?", 3000);
+        auto clockResp = atHandler->sendCommand("+CCLK?", 5000);
         if (clockResp.success) {
             int idx = clockResp.data.indexOf("+CCLK:");
             if (idx >= 0) {
