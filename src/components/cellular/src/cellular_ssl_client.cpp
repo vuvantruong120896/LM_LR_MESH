@@ -212,14 +212,43 @@ int CellularSSLClient::send(const String& request) {
     ATCommandAsync::Response resp = m_atHandler->sendCommand(cmd, 10000);
     
     if (!resp.success) {
-        ESP_LOGE(TAG, "Failed to send data");
+        ESP_LOGE(TAG, "Failed to send CCHSEND command: %s", resp.errorMessage.c_str());
         return -1;
     }
 
-    // Log raw modem response after CCHSEND to check for server response indication
-    ESP_LOGD(TAG, "Send response: %s", resp.data.c_str());
-    ESP_LOGD(TAG, "HTTPS send successful");
-    return dataLength;
+    // Check if we got the prompt '>'
+    if (resp.data.indexOf('>') != -1) {
+        ESP_LOGD(TAG, "Got prompt '>', sending %d bytes", dataLength);
+        
+        // Send raw data
+        m_atHandler->sendRawData((const uint8_t*)request.c_str(), request.length());
+        
+        // Wait for final OK
+        uint32_t waitId = m_atHandler->expectResponse(10000);
+        ATCommandAsync::Response finalResp;
+        if (m_atHandler->waitForResponse(waitId, finalResp, 10000)) {
+            if (finalResp.success) {
+                ESP_LOGD(TAG, "Data send confirmed: %s", finalResp.data.c_str());
+                return dataLength;
+            } else {
+                ESP_LOGE(TAG, "Data send failed: %s", finalResp.errorMessage.c_str());
+                return -1;
+            }
+        } else {
+            ESP_LOGE(TAG, "Timeout waiting for data send confirmation");
+            return -1;
+        }
+    }
+
+    // If we didn't get '>', maybe we got OK directly (unexpected but possible if error)
+    ESP_LOGW(TAG, "Did not receive prompt '>', response: %s", resp.data.c_str());
+    
+    if (resp.data.indexOf("OK") != -1) {
+         // Weird case, maybe data sent?
+         return dataLength;
+    }
+
+    return -1;
 }
 
 int CellularSSLClient::receive(char* buffer, size_t maxLength, uint32_t timeoutMs) {
@@ -322,7 +351,7 @@ bool CellularSSLClient::disconnect() {
 
         ESP_LOGI(TAG, "Closing HTTPS connection (session %d)", m_sessionId);
 
-        ATCommandAsync::Response resp = m_atHandler->sendCommand(cmd.c_str(), 3000);
+        ATCommandAsync::Response resp = m_atHandler->sendCommand(cmd.c_str(), 5000);
 
         if (!resp.success) {
             ESP_LOGW(TAG, "Failed to close HTTPS connection");

@@ -87,11 +87,9 @@ uint32_t ATCommandAsync::sendCommandAsync(const String& command,
     
     // Flush before send
     m_uart->flush();
-    m_uart->write(fullCommand);
+    size_t bytesSent = m_uart->write(fullCommand);
     
-    if (m_debugLogging) {
-        ESP_LOGD(TAG, "[CMD %u] 📤 TX (async): %s", commandId, fullCommand.c_str());
-    }
+    ESP_LOGI(TAG, "[CMD %u] TX %u bytes: %s | Timeout: %ums", commandId, bytesSent, fullCommand.c_str(), timeoutMs);
     
     // Signal receiver task to wake up
     xSemaphoreGive(m_cmdCompleted);
@@ -218,34 +216,65 @@ void ATCommandAsync::receiverTaskWrapper(void* param) {
 void ATCommandAsync::receiverTask() {
     ESP_LOGI(TAG, "🔄 Receiver task started on Core %d", xPortGetCoreID());
     
+    String lineBuffer = "";
+    uint32_t lastActivityMs = millis();
+    uint8_t rxBuffer[256];
+    
     while (true) {
         try {
-            // Wait for new command or timeout
-            xSemaphoreTake(m_cmdCompleted, pdMS_TO_TICKS(100));
-            
-            // Read available data from UART
-            if (m_uart && m_uart->available()) {
-                char buffer[1024];
-                size_t len = m_uart->readLine(buffer, sizeof(buffer), 100);
+            // Non-blocking check for available data
+            if (m_uart && m_uart->available() > 0) {
+                // Read available bytes (non-blocking)
+                size_t len = m_uart->read(rxBuffer, sizeof(rxBuffer));
+                lastActivityMs = millis();
                 
-                if (len > 0) {
-                    String line(buffer);
-                    line.trim();
+                // Process each received byte
+                for (size_t i = 0; i < len; i++) {
+                    char c = (char)rxBuffer[i];
                     
-                    if (line.length() > 0) {
-                        processReceivedLine(line);
+                    if (c == '\n') {
+                        // Complete line received
+                        lineBuffer.trim();
+                        if (lineBuffer.length() > 0) {
+                            processReceivedLine(lineBuffer);
+                        }
+                        lineBuffer = "";
+                    } else if (c == '>') {
+                        // Prompt detected - treat as line
+                        lineBuffer += c;
+                        processReceivedLine(lineBuffer);
+                        lineBuffer = "";
+                    } else if (c == '\r') {
+                        // Skip carriage return
+                        continue;
+                    } else if (c >= 32 && c < 127) {
+                        // Valid ASCII character
+                        lineBuffer += c;
+                    } else if (c == 8 || c == 127) {
+                        // Backspace - remove last character
+                        if (lineBuffer.length() > 0) {
+                            lineBuffer.remove(lineBuffer.length() - 1);
+                        }
                     }
+                    // Else: skip control characters
                 }
+            } else {
+                // No data available - clean up periodically
+                uint32_t now = millis();
+                if ((now - lastActivityMs) > 500) {
+                    cleanupTimedOutCommands();
+                    lastActivityMs = now;
+                }
+                
+                // Small delay to prevent busy-waiting
+                vTaskDelay(pdMS_TO_TICKS(10));
             }
-            
-            // Clean up timed-out commands periodically
-            cleanupTimedOutCommands();
             
         } catch (const std::exception& e) {
             ESP_LOGE(TAG, "Exception in receiver task: %s", e.what());
         }
         
-        // Yield to other tasks
+        // Yield to other tasks occasionally
         taskYIELD();
     }
 }
@@ -296,6 +325,12 @@ bool ATCommandAsync::matchResponseToCommand(const String& line) {
         
         // Check for final response
         if (isFinalResponse(line)) {
+            // Accumulate final response line
+            if (cmd.response.data.length() > 0) {
+                cmd.response.data += "\n";
+            }
+            cmd.response.data += line;
+            
             cmd.status = COMPLETED;
             cmd.response.responseTimeMs = millis() - cmd.sentTimeMs;
             
@@ -311,7 +346,7 @@ bool ATCommandAsync::matchResponseToCommand(const String& line) {
                 cmd.response.success = true;  // Accept other responses
             }
             
-            cmd.response.data = line;
+            ESP_LOGI(TAG, "[CMD %u] Complete in %ums: %s", cmdId, cmd.response.responseTimeMs, cmd.response.data.c_str());
             
             if (m_debugLogging) {
                 ESP_LOGD(TAG, "[CMD %u] ✅ Final response: %s (%ums)",
@@ -385,7 +420,9 @@ bool ATCommandAsync::isFinalResponse(const String& line) const {
             line.startsWith("+CME ERROR:") ||
             line.startsWith("+CMS ERROR:") ||
             line == "SEND OK" ||
-            line == "SEND FAIL");
+            line == "SEND FAIL" ||
+            line == ">" || 
+            line.endsWith(">"));
 }
 
 bool ATCommandAsync::isURC(const String& line) const {
@@ -444,4 +481,42 @@ std::vector<String> ATCommandAsync::splitValues(const String& value) {
     }
 
     return result;
+}
+
+void ATCommandAsync::sendRawData(const uint8_t* data, size_t len) {
+    if (m_uart) {
+        m_uart->write(data, len);
+        // Log summary of data sent
+        ESP_LOGI(TAG, "📤 TX RAW: %u bytes", len);
+    }
+}
+
+void ATCommandAsync::sendRawData(const String& data) {
+    sendRawData((const uint8_t*)data.c_str(), data.length());
+}
+
+uint32_t ATCommandAsync::expectResponse(uint32_t timeoutMs) {
+    // Generate command ID
+    uint32_t commandId = m_nextCommandId++;
+    
+    // Create pending command (but don't send anything)
+    PendingCommand pending;
+    pending.commandId = commandId;
+    pending.command = "[EXPECT_RESPONSE]";
+    pending.sentTimeMs = millis();
+    pending.timeoutMs = timeoutMs;
+    pending.status = PENDING;
+    pending.expectOK = true;
+    
+    // Add to pending map
+    if (xSemaphoreTake(m_commandsMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        m_pendingCommands[commandId] = pending;
+        xSemaphoreGive(m_commandsMutex);
+    } else {
+        ESP_LOGE(TAG, "Failed to acquire mutex for expectResponse");
+        return 0;
+    }
+    
+    ESP_LOGI(TAG, "[CMD %u] Waiting for response (timeout: %ums)", commandId, timeoutMs);
+    return commandId;
 }

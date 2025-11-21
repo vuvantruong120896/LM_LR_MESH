@@ -179,6 +179,28 @@ public:
      */
     void setDebugLogging(bool enable) { m_debugLogging = enable; }
 
+    /**
+     * @brief Send raw data to UART (for data mode)
+     * @param data Pointer to data
+     * @param len Length of data
+     */
+    void sendRawData(const uint8_t* data, size_t len);
+
+    /**
+     * @brief Send raw string data
+     * @param data String data
+     */
+    void sendRawData(const String& data);
+
+    /**
+     * @brief Create a pending command without sending anything
+     * Used to wait for a response after sending raw data
+     * 
+     * @param timeoutMs Timeout to wait
+     * @return Command ID
+     */
+    uint32_t expectResponse(uint32_t timeoutMs = 15000);
+
 private:
     CellularUART* m_uart;
     URCCallback m_urcCallback;
@@ -193,7 +215,7 @@ private:
     bool m_debugLogging;
     
     static const char* TAG;
-    static constexpr uint32_t MUTEX_TIMEOUT_MS = 5000;
+    static constexpr uint32_t MUTEX_TIMEOUT_MS = 15000;
     
     /**
      * @brief Background receiver task (runs independently)
