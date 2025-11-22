@@ -17,7 +17,7 @@
 // ============================================================================
 
 /** UART peripheral to use (UART_NUM_1 or UART_NUM_2) */
-#define RS485_UART_NUM          UART_NUM_1
+#define RS485_UART_NUM          UART_NUM_2
 
 /** RX pin: Receive data from RS485 (R pin of SN65HVD78DR) */
 #define RS485_RX_PIN            20

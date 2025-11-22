@@ -3,7 +3,8 @@
 
 #include <Arduino.h>
 #include "sensor_data.h"
-#include "modbus_rtu_driver.h"
+#include "modbus_async.h"
+// #include "modbus_rtu_driver.h" // Deprecated
 
 /**
  * @file soil_sensor_service.h
@@ -191,6 +192,26 @@ public:
      * @brief Print debug information
      */
     static void printStatus();
+
+    /**
+     * @brief Start an asynchronous read of sensor data
+     * @return Transaction ID (0 if failed)
+     */
+    static uint32_t requestDataRead();
+
+    /**
+     * @brief Check if the async read is complete
+     * @param transactionId Transaction ID returned by requestDataRead
+     * @return true if complete
+     */
+    static bool isReadComplete(uint32_t transactionId);
+
+    /**
+     * @brief Get the result of the async read
+     * @param transactionId Transaction ID
+     * @return sensorData structure
+     */
+    static sensorData getDataReadResult(uint32_t transactionId);
 
 private:
     // ========================================================================

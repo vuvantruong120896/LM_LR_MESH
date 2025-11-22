@@ -161,7 +161,7 @@ void BleProvisioningNode::CommandCharCallbacks::onWrite(NimBLECharacteristic* pC
     
     // Send success response with nodeAddress
     if (_parent->_responseChar) {
-        StaticJsonDocument<256> responseDoc;
+        JsonDocument responseDoc;
         responseDoc["status"] = "success";
         responseDoc["message"] = "Node provisioning received";
         responseDoc["deviceType"] = "node";

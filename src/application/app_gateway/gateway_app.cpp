@@ -118,48 +118,12 @@ void GatewayApp::setup() {
     } else {
         ESP_LOGI(TAG, "✅ Soil sensor initialized successfully");
         
-        // Perform Phase 1 startup sequence (read device version + sensor ID)
-        if (SoilSensorService::performStartupSequence()) {
-            int16_t deviceVersion = SoilSensorService::readDeviceVersion();
-            uint32_t sensorID = SoilSensorService::readSensorID();
-            ESP_LOGI(TAG, "🌱 Gateway Sensor Info - Version: 0x%04X, ID: 0x%04X", deviceVersion, sensorID);
-            
-            // ===== INITIAL SENSOR READ AT STARTUP & QUEUE =====
-            ESP_LOGI(TAG, "📡 Reading initial sensor values at startup...");
-            sensorData initialReading = SoilSensorService::readData();
-            if (!initialReading.error) {
-                ESP_LOGI(TAG, "✅ Initial gateway sensor reading:");
-                ESP_LOGI(TAG, "   Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f", 
-                         initialReading.data.soil.soilMoisture, 
-                         initialReading.data.soil.soilTemperature, 
-                         initialReading.data.soil.pH);
-                ESP_LOGI(TAG, "   EC: %.2f µS/cm, N: %.1f, P: %.1f, K: %.1f mg/kg",
-                         initialReading.data.soil.conductivity,
-                         initialReading.data.soil.nitrogen,
-                         initialReading.data.soil.phosphorus,
-                         initialReading.data.soil.potassium);
-            } else {
-                ESP_LOGW(TAG, "⚠️ Initial sensor read failed");
-            }
-            // ===== END INITIAL SENSOR READ =====
-        } else {
-            ESP_LOGW(TAG, "⚠️ Sensor startup sequence failed");
-        }
-        
         // ===== START SENSOR TASK (CORE 0, 10-MIN INTERVAL) =====
         // Start dedicated FreeRTOS task on core 0 for periodic sensor reading
         if (SensorTaskManager::initialize()) {
-            ESP_LOGI(TAG, "✅ Sensor task initialized - will read every 10 minutes on core 0");
-            
-            // Push initial reading into queue (for immediate use in loop)
-            sensorData initialReading = SoilSensorService::readData();
-            if (!initialReading.error) {
-                if (SensorTaskManager::putData(initialReading)) {
-                    ESP_LOGI(TAG, "✅ Initial sensor reading pushed to queue");
-                } else {
-                    ESP_LOGW(TAG, "⚠️ Failed to queue initial sensor reading");
-                }
-            }
+            ESP_LOGI(TAG, "✅ Sensor task started");
+            // Removed explicit readData() call here to avoid collision with the task
+            // The task will perform the first read shortly after startup
         } else {
             ESP_LOGW(TAG, "⚠️ Failed to start sensor task - periodic reading disabled");
         }

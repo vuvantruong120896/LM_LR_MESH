@@ -1,5 +1,5 @@
 #include "../include/soil_sensor_service.h"
-#include "../include/modbus_rtu_driver.h"
+#include "modbus_async.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include <cstring>
@@ -29,9 +29,9 @@ bool SoilSensorService::initialize() {
         return true;
     }
 
-    // Initialize Modbus driver
-    if (!ModbusRTUDriver::initialize()) {
-        setError(1, "Failed to initialize Modbus driver: %s", ModbusRTUDriver::getLastError());
+    // Initialize Modbus Async driver
+    if (!ModbusAsync::getInstance().initialize()) {
+        setError(1, "Failed to initialize Modbus Async driver");
         ESP_LOGE(SOIL_SENSOR_TAG, "%s", lastErrorMsg);
         return false;
     }
@@ -43,9 +43,9 @@ bool SoilSensorService::initialize() {
     consecutiveFailures = 0;
     totalReadTimeMs = 0;
 
-    ESP_LOGI(SOIL_SENSOR_TAG, "✅ Soil sensor service initialized");
-    ESP_LOGI(SOIL_SENSOR_TAG, "   Modbus Slave: 0x%04X (baud=%u, timeout=%ums)",
-             MODBUS_SLAVE_ADDRESS, MODBUS_BAUD_RATE, MODBUS_RESPONSE_TIMEOUT_MS);
+    ESP_LOGI(SOIL_SENSOR_TAG, "✅ Soil sensor service initialized (Async Mode)");
+    ESP_LOGI(SOIL_SENSOR_TAG, "   Modbus Slave: 0x%04X (baud=%u)",
+             MODBUS_SLAVE_ADDRESS, MODBUS_BAUD_RATE);
     ESP_LOGI(SOIL_SENSOR_TAG, "   RS485 Pins: TX=%d, RX=%d, DE=%d",
              RS485_TX_PIN, RS485_RX_PIN, RS485_DE_PIN);
 
@@ -55,14 +55,14 @@ bool SoilSensorService::initialize() {
 void SoilSensorService::shutdown() {
     if (!initialized) return;
 
-    ModbusRTUDriver::shutdown();
+    // ModbusAsync::shutdown();
     initialized = false;
 
     ESP_LOGI(SOIL_SENSOR_TAG, "Soil sensor service shut down");
 }
 
 bool SoilSensorService::isReady() {
-    return initialized && ModbusRTUDriver::isReady();
+    return initialized;
 }
 
 // ============================================================================
@@ -81,7 +81,7 @@ bool SoilSensorService::performStartupSequence() {
     ESP_LOGI(SOIL_SENSOR_TAG, "  └─ Reading device version from register 0x07D0...");
     int16_t deviceVersion = readDeviceVersion();
     if (deviceVersion < 0) {
-        setError(12, "Failed to read device version: %s", ModbusRTUDriver::getLastError());
+        setError(12, "Failed to read device version");
         ESP_LOGE(SOIL_SENSOR_TAG, "     ❌ Error: %s", lastErrorMsg);
         return false;
     }
@@ -94,7 +94,7 @@ bool SoilSensorService::performStartupSequence() {
     ESP_LOGI(SOIL_SENSOR_TAG, "  └─ Reading sensor ID from 0x0023 + 0x0024...");
     uint32_t sensorID = readSensorID();
     if (sensorID == 0xFFFF) {  // Error code
-        setError(13, "Failed to read sensor ID: %s", ModbusRTUDriver::getLastError());
+        setError(13, "Failed to read sensor ID");
         ESP_LOGE(SOIL_SENSOR_TAG, "     ❌ Error: %s", lastErrorMsg);
         return false;
     }
@@ -111,11 +111,20 @@ int16_t SoilSensorService::readDeviceVersion() {
     if (!isReady()) return -1;
     
     float value;
-    if (!ModbusRTUDriver::readHoldingRegisters(REG_DEVICE_VERSION, 1, &value)) {
-        return -1;
+    uint32_t txId = ModbusAsync::getInstance().readHoldingRegistersAsync(MODBUS_SLAVE_ADDRESS, REG_DEVICE_VERSION, 1);
+    if (txId == 0) return -1;
+    
+    uint32_t startWait = millis();
+    while (!ModbusAsync::getInstance().isTransactionComplete(txId)) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        if (millis() - startWait > 1000) return -1;
     }
     
-    return (int16_t)value;
+    if (ModbusAsync::getInstance().getResult(txId, &value, 1) == 1) {
+        return (int16_t)value;
+    }
+    
+    return -1;
 }
 
 uint32_t SoilSensorService::readSensorID() {
@@ -124,16 +133,30 @@ uint32_t SoilSensorService::readSensorID() {
     float values[2];
     
     // Read first register (0x0023)
-    if (!ModbusRTUDriver::readHoldingRegisters(REG_SENSOR_ID_HIGH, 1, &values[0])) {
-        return 0xFFFFFF;  // Error
+    uint32_t txId1 = ModbusAsync::getInstance().readHoldingRegistersAsync(MODBUS_SLAVE_ADDRESS, REG_SENSOR_ID_HIGH, 1);
+    if (txId1 == 0) return 0xFFFFFF;
+    
+    uint32_t startWait = millis();
+    while (!ModbusAsync::getInstance().isTransactionComplete(txId1)) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        if (millis() - startWait > 1000) return 0xFFFFFF;
     }
+    
+    if (ModbusAsync::getInstance().getResult(txId1, &values[0], 1) != 1) return 0xFFFFFF;
     
     vTaskDelay(pdMS_TO_TICKS(10));  // Small delay
     
     // Read second register (0x0024)
-    if (!ModbusRTUDriver::readHoldingRegisters(REG_SENSOR_ID_LOW, 1, &values[1])) {
-        return 0xFFFFFF;  // Error
+    uint32_t txId2 = ModbusAsync::getInstance().readHoldingRegistersAsync(MODBUS_SLAVE_ADDRESS, REG_SENSOR_ID_LOW, 1);
+    if (txId2 == 0) return 0xFFFFFF;
+    
+    startWait = millis();
+    while (!ModbusAsync::getInstance().isTransactionComplete(txId2)) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        if (millis() - startWait > 1000) return 0xFFFFFF;
     }
+    
+    if (ModbusAsync::getInstance().getResult(txId2, &values[1], 1) != 1) return 0xFFFFFF;
     
     // Extract Sensor ID from two 16-bit registers
     // Each register's low byte represents a 2-digit decimal value
@@ -175,8 +198,28 @@ bool SoilSensorService::performMeasurementTrigger(uint16_t triggerValue) {
     // Write trigger to register 0x0009
     ESP_LOGI(SOIL_SENSOR_TAG, "  └─ Writing trigger 0x%04X to register 0x0009...", triggerValue);
     
-    // TODO: Implement write holding register
-    // For now, we'll just log success
+    uint32_t txId = ModbusAsync::getInstance().writeSingleRegisterAsync(MODBUS_SLAVE_ADDRESS, 0x0009, triggerValue);
+    if (txId == 0) {
+        setError(16, "Failed to send trigger");
+        return false;
+    }
+    ESP_LOGI(SOIL_SENSOR_TAG, "     Trigger TX ID: %lu", txId);
+    
+    uint32_t startWait = millis();
+    while (!ModbusAsync::getInstance().isTransactionComplete(txId)) {
+        vTaskDelay(pdMS_TO_TICKS(10)); // Check every 100ms
+        // ESP_LOGD(SOIL_SENSOR_TAG, "     ... waiting for trigger (elapsed: %lu ms)", millis() - startWait);
+        if (millis() - startWait > 3000) { // Increased timeout to 5s
+            // setError(17, "Trigger timeout");
+            return false;
+        }
+    }
+    
+    if (ModbusAsync::getInstance().getTransactionState(txId) != ModbusAsync::Transaction::COMPLETED) {
+        setError(18, "Trigger failed");
+        return false;
+    }
+    
     ESP_LOGI(SOIL_SENSOR_TAG, "     ✅ Trigger written successfully");
     
     ESP_LOGI(SOIL_SENSOR_TAG, "✅ Phase 2 Measurement Trigger COMPLETE");
@@ -205,7 +248,16 @@ sensorData SoilSensorService::readData() {
     // Record start time
     uint32_t startTime = millis();
 
-    // Read soil parameters
+    // Phase 2: Trigger Measurement
+    // Some sensors require a trigger command before reading
+    if (performMeasurementTrigger(0x0001)) {
+        ESP_LOGI(SOIL_SENSOR_TAG, "⏳ Waiting 3s for measurement to complete...");
+        vTaskDelay(pdMS_TO_TICKS(3000));
+    } else {
+        // ESP_LOGW(SOIL_SENSOR_TAG, "⚠️ Measurement trigger failed or skipped");
+    }
+
+    // Perform Phase 3: Read soil parameters
     if (!readSoilParameters(result)) {
         failedReads++;
         consecutiveFailures++;
@@ -236,15 +288,23 @@ bool SoilSensorService::isConnected() {
     if (!isReady()) return false;
 
     // Try to read a single register as connectivity check
-    int16_t value = ModbusRTUDriver::readInputRegister(REG_SOIL_MOISTURE);
-
-    if (value < 0) {
-        ESP_LOGW(SOIL_SENSOR_TAG, "⚠️ Connectivity check failed: %s", ModbusRTUDriver::getLastError());
-        return false;
+    uint32_t txId = ModbusAsync::getInstance().readHoldingRegistersAsync(MODBUS_SLAVE_ADDRESS, REG_SOIL_MOISTURE, 1);
+    if (txId == 0) return false;
+    
+    uint32_t startWait = millis();
+    while (!ModbusAsync::getInstance().isTransactionComplete(txId)) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        if (millis() - startWait > 500) return false;
+    }
+    
+    float val;
+    if (ModbusAsync::getInstance().getResult(txId, &val, 1) == 1) {
+        ESP_LOGI(SOIL_SENSOR_TAG, "✅ Sensor connectivity OK");
+        return true;
     }
 
-    ESP_LOGI(SOIL_SENSOR_TAG, "✅ Sensor connectivity OK");
-    return true;
+    ESP_LOGW(SOIL_SENSOR_TAG, "⚠️ Connectivity check failed");
+    return false;
 }
 
 uint32_t SoilSensorService::getConsecutiveFailures() {
@@ -346,12 +406,28 @@ bool SoilSensorService::readSoilParameters(sensorData& outSensorData) {
     ESP_LOGD(SOIL_SENSOR_TAG, "Reading %u registers from address 0x%04X...",
              SOIL_SENSOR_REGISTER_COUNT, REG_SOIL_MOISTURE);
 
-    if (!ModbusRTUDriver::readInputRegisters(
-            REG_SOIL_MOISTURE,
-            SOIL_SENSOR_REGISTER_COUNT,
-            registerValues)) {
-
-        setError(20, "Modbus read failed: %s", ModbusRTUDriver::getLastError());
+    // Async Read (Blocking wait)
+    uint32_t txId = ModbusAsync::getInstance().readHoldingRegistersAsync(
+        MODBUS_SLAVE_ADDRESS, REG_SOIL_MOISTURE, SOIL_SENSOR_REGISTER_COUNT);
+    
+    if (txId == 0) {
+        setError(20, "Failed to start async read");
+        return false;
+    }
+    
+    // Wait for result
+    uint32_t startWait = millis();
+    while (!ModbusAsync::getInstance().isTransactionComplete(txId)) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        if (millis() - startWait > 2000) {
+            setError(21, "Async read timeout");
+            return false;
+        }
+    }
+    
+    int count = ModbusAsync::getInstance().getResult(txId, registerValues, SOIL_SENSOR_REGISTER_COUNT);
+    if (count != SOIL_SENSOR_REGISTER_COUNT) {
+        setError(22, "Async read failed (code=%d)", count);
         return false;
     }
 
@@ -382,15 +458,15 @@ void SoilSensorService::convertRegisterValuesToSensorData(
     // Direct assignment - adjust scaling based on actual sensor output format
     // Registers are read as 16-bit integers, converted to float by Modbus driver
     
-    // DEBUG: Log all raw register values
-    ESP_LOGI(SOIL_SENSOR_TAG, "🔍 RAW REGISTER VALUES (BEFORE CONVERSION):");
-    ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[0] = %.0f (Moisture)", registerValues[0]);
-    ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[1] = %.0f (Temperature)", registerValues[1]);
-    ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[2] = %.0f (pH)", registerValues[2]);
-    ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[3] = %.0f (EC)", registerValues[3]);
-    ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[4] = %.0f (N)", registerValues[4]);
-    ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[5] = %.0f (P)", registerValues[5]);
-    ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[6] = %.0f (K)", registerValues[6]);
+    // // DEBUG: Log all raw register values
+    // ESP_LOGI(SOIL_SENSOR_TAG, "🔍 RAW REGISTER VALUES (BEFORE CONVERSION):");
+    // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[0] = %.0f (Moisture)", registerValues[0]);
+    // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[1] = %.0f (Temperature)", registerValues[1]);
+    // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[2] = %.0f (pH)", registerValues[2]);
+    // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[3] = %.0f (EC)", registerValues[3]);
+    // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[4] = %.0f (N)", registerValues[4]);
+    // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[5] = %.0f (P)", registerValues[5]);
+    // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[6] = %.0f (K)", registerValues[6]);
     
     // NOTE: These conversions assume the sensor outputs:
     // - Moisture as percentage (0-100)
@@ -430,4 +506,41 @@ void SoilSensorService::convertRegisterValuesToSensorData(
              outSensorData.data.soil.nitrogen,
              outSensorData.data.soil.phosphorus,
              outSensorData.data.soil.potassium);
+}
+
+// ============================================================================
+// ASYNC OPERATIONS
+// ============================================================================
+
+uint32_t SoilSensorService::requestDataRead() {
+    if (!isReady()) return 0;
+    return ModbusAsync::getInstance().readHoldingRegistersAsync(
+        MODBUS_SLAVE_ADDRESS, REG_SOIL_MOISTURE, SOIL_SENSOR_REGISTER_COUNT);
+}
+
+bool SoilSensorService::isReadComplete(uint32_t transactionId) {
+    return ModbusAsync::getInstance().isTransactionComplete(transactionId);
+}
+
+sensorData SoilSensorService::getDataReadResult(uint32_t transactionId) {
+    sensorData result;
+    memset(&result, 0, sizeof(sensorData));
+    result.deviceType = DeviceType::SOIL_SENSOR;
+    populateCommonFields(result);
+    
+    float registerValues[SOIL_SENSOR_REGISTER_COUNT];
+    int count = ModbusAsync::getInstance().getResult(transactionId, registerValues, SOIL_SENSOR_REGISTER_COUNT);
+    
+    if (count == SOIL_SENSOR_REGISTER_COUNT) {
+        convertRegisterValuesToSensorData(registerValues, result);
+        successfulReads++;
+        consecutiveFailures = 0;
+        lastErrorCode = 0;
+    } else {
+        failedReads++;
+        consecutiveFailures++;
+        setError(30, "Async read result failed: %d", count);
+    }
+    
+    return result;
 }

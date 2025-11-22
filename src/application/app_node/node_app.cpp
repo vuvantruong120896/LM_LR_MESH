@@ -158,24 +158,6 @@ void NodeApp::setup() {
             uint32_t sensorID = SoilSensorService::readSensorID();
             ESP_LOGI(LM_TAG, "🌱 Sensor Info - Version: 0x%04X, ID: 0x%04X", deviceVersion, sensorID);
             
-            // ===== INITIAL SENSOR READ AT STARTUP =====
-            ESP_LOGI(LM_TAG, "📡 Reading initial sensor values at startup...");
-            sensorData initialReading = SoilSensorService::readData();
-            if (!initialReading.error) {
-                ESP_LOGI(LM_TAG, "✅ Initial sensor reading:");
-                ESP_LOGI(LM_TAG, "   Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f", 
-                         initialReading.data.soil.soilMoisture, 
-                         initialReading.data.soil.soilTemperature, 
-                         initialReading.data.soil.pH);
-                ESP_LOGI(LM_TAG, "   EC: %.2f µS/cm, N: %.1f, P: %.1f, K: %.1f mg/kg",
-                         initialReading.data.soil.conductivity,
-                         initialReading.data.soil.nitrogen,
-                         initialReading.data.soil.phosphorus,
-                         initialReading.data.soil.potassium);
-            } else {
-                ESP_LOGW(LM_TAG, "⚠️ Initial sensor read failed");
-            }
-            // ===== END INITIAL SENSOR READ =====
         } else {
             ESP_LOGW(LM_TAG, "⚠️ Sensor startup sequence failed");
         }
@@ -185,15 +167,15 @@ void NodeApp::setup() {
         if (SensorTaskManager::initialize()) {
             ESP_LOGI(LM_TAG, "✅ Sensor task initialized - will read every 10 minutes on core 0");
             
-            // Push initial reading into queue (for immediate use in loop)
-            sensorData initialReading = SoilSensorService::readData();
-            if (!initialReading.error) {
-                if (SensorTaskManager::putData(initialReading)) {
-                    ESP_LOGI(LM_TAG, "✅ Initial sensor reading pushed to queue");
-                } else {
-                    ESP_LOGW(LM_TAG, "⚠️ Failed to queue initial sensor reading");
-                }
-            }
+            // // Push initial reading into queue (for immediate use in loop)
+            // sensorData initialReading = SoilSensorService::readData();
+            // if (!initialReading.error) {
+            //     if (SensorTaskManager::putData(initialReading)) {
+            //         ESP_LOGI(LM_TAG, "✅ Initial sensor reading pushed to queue");
+            //     } else {
+            //         ESP_LOGW(LM_TAG, "⚠️ Failed to queue initial sensor reading");
+            //     }
+            // }
         } else {
             ESP_LOGW(LM_TAG, "⚠️ Failed to start sensor task - periodic reading disabled");
         }

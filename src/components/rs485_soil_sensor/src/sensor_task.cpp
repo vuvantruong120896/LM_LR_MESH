@@ -9,9 +9,9 @@
 static const char* TAG = "SensorTask";
 
 // Configuration
-#define SENSOR_READ_INTERVAL_MS (10 * 60 * 1000)  // 10 minutes
+#define SENSOR_READ_INTERVAL_MS (3 * 60 * 1000)  // 9 minutes
 #define SENSOR_TASK_STACK_SIZE  (4096)             // 4KB stack for UART + Modbus ops
-#define SENSOR_TASK_PRIORITY    (tskIDLE_PRIORITY) // Low priority - not critical
+#define SENSOR_TASK_PRIORITY    (tskIDLE_PRIORITY + 2) // Priority 2 - slightly above IDLE
 #define SENSOR_QUEUE_SIZE       2                  // Store up to 2 readings max
 #define CORE_0                  0                  // FreeRTOS core 0
 
@@ -50,27 +50,11 @@ static volatile uint32_t failedReadCount = 0;
  */
 void SensorTaskManager::sensorTaskFunction(void* param) {
     ESP_LOGI(TAG, "📊 Sensor task started on core %d", xPortGetCoreID());
-    ESP_LOGI(TAG, "   Reading interval: %d minutes", SENSOR_READ_INTERVAL_MS / (60 * 1000));
-    ESP_LOGI(TAG, "   Stack size: %d bytes", SENSOR_TASK_STACK_SIZE);
-    
-    // Ensure SoilSensorService is initialized (safe if already initialized)
-    if (!SoilSensorService::isConnected()) {
-        ESP_LOGW(TAG, "Sensor service not ready - initializing now");
-        if (!SoilSensorService::initialize()) {
-            ESP_LOGE(TAG, "❌ Failed to initialize SoilSensorService - task will retry");
-        }
-    }
-    
-    // Task loop: Run forever (exit only on shutdown)
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Delay 1s to stabilize
+
     while (true) {
-        // **WAIT PHASE**: Block for 10 minutes before reading
-        // Using vTaskDelay allows other tasks on core 0 to run if needed
-        const uint32_t delayTicks = pdMS_TO_TICKS(SENSOR_READ_INTERVAL_MS);
-        ESP_LOGD(TAG, "⏳ Waiting %u ms until next sensor read...", SENSOR_READ_INTERVAL_MS);
-        vTaskDelay(delayTicks);
-        
         // **READ PHASE**: Read sensor (may block for ~125ms)
-        // This is acceptable since it's on dedicated core 0
+        ESP_LOGI(TAG, "🔄 Starting scheduled sensor read...");
         uint32_t readStartTime = xTaskGetTickCount();
         
         sensorData reading = SoilSensorService::readData();
@@ -78,8 +62,6 @@ void SensorTaskManager::sensorTaskFunction(void* param) {
         uint32_t readEndTime = xTaskGetTickCount();
         uint32_t readDurationMs = (readEndTime - readStartTime) * portTICK_PERIOD_MS;
         
-        // Update timestamp with read completion time
-        lastReadTimestamp = millis();
         
         // **QUEUE PHASE**: Send reading to main application
         // Uses non-blocking xQueueSend to avoid blocking the task
@@ -121,6 +103,12 @@ void SensorTaskManager::sensorTaskFunction(void* param) {
         if (itemsInQueue > 0) {
             ESP_LOGD(TAG, "📦 Queue depth: %u items waiting", itemsInQueue);
         }
+
+        // **WAIT PHASE**: Block for 10 minutes before NEXT reading
+        // Using vTaskDelay allows other tasks on core 0 to run if needed
+        const uint32_t delayTicks = pdMS_TO_TICKS(SENSOR_READ_INTERVAL_MS);
+        ESP_LOGI(TAG, "⏳ Waiting %u ms until next sensor read...", SENSOR_READ_INTERVAL_MS);
+        vTaskDelay(delayTicks);
     }
     
     // This line never executes under normal conditions
@@ -165,9 +153,7 @@ bool SensorTaskManager::initialize() {
     successfulReadCount = 0;
     failedReadCount = 0;
     lastReadTimestamp = millis();
-    
-    ESP_LOGI(TAG, "✅ Sensor task initialized - will read every %d minutes on core 0",
-             SENSOR_READ_INTERVAL_MS / (60 * 1000));
+
     return true;
 }
 
