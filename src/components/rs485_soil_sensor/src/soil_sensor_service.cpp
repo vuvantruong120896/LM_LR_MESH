@@ -116,7 +116,7 @@ int16_t SoilSensorService::readDeviceVersion() {
     
     uint32_t startWait = millis();
     while (!ModbusAsync::getInstance().isTransactionComplete(txId)) {
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(1));  // 🔧 Reduced from 10ms to 1ms for faster receiver task scheduling
         if (millis() - startWait > 1000) return -1;
     }
     
@@ -138,13 +138,13 @@ uint32_t SoilSensorService::readSensorID() {
     
     uint32_t startWait = millis();
     while (!ModbusAsync::getInstance().isTransactionComplete(txId1)) {
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(1));  // 🔧 Reduced from 10ms to 1ms for faster receiver task scheduling
         if (millis() - startWait > 1000) return 0xFFFFFF;
     }
     
     if (ModbusAsync::getInstance().getResult(txId1, &values[0], 1) != 1) return 0xFFFFFF;
     
-    vTaskDelay(pdMS_TO_TICKS(10));  // Small delay
+    vTaskDelay(pdMS_TO_TICKS(1));  // 🔧 Reduced from 10ms to 1ms - minimal delay between requests
     
     // Read second register (0x0024)
     uint32_t txId2 = ModbusAsync::getInstance().readHoldingRegistersAsync(MODBUS_SLAVE_ADDRESS, REG_SENSOR_ID_LOW, 1);
@@ -152,7 +152,7 @@ uint32_t SoilSensorService::readSensorID() {
     
     startWait = millis();
     while (!ModbusAsync::getInstance().isTransactionComplete(txId2)) {
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(1));  // 🔧 Reduced from 10ms to 1ms for faster receiver task scheduling
         if (millis() - startWait > 1000) return 0xFFFFFF;
     }
     
@@ -207,10 +207,10 @@ bool SoilSensorService::performMeasurementTrigger(uint16_t triggerValue) {
     
     uint32_t startWait = millis();
     while (!ModbusAsync::getInstance().isTransactionComplete(txId)) {
-        vTaskDelay(pdMS_TO_TICKS(10)); // Check every 100ms
+        vTaskDelay(pdMS_TO_TICKS(1));  // 🔧 Reduced from 10ms to 1ms for faster receiver task scheduling
         // ESP_LOGD(SOIL_SENSOR_TAG, "     ... waiting for trigger (elapsed: %lu ms)", millis() - startWait);
-        if (millis() - startWait > 3000) { // Increased timeout to 5s
-            // setError(17, "Trigger timeout");
+        if (millis() - startWait > 3000) { // Timeout: 3 seconds
+            setError(17, "Trigger timeout");
             return false;
         }
     }
@@ -248,13 +248,27 @@ sensorData SoilSensorService::readData() {
     // Record start time
     uint32_t startTime = millis();
 
+    // Phase 1: 
+    if (performStartupSequence()) {
+        ESP_LOGI(SOIL_SENSOR_TAG, "✅ Phase 1 complete");
+    } else {
+        failedReads++;
+        consecutiveFailures++;
+        result.deviceType = DeviceType::SOIL_SENSOR;
+
+        ESP_LOGE(SOIL_SENSOR_TAG, 
+                 "❌ Failed to perform startup sequence: %s (failures: %u)", 
+                 lastErrorMsg, consecutiveFailures);
+
+    }
+
     // Phase 2: Trigger Measurement
     // Some sensors require a trigger command before reading
     if (performMeasurementTrigger(0x0001)) {
         ESP_LOGI(SOIL_SENSOR_TAG, "⏳ Waiting 3s for measurement to complete...");
         vTaskDelay(pdMS_TO_TICKS(3000));
     } else {
-        // ESP_LOGW(SOIL_SENSOR_TAG, "⚠️ Measurement trigger failed or skipped");
+        ESP_LOGW(SOIL_SENSOR_TAG, "⚠️ Measurement trigger failed or skipped");
     }
 
     // Perform Phase 3: Read soil parameters
@@ -293,7 +307,7 @@ bool SoilSensorService::isConnected() {
     
     uint32_t startWait = millis();
     while (!ModbusAsync::getInstance().isTransactionComplete(txId)) {
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(1));  // 🔧 Reduced from 10ms to 1ms for faster receiver task scheduling
         if (millis() - startWait > 500) return false;
     }
     
@@ -418,7 +432,7 @@ bool SoilSensorService::readSoilParameters(sensorData& outSensorData) {
     // Wait for result
     uint32_t startWait = millis();
     while (!ModbusAsync::getInstance().isTransactionComplete(txId)) {
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(1));  // 🔧 Reduced from 10ms to 1ms for faster receiver task scheduling
         if (millis() - startWait > 2000) {
             setError(21, "Async read timeout");
             return false;

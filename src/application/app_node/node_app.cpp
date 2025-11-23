@@ -152,30 +152,10 @@ void NodeApp::setup() {
     } else {
         ESP_LOGI(LM_TAG, "✅ Soil sensor initialized successfully");
         
-        // Perform Phase 1 startup sequence (read device version + sensor ID)
-        if (SoilSensorService::performStartupSequence()) {
-            int16_t deviceVersion = SoilSensorService::readDeviceVersion();
-            uint32_t sensorID = SoilSensorService::readSensorID();
-            ESP_LOGI(LM_TAG, "🌱 Sensor Info - Version: 0x%04X, ID: 0x%04X", deviceVersion, sensorID);
-            
-        } else {
-            ESP_LOGW(LM_TAG, "⚠️ Sensor startup sequence failed");
-        }
-        
         // ===== START SENSOR TASK (CORE 0, 10-MIN INTERVAL) =====
         // Start dedicated FreeRTOS task on core 0 for periodic sensor reading
         if (SensorTaskManager::initialize()) {
             ESP_LOGI(LM_TAG, "✅ Sensor task initialized - will read every 10 minutes on core 0");
-            
-            // // Push initial reading into queue (for immediate use in loop)
-            // sensorData initialReading = SoilSensorService::readData();
-            // if (!initialReading.error) {
-            //     if (SensorTaskManager::putData(initialReading)) {
-            //         ESP_LOGI(LM_TAG, "✅ Initial sensor reading pushed to queue");
-            //     } else {
-            //         ESP_LOGW(LM_TAG, "⚠️ Failed to queue initial sensor reading");
-            //     }
-            // }
         } else {
             ESP_LOGW(LM_TAG, "⚠️ Failed to start sensor task - periodic reading disabled");
         }

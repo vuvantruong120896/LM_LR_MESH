@@ -117,6 +117,23 @@ void GatewayApp::setup() {
         ESP_LOGI(TAG, "   Gateway will continue without local sensor");
     } else {
         ESP_LOGI(TAG, "✅ Soil sensor initialized successfully");
+
+        // // Phase 1: 
+        // if (SoilSensorService::performStartupSequence()) {
+        //     ESP_LOGI(TAG, "✅ Phase 1 complete");
+        // } else {
+
+        //     ESP_LOGE(TAG, "❌ Failed to perform startup sequence:)");
+        // }
+
+        // // Phase 2: Trigger Measurement
+        // // Some sensors require a trigger command before reading
+        // if (SoilSensorService::performMeasurementTrigger(0x0001)) {
+        //     ESP_LOGI(TAG, "⏳ Waiting 3s for measurement to complete...");
+        //     vTaskDelay(pdMS_TO_TICKS(3000));
+        // } else {
+        //     ESP_LOGW(TAG, "⚠️ Measurement trigger failed or skipped");
+        // }
         
         // ===== START SENSOR TASK (CORE 0, 10-MIN INTERVAL) =====
         // Start dedicated FreeRTOS task on core 0 for periodic sensor reading

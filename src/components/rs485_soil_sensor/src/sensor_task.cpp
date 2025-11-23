@@ -9,7 +9,7 @@
 static const char* TAG = "SensorTask";
 
 // Configuration
-#define SENSOR_READ_INTERVAL_MS (3 * 60 * 1000)  // 9 minutes
+#define SENSOR_READ_INTERVAL_MS (9 * 60 * 1000)  // 9 minutes
 #define SENSOR_TASK_STACK_SIZE  (4096)             // 4KB stack for UART + Modbus ops
 #define SENSOR_TASK_PRIORITY    (tskIDLE_PRIORITY + 2) // Priority 2 - slightly above IDLE
 #define SENSOR_QUEUE_SIZE       2                  // Store up to 2 readings max
@@ -138,7 +138,7 @@ bool SensorTaskManager::initialize() {
         nullptr,                      // Parameter (not used)
         SENSOR_TASK_PRIORITY,         // Priority (low - won't starve others)
         &sensorTaskHandle,            // Output task handle
-        CORE_0                        // Core 0 (separate from WiFi/BLE)
+        1                             // Core 1 (separate from WiFi/BLE)
     );
     
     if (result != pdPASS) {
