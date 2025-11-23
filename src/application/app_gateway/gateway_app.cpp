@@ -95,7 +95,7 @@ void GatewayApp::setup() {
         ESP_LOGI(TAG, "- Firebase upload: DISABLED (no user context)");
         ESP_LOGI(TAG, "");
         ESP_LOGI(TAG, "To enable Firebase upload, provision via mobile app");
-        led_pattern_error(); // Indicate provisioning required
+        // led_pattern_error(); // Indicate provisioning required
         
         // Start BLE provisioning (non-blocking)
         provisionManager->startProvisioningIfNeeded();
@@ -151,7 +151,7 @@ void GatewayApp::setup() {
     // Initialize mesh security first
     if (!initializeMeshSecurity()) {
         ESP_LOGE(TAG, "Failed to initialize mesh security");
-        led_pattern_error();
+        // led_pattern_error();
         return;
     }
 
@@ -230,7 +230,7 @@ void GatewayApp::setup() {
     } else {
         ESP_LOGI(TAG, "⏭️ Skipping mesh/WiFi/Firebase setup (not provisioned - waiting for BLE provisioning)");
         ESP_LOGI(TAG, "🔵 Gateway in provisioning mode - use mobile app to configure");
-        led_pattern_provisioning();  // Indicate provisioning mode
+        // led_pattern_provisioning();  // Indicate provisioning mode
     }
 
     // Initialize factory reset button (IO13 - 5 second hold)
@@ -317,7 +317,7 @@ void GatewayApp::loop() {
     // Show provision success LED pattern once
     if (provisionManager && provisionManager->provisionSucceeded() && !successShown) {
         ESP_LOGI(TAG, "🎉 Showing provision success LED pattern...");
-        led_pattern_provision_success();  // 3 seconds of fast flashing
+        // led_pattern_provision_success();  // 3 seconds of fast flashing
         provisionManager->clearProvisionSuccessFlag();
         successShown = true;
     }
@@ -837,7 +837,7 @@ void GatewayApp::setupLoRaMesher() {
         ESP_LOGI(TAG, "LoRaMesher initialized for Gateway");
     } else {
         ESP_LOGE(TAG, "Failed to create gateway receive task");
-        led_pattern_error();
+        // led_pattern_error();
     }
 }
 
@@ -864,7 +864,7 @@ void GatewayApp::setupCellular() {
     // Initialize cellular service
     if (!cellularService->initialize()) {
         ESP_LOGE(TAG, "Failed to initialize cellular service");
-        led_pattern_error();
+        // led_pattern_error();
         return;
     }
 
@@ -888,7 +888,7 @@ void GatewayApp::setupWiFi() {
     String ssid, password;
     if (!provisionManager->getWiFiCredentials(ssid, password)) {
         ESP_LOGE(TAG, "Failed to load WiFi credentials from NVS!");
-        led_pattern_error();
+        // led_pattern_error();
         return;
     }
     
@@ -913,7 +913,7 @@ void GatewayApp::setupWiFi() {
     // Initialize WiFi service
     if (!wifiService->initialize()) {
         ESP_LOGE(TAG, "Failed to initialize WiFi service");
-        led_pattern_error();
+        // led_pattern_error();
         return;
     }
 
@@ -939,7 +939,7 @@ void GatewayApp::setupFirebase() {
     String userUID;
     if (!provisionManager->getUserUID(userUID)) {
         ESP_LOGE(TAG, "Failed to load user UID from NVS!");
-        led_pattern_error();
+        // led_pattern_error();
         return;
     }
     
@@ -979,7 +979,7 @@ void GatewayApp::setupFirebase() {
     // Initialize Firebase client (this will initialize SSL client too)
     if (!firebaseClient->initialize()) {
         ESP_LOGE(TAG, "Failed to initialize Cellular HTTPS Firebase client");
-        led_pattern_error();
+        // led_pattern_error();
         return;
     }
 
@@ -1042,7 +1042,7 @@ void GatewayApp::setupFirebase() {
     // Initialize Firebase client
     if (!firebaseClient->initialize()) {
         ESP_LOGE(TAG, "Failed to initialize Firebase client");
-        led_pattern_error();
+        // led_pattern_error();
         return;
     }
 
@@ -1257,7 +1257,7 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
 
             if (success) {
                 gatewayState.packetsUploaded++;
-                led_pattern_message(); // Flash LED on successful upload
+                // led_pattern_message(); // Flash LED on successful upload
                 ESP_LOGI(TAG, "✅ Upload queued/successful");
                 
                 // Update last processed counter for this node
@@ -1412,7 +1412,7 @@ void GatewayApp::handleCellularEvent(CellularConnectionService::Event event, int
                      cellularService->getOperator().c_str(), rssi);
             gatewayState.cellularConnected = true;
             gatewayState.cellularRSSI = rssi;
-            led_pattern_connected();
+            // led_pattern_connected();
 
             // Try to reconnect Firebase if it was disconnected
             if (firebaseClient && !gatewayState.firebaseConnected) {
@@ -1427,7 +1427,7 @@ void GatewayApp::handleCellularEvent(CellularConnectionService::Event event, int
             ESP_LOGW(TAG, "❌ Cellular DISCONNECTED!");
             gatewayState.cellularConnected = false;
             gatewayState.firebaseConnected = false;
-            led_pattern_error();
+            // led_pattern_error();
 
             logEventViaQueue("cellular_disconnected", "", "");
             break;
@@ -1440,7 +1440,7 @@ void GatewayApp::handleCellularEvent(CellularConnectionService::Event event, int
         case CellularConnectionService::Event::CONNECTION_FAILED:
             ESP_LOGE(TAG, "❌ Cellular CONNECTION FAILED!");
             gatewayState.cellularConnected = false;
-            led_pattern_error();
+            // led_pattern_error();
             break;
 
         case CellularConnectionService::Event::SIGNAL_LOW:
@@ -1456,7 +1456,7 @@ void GatewayApp::handleWiFiEvent(WiFiConnectionService::WiFiEvent event, int8_t 
             ESP_LOGI(TAG, "✅ WiFi CONNECTED! IP: %s, RSSI: %d dBm",
                      wifiService->getLocalIP().c_str(), rssi);
             gatewayState.wifiConnected = true;
-            led_pattern_connected();
+            // led_pattern_connected();
 
             // Try to reconnect Firebase if it was disconnected
             if (firebaseClient && !gatewayState.firebaseConnected) {
@@ -1471,7 +1471,7 @@ void GatewayApp::handleWiFiEvent(WiFiConnectionService::WiFiEvent event, int8_t 
             ESP_LOGW(TAG, "❌ WiFi DISCONNECTED!");
             gatewayState.wifiConnected = false;
             gatewayState.firebaseConnected = false;
-            led_pattern_error();
+            // led_pattern_error();
 
             if (firebaseClient) {
                 firebaseClient->logEvent("wifi_disconnected", "", "");
@@ -1486,7 +1486,7 @@ void GatewayApp::handleWiFiEvent(WiFiConnectionService::WiFiEvent event, int8_t 
         case WiFiConnectionService::WiFiEvent::CONNECTION_FAILED:
             ESP_LOGE(TAG, "❌ WiFi CONNECTION FAILED!");
             gatewayState.wifiConnected = false;
-            led_pattern_error();
+            // led_pattern_error();
             break;
 
         case WiFiConnectionService::WiFiEvent::RSSI_LOW:
@@ -1523,7 +1523,7 @@ void GatewayApp::processGatewayPackets(void* parameter) {
         ulTaskNotifyTake(pdPASS, portMAX_DELAY);
 
         ESP_LOGI(TAG, "[GATEWAY-TASK] Processing gateway packets...");
-        led_pattern_message();
+        // led_pattern_message();
 
         // Memory leak detection - check heap before processing
         uint32_t freeHeapBefore = ESP.getFreeHeap();
@@ -1624,7 +1624,7 @@ TaskHandle_t GatewayApp::createGatewayReceiveTask() {
 
     if (res != pdPASS) {
         ESP_LOGE(TAG, "Error: Gateway task creation failed: %d", res);
-        led_pattern_error();
+        // led_pattern_error();
         return NULL;
     }
 

@@ -6,11 +6,11 @@ void led_init() {
 }
 
 void led_on() {
-    digitalWrite(BOARD_LED, LED_ON);
+    digitalWrite(BOARD_LED, LED_OFF);
 }
 
 void led_off() {
-    digitalWrite(BOARD_LED, LED_OFF);
+    digitalWrite(BOARD_LED, LED_ON);
 }
 
 void led_toggle() {

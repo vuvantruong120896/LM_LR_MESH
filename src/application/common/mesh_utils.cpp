@@ -103,7 +103,7 @@ TaskHandle_t createReceiveTask(const char* taskName) {
     
     if (res != pdPASS) {
         ESP_LOGE(LM_TAG, "Error: %s creation failed: %d", taskName, res);
-        led_pattern_error();
+        // led_pattern_error();
         return NULL;
     }
     return taskHandle;
@@ -119,9 +119,9 @@ void setupLoRaMesher(LoraMesher::LoraMesherConfig& config) {
         radio.setReceiveAppDataTaskHandle(receiveHandle);
         radio.start();
         ESP_LOGI(LM_TAG, "LoRaMesher initialized");
-        led_pattern_connected();
+        // led_pattern_connected();    
     } else {
         ESP_LOGE(LM_TAG, "Failed to initialize LoRaMesher");
-        led_pattern_error();
+        // led_pattern_error();
     }
 }

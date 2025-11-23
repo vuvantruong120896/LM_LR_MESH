@@ -173,7 +173,7 @@ void NodeApp::setup() {
         ESP_LOGI(LM_TAG, "- BLE Advertising: ACTIVE (KAGRI-NODE-XXXX)");
         ESP_LOGI(LM_TAG, "");
         ESP_LOGI(LM_TAG, "To provision, use mobile app to connect via BLE");
-        led_pattern_error(); // Indicate provisioning required
+        // led_pattern_error(); // Indicate provisioning required
         
         // Start BLE provisioning (blocking - don't initialize mesh)
         provisionManager->startProvisioningIfNeeded();
@@ -198,7 +198,7 @@ void NodeApp::setup() {
     // Initialize mesh security first
     if (!initializeMeshSecurity()) {
         ESP_LOGE(LM_TAG, "Failed to initialize mesh security");
-        led_pattern_error();
+        // led_pattern_error();
         return;
     }
     
@@ -280,7 +280,7 @@ void NodeApp::setup() {
     // Initialize ProvisioningService for Node
     if (!ProvisioningService::initialize()) {
         ESP_LOGE(LM_TAG, "Failed to initialize Provisioning Service");
-        led_pattern_error();
+        // led_pattern_error();
         return;
     }
     // Register callback to receive provisioning packets
@@ -337,7 +337,7 @@ void NodeApp::loop() {
         ESP_LOGI(LM_TAG, "");
         
         // Show success LED pattern for 5 seconds
-        led_pattern_connected();
+        // led_pattern_connected();
         vTaskDelay(pdMS_TO_TICKS(5000));
         
         // Clear flag and restart
@@ -462,7 +462,7 @@ void NodeApp::loop() {
                 }
             }
             
-            led_pattern_message(); // Flash LED to indicate data sent/buffered
+            // led_pattern_message(); // Flash LED to indicate data sent/buffered
 
             lastDataSend = currentTime;
         }
@@ -540,7 +540,7 @@ void NodeApp::loop() {
                             ESP_LOGI(LM_TAG, "╚════════════════════════════════════════════════════════════╝");
                             ESP_LOGI(LM_TAG, "");
                             ESP_LOGI(LM_TAG, "Synced %u samples to gateway 0x%04X", synced, dst);
-                            led_pattern_connected();
+                            // led_pattern_connected();
                         } else {
                             ESP_LOGI(LM_TAG, "✅ All buffered data synced successfully (%u samples)", synced);
                         }
@@ -670,10 +670,10 @@ void NodeApp::setupLoRaMesher() {
         radio.setReceiveAppDataTaskHandle(receiveHandle);
         radio.start();
         ESP_LOGI(LM_TAG, "LoRaMesher initialized with ProvisioningService integration");
-        led_pattern_connected();
+        // led_pattern_connected();
     } else {
         ESP_LOGE(LM_TAG, "Failed to initialize LoRaMesher");
-        led_pattern_error();
+        // led_pattern_error();
     }
     
     // Create time sync receive task to handle time broadcasts from Gateway
@@ -694,7 +694,7 @@ void NodeApp::onNetkeyUpdated(const uint8_t* newKey, uint8_t version) {
              newKey[4], newKey[5], newKey[6], newKey[7]);
     
     // Visual indication of key update
-    led_pattern_message(); // Flash LED to indicate key update
+    // led_pattern_message(); // Flash LED to indicate key update
     
     // **PERSIST TO NVS**: Create NetworkConfig and save for reboot survival
     NetworkConfig cfg;
@@ -884,7 +884,7 @@ void NodeApp::handleProvisionResponse(const ProvisionResponsePacket* response) {
     if (sendProvisionComplete()) {
         provisioningState = NODE_STATE_PROVISIONED;
         ESP_LOGI(LM_TAG, "*** PROVISIONING COMPLETED SUCCESSFULLY ***");
-        led_pattern_connected();
+        // led_pattern_connected();
         
         // Save initial routing table after successful provisioning
         ESP_LOGI(LM_TAG, "Saving initial routing table after provisioning");
@@ -892,14 +892,14 @@ void NodeApp::handleProvisionResponse(const ProvisionResponsePacket* response) {
     } else {
         ESP_LOGE(LM_TAG, "Failed to send provision complete");
         provisioningState = NODE_STATE_PROVISION_FAILED;
-        led_pattern_error();
+        // led_pattern_error();
     }
 }
 
 void NodeApp::handleProvisionReject(const ProvisionRejectPacket* reject) {
     ESP_LOGW(LM_TAG, "Provision request rejected. Reason: %d", reject->rejectReason);
     provisioningState = NODE_STATE_PROVISION_FAILED;
-    led_pattern_error();
+    // led_pattern_error();
 }
 
 bool NodeApp::sendProvisionComplete() {
@@ -1097,7 +1097,7 @@ static void onRoutingTableChanged() {
         lastKnownGateway = currentGateway;
         
         // Visual indication
-        led_pattern_connected();
+        // led_pattern_connected();
     }
     // Transition: Gateway was available → NOW UNAVAILABLE
     else if (wasGatewayAvailable && !isGatewayAvailable) {
@@ -1106,7 +1106,7 @@ static void onRoutingTableChanged() {
         ESP_LOGW(LM_TAG, "");
         
         wasGatewayAvailable = false;
-        led_pattern_error();
+        // led_pattern_error();
     }
     // Transition: Gateway changed
     else if (isGatewayAvailable && currentGateway != lastKnownGateway) {
