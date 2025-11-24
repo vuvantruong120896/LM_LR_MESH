@@ -406,6 +406,7 @@ void NodeApp::loop() {
             // led_pattern_message(); // Flash LED to indicate data sent/buffered
 
             lastDataSend = currentTime;
+        }
         
         // NOTE: Routing table is now saved to NVS ONLY when changes occur (node added/removed)
         // via callback mechanism. Periodic save removed to reduce flash wear.
