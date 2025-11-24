@@ -3,10 +3,11 @@
 
 #include <Arduino.h>
 #include <esp_log.h>
+#include <esp_adc_cal.h>
 
 /**
  * @file battery_monitor.h
- * @brief Battery voltage monitoring via ADC for Li-ion battery
+ * @brief Battery voltage monitoring via ADC for Li-ion battery with eFuse calibration
  * 
  * Hardware Configuration:
  * - ADC Pin: GPIO8 (ADC1_CHANNEL_7)
@@ -22,14 +23,20 @@
  *   VBAT = V_ADC × (R1 + R2) / R2
  * 
  * ADC Calibration:
- * - Uses ESP32 ADC calibration (eFuse or default curve fitting)
- * - Attenuation: ADC_ATTEN_DB_11 (0-3.3V range)
- * - Bitwidth: ADC_BITWIDTH_12 (0-4095 raw values)
+ * - ✅ USES eFuse CALIBRATION (ESP32-S3 internal Vref varies 1100-1200mV per chip)
+ * - ✅ Reads ADC_CALI_CURVE_FIT_V2 from eFuse for accurate voltage conversion
+ * - Attenuation: ADC_ATTEN_DB_11 (0-3.3V range, 12-bit = 0-4095)
+ * - Returns voltage with HIGH accuracy (2 decimal places: e.g., 3.85V)
+ * 
+ * Why eFuse Calibration Matters:
+ * - Each ESP32-S3 chip has different internal Vref (1080mV vs 1200mV)
+ * - Without calibration: ADC reading can be off by ±5-10% per chip
+ * - With eFuse: Corrects for chip-specific Vref variation automatically
  * 
  * Usage:
  * ```cpp
  * BatteryMonitor::init();
- * float voltage = BatteryMonitor::readVoltage();
+ * float voltage = BatteryMonitor::readVoltage();    // e.g., 3.85V (2 decimals)
  * uint8_t percent = BatteryMonitor::getPercentage();
  * ```
  */
@@ -85,20 +92,17 @@ private:
     // ADC configuration
     static constexpr int ADC_SAMPLES = 10;  // Number of samples to average
     static constexpr int ADC_MAX_VALUE = 4095;  // 12-bit ADC
-    static constexpr float ADC_VREF = 3.35f;     // ESP32 reference voltage (V)
+    static constexpr float ADC_VREF_MV = 1200.0f;  // ESP32-S3 typical internal Vref (mV)
+                                                    // ⚠️ VARIES per chip (1100-1200mV)
+                                                    // ✅ eFuse calibration corrects this automatically
 
-    // ADC Calibration Factor
-    // Adjust this if ADC reading differs from multimeter measurement
-    // Formula: VBAT_actual = VBAT_measured × ADC_CALIBRATION_FACTOR
-    // 
-    // How to calibrate:
-    // 1. Measure VBAT with multimeter (e.g., 3.85V)
-    // 2. Note ADC reading from serial output (e.g., 3.70V)
-    // 3. Calculate factor = 3.85 / 3.70 = 1.041
-    // 4. Update this value to 1.041f
-    // 
-    // If ADC consistently reads 0.15V lower, factor ≈ 1.04-1.05
-    static constexpr float ADC_CALIBRATION_FACTOR = 1.041f;  // Default: no calibration (adjust as needed)
+    // ADC Calibration Curve (V2 - for ESP32-S3)
+    // Characteristics structure loaded from eFuse during init()
+    static esp_adc_cal_characteristics_t* adc_chars;
+
+    // Precision: 2 decimal places
+    // ADC raw value → eFuse calibration → voltage in mV → float with 2 decimals
+    // Example: raw=1850 → 1850mV/1000 → 1.85V
 
     // State
     static bool initialized;

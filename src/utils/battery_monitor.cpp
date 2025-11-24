@@ -4,6 +4,7 @@ static const char* TAG = "BatteryMonitor";
 
 // Static members
 bool BatteryMonitor::initialized = false;
+esp_adc_cal_characteristics_t* BatteryMonitor::adc_chars = nullptr;
 
 bool BatteryMonitor::init() {
     if (initialized) {
@@ -17,22 +18,55 @@ bool BatteryMonitor::init() {
     // Configure ADC attenuation to 11dB (0-3.3V range)
     analogSetAttenuation(ADC_11db);
     
+    // ✅ Initialize ADC calibration from eFuse (CRITICAL for accurate readings)
+    adc_chars = (esp_adc_cal_characteristics_t*)calloc(1, sizeof(esp_adc_cal_characteristics_t));
+    if (!adc_chars) {
+        ESP_LOGE(TAG, "Failed to allocate memory for ADC calibration characteristics");
+        return false;
+    }
+
+    // Read calibration data from eFuse
+    // This corrects for chip-specific internal Vref variation (1100-1200mV)
+    esp_adc_cal_value_t cal_status = esp_adc_cal_characterize(
+        ADC_UNIT_1,                           // ADC1 (GPIO8 is on ADC1)
+        ADC_ATTEN_DB_11,                      // Attenuation 11dB (0-3.3V)
+        ADC_WIDTH_BIT_12,                     // 12-bit resolution (0-4095)
+        ADC_VREF_MV,                          // Use typical Vref as default
+        adc_chars
+    );
+
+    // Log calibration source
+    switch (cal_status) {
+        case ESP_ADC_CAL_VAL_EFUSE_VREF:
+            ESP_LOGI(TAG, "✅ ADC calibration: Vref loaded from eFuse (HIGHEST accuracy)");
+            break;
+        case ESP_ADC_CAL_VAL_EFUSE_TP:
+            ESP_LOGI(TAG, "✅ ADC calibration: Two-point calibration from eFuse (HIGH accuracy)");
+            break;
+        case ESP_ADC_CAL_VAL_DEFAULT_VREF:
+            ESP_LOGW(TAG, "⚠️  ADC calibration: Using default Vref (medium accuracy)");
+            break;
+        default:
+            ESP_LOGW(TAG, "⚠️  ADC calibration: Unknown status (%d)", cal_status);
+    }
+
     initialized = true;
     ESP_LOGI(TAG, "✅ Battery monitor initialized (GPIO%d)", BAT_ADC_PIN);
     ESP_LOGI(TAG, "   Voltage divider: R1=%0.0fkΩ, R2=%0.0fkΩ (×%.1f)", 
              VOLTAGE_DIVIDER_R1, VOLTAGE_DIVIDER_R2, VOLTAGE_MULTIPLIER);
     ESP_LOGI(TAG, "   Li-ion range: %.1fV (0%%) - %.1fV (100%%)", 
              BATTERY_VOLTAGE_MIN, BATTERY_VOLTAGE_MAX);
-    
-    if (ADC_CALIBRATION_FACTOR != 1.0f) {
-        ESP_LOGI(TAG, "   ADC Calibration factor: %.3f", ADC_CALIBRATION_FACTOR);
-    }
+    ESP_LOGI(TAG, "   Precision: 2 decimal places (e.g., 3.85V)");
 
     return true;
 }
 
 void BatteryMonitor::deinit() {
     initialized = false;
+    if (adc_chars) {
+        free(adc_chars);
+        adc_chars = nullptr;
+    }
     ESP_LOGI(TAG, "Battery monitor deinitialized");
 }
 
@@ -71,22 +105,35 @@ float BatteryMonitor::readVoltage() {
         return 0.0f;
     }
 
+    if (!adc_chars) {
+        ESP_LOGE(TAG, "ADC calibration not initialized!");
+        return 0.0f;
+    }
+
     // Read raw ADC value (averaged)
     int raw_adc = readRawADC();
     if (raw_adc == 0) {
         return 0.0f;
     }
 
-    // Convert to voltage (0-3.3V range with 12-bit resolution)
-    // ADC voltage = (raw_adc / 4095) * 3.3V
-    float adc_voltage = (raw_adc / (float)ADC_MAX_VALUE) * ADC_VREF;
+    // ✅ Convert raw ADC to voltage using eFuse calibration (mV)
+    // esp_adc_cal_raw_to_voltage() uses the calibration characteristics to convert
+    // raw ADC value → voltage in mV, accounting for chip-specific Vref variation
+    uint32_t voltage_mv = esp_adc_cal_raw_to_voltage(raw_adc, adc_chars);
+    
+    // Convert to volts
+    float adc_voltage = voltage_mv / 1000.0f;
 
     // Apply voltage divider multiplier
     // VBAT = V_ADC × (R1 + R2) / R2
     // With R1=R2=1MΩ → VBAT = V_ADC × 2
     float battery_voltage = adc_voltage * VOLTAGE_MULTIPLIER;
 
-    ESP_LOGD(TAG, "Raw ADC: %d → %.2fV → VBAT: %.2fV", raw_adc, adc_voltage, battery_voltage);
+    // Round to 2 decimal places for consistency
+    battery_voltage = roundf(battery_voltage * 100.0f) / 100.0f;
+
+    ESP_LOGD(TAG, "Raw ADC: %d → %umV → %.2fV → VBAT: %.2fV (eFuse calibrated)", 
+             raw_adc, voltage_mv, adc_voltage, battery_voltage);
 
     return battery_voltage;
 }
