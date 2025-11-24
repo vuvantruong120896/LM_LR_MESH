@@ -150,7 +150,7 @@ private:
     void uploadGatewaySensorData();
     void uploadRoutingTable();
     void uploadGatewayStatusPeriodic();
-    sensorData simulateGatewaySensorData();
+    sensorData getGatewaySensorData();
     
     // 🌐 Helper to build Firebase routing table (includes Gateway as node)
     std::vector<RouteNode> buildFirebaseRoutingTable();

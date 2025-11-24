@@ -2,6 +2,7 @@
 #include "modbus_async.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "../../utils/battery_monitor.h"  // Battery monitoring
 #include <cstring>
 #include <cstdarg>
 #include <sys/time.h>
@@ -34,6 +35,11 @@ bool SoilSensorService::initialize() {
         setError(1, "Failed to initialize Modbus Async driver");
         ESP_LOGE(SOIL_SENSOR_TAG, "%s", lastErrorMsg);
         return false;
+    }
+
+    // Initialize battery monitor
+    if (!BatteryMonitor::init()) {
+        ESP_LOGW(SOIL_SENSOR_TAG, "⚠️ Battery monitor init failed - will use default value");
     }
 
     initialized = true;
@@ -455,7 +461,14 @@ void SoilSensorService::populateCommonFields(sensorData& outSensorData) {
     outSensorData.deviceType = DeviceType::SOIL_SENSOR;
     outSensorData.counter = successfulReads + 1;
     outSensorData.timestamp = time(nullptr);
-    outSensorData.battery = 3.3f;  // TODO: Read actual battery voltage if available
+    
+    // Read real battery voltage from ADC
+    outSensorData.battery = BatteryMonitor::readVoltage();
+    if (outSensorData.battery < 0.1f) {
+        // Fallback if battery read fails
+        ESP_LOGW(SOIL_SENSOR_TAG, "Battery read failed, using nominal 3.7V");
+        outSensorData.battery = 3.7f;
+    }
 
     // Set Node ID from provisioning or MAC
     uint8_t mac[6];

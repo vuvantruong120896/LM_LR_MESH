@@ -6,6 +6,7 @@
 #include "sensor_task.h"
 #include "mesh_security_config.h"
 #include "../../utils/factory_reset.h"
+#include "../../utils/battery_monitor.h"  // Battery monitoring
 #include <esp_log.h>
 #include <esp_task_wdt.h>
 #include <map>
@@ -117,23 +118,6 @@ void GatewayApp::setup() {
         ESP_LOGI(TAG, "   Gateway will continue without local sensor");
     } else {
         ESP_LOGI(TAG, "✅ Soil sensor initialized successfully");
-
-        // // Phase 1: 
-        // if (SoilSensorService::performStartupSequence()) {
-        //     ESP_LOGI(TAG, "✅ Phase 1 complete");
-        // } else {
-
-        //     ESP_LOGE(TAG, "❌ Failed to perform startup sequence:)");
-        // }
-
-        // // Phase 2: Trigger Measurement
-        // // Some sensors require a trigger command before reading
-        // if (SoilSensorService::performMeasurementTrigger(0x0001)) {
-        //     ESP_LOGI(TAG, "⏳ Waiting 3s for measurement to complete...");
-        //     vTaskDelay(pdMS_TO_TICKS(3000));
-        // } else {
-        //     ESP_LOGW(TAG, "⚠️ Measurement trigger failed or skipped");
-        // }
         
         // ===== START SENSOR TASK (CORE 0, 10-MIN INTERVAL) =====
         // Start dedicated FreeRTOS task on core 0 for periodic sensor reading
@@ -147,6 +131,18 @@ void GatewayApp::setup() {
         // ===== END SENSOR TASK STARTUP =====
     }
     // ===== END RS485 SOIL SENSOR INITIALIZATION =====
+
+    // ===== BATTERY MONITOR INITIALIZATION =====
+    ESP_LOGI(TAG, "Initializing battery monitor...");
+    if (!BatteryMonitor::init()) {
+        ESP_LOGW(TAG, "⚠️ Battery monitor init failed - will use fallback values");
+    } else {
+        ESP_LOGI(TAG, "✅ Battery monitor initialized");
+        float voltage = BatteryMonitor::readVoltage();
+        uint8_t percent = BatteryMonitor::getPercentage();
+        ESP_LOGI(TAG, "   Current battery: %.2fV (%d%%)", voltage, percent);
+    }
+    // ===== END BATTERY MONITOR INITIALIZATION =====
 
     // Initialize mesh security first
     if (!initializeMeshSecurity()) {
@@ -2163,7 +2159,7 @@ void GatewayApp::broadcastTimeSync() {
     gatewayState.lastTimeSyncBroadcast = millis();
 }
 
-sensorData GatewayApp::simulateGatewaySensorData() {
+sensorData GatewayApp::getGatewaySensorData() {
     sensorData data;
     
     // TRY TO GET REAL SENSOR DATA FROM QUEUE FIRST (if task running on core 0)
@@ -2183,13 +2179,18 @@ sensorData GatewayApp::simulateGatewaySensorData() {
             data.timestamp = millis() / 1000;
         }
         
-        data.battery = 3.7 + (random(0, 60) / 100.0);  // Gateway battery simulation
+        // Read real battery voltage from ADC
+        data.battery = BatteryMonitor::readVoltage();
+        if (data.battery < 0.1f) {
+            ESP_LOGW(TAG, "Battery read failed, using nominal 3.7V");
+            data.battery = 3.7f;
+        }
         
         return data;
     }
     
-    // NO FALLBACK: If no real sensor data, return error struct (NO SIMULATION)
-    ESP_LOGW(TAG, "❌ No real sensor data available - returning error struct (NO SIMULATION)");
+    // NO FALLBACK: If no real sensor data, return error struct
+    ESP_LOGW(TAG, "❌ No real sensor data available - returning error struct");
     
     // Set device type - Gateway has soil sensor for demo/testing
     data.deviceType = DeviceType::SOIL_SENSOR;
@@ -2197,7 +2198,14 @@ sensorData GatewayApp::simulateGatewaySensorData() {
     // === Return error-filled struct ===
     memset(&data.data.soil, 0, sizeof(data.data.soil));
     data.error = true;
-    data.battery = 3.7 + (random(0, 60) / 100.0);  // Gateway battery only
+    
+    // Read real battery voltage from ADC
+    data.battery = BatteryMonitor::readVoltage();
+    if (data.battery < 0.1f) {
+        ESP_LOGW(TAG, "Battery read failed, using nominal 3.7V");
+        data.battery = 3.7f;
+    }
+    
     data.counter = ++sensorCounter;
     data.nodeId = computeNodeIdFromWifiMac();
     
@@ -2209,14 +2217,13 @@ sensorData GatewayApp::simulateGatewaySensorData() {
     }
     
     // No device-specific fields - all zeros for error case
-    // NO SIMULATION - just return error struct
     
     return data;  // Return error struct
 }
 
 void GatewayApp::uploadGatewaySensorData() {
     // Generate gateway sensor data (always, regardless of provision status)
-    sensorData gatewaySensor = simulateGatewaySensorData();
+    sensorData gatewaySensor = getGatewaySensorData();
     
     // Get signal strength (WiFi RSSI or Cellular RSSI)
 #ifdef USE_CELLULAR
