@@ -23,7 +23,8 @@ typedef enum {
     BUTTON_EVENT_RELEASE,
     BUTTON_EVENT_CLICK,
     BUTTON_EVENT_DOUBLE_CLICK,
-    BUTTON_EVENT_LONG_PRESS
+    BUTTON_EVENT_LONG_PRESS,      // 1s long-press (short)
+    BUTTON_EVENT_EXTENDED_PRESS   // 5s long-press (extended/config)
 } button_event_t;
 
 // Button callback function type
@@ -40,7 +41,8 @@ button_event_t button_get_last_event();
 
 // Button timing configuration
 void button_set_debounce_time(uint32_t ms);
-void button_set_long_press_time(uint32_t ms);
+void button_set_long_press_time(uint32_t ms);           // Short long-press (e.g., 1s)
+void button_set_extended_press_time(uint32_t ms);      // Extended long-press (e.g., 5s)
 void button_set_double_click_time(uint32_t ms);
 
 #endif // _BUTTON_CONTROL_H

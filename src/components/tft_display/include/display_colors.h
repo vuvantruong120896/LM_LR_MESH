@@ -20,6 +20,10 @@ namespace DisplayColor {
     constexpr uint16_t CYAN = 0x07FF;       // 00FFFF
     constexpr uint16_t MAGENTA = 0xF81F;    // FF00FF
     constexpr uint16_t YELLOW = 0xFFE0;     // FFFF00
+
+    constexpr uint16_t ORANGE = 0xFD20;     // FF9900
+    constexpr uint16_t PURPLE = 0x780F;     // 800080
+    constexpr uint16_t GREEN_YELLOW = 0xAFE5; // ADFF2
     
     // Light Colors
     constexpr uint16_t LIGHT_GRAY = 0xD69A;     // C0C0C0

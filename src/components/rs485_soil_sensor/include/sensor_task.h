@@ -150,6 +150,21 @@ public:
     static bool getData(sensorData& outData, uint32_t timeoutMs);
 
     /**
+     * @brief Trigger an on-demand sensor reading (button press mode)
+     * 
+     * Sends trigger command to sensor task to perform immediate reading.
+     * Used for manual sensor measurements triggered by button press.
+     * 
+     * @return true if trigger sent successfully, false if task not running
+     * 
+     * **Thread Safety:** Safe to call from any core
+     * **May Block:** No - returns immediately after sending trigger
+     * 
+     * @note Sensor reading result available via getData() within ~1-2 seconds
+     */
+    static bool triggerRead();
+
+    /**
      * @brief Check if sensor task is currently running
      * 
      * @return true if task created and running, false if stopped or failed

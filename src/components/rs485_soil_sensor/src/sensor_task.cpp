@@ -9,7 +9,7 @@
 static const char* TAG = "SensorTask";
 
 // Configuration
-#define SENSOR_READ_INTERVAL_MS (9 * 60 * 1000)  // 9 minutes
+#define SENSOR_READ_INTERVAL_MS (9 * 60 * 1000)  // 9 minutes (not used - on-demand only)
 #define SENSOR_TASK_STACK_SIZE  (4096)             // 4KB stack for UART + Modbus ops
 #define SENSOR_TASK_PRIORITY    (tskIDLE_PRIORITY + 2) // Priority 2 - slightly above IDLE
 #define SENSOR_QUEUE_SIZE       2                  // Store up to 2 readings max
@@ -18,43 +18,34 @@ static const char* TAG = "SensorTask";
 // Task state management
 static TaskHandle_t sensorTaskHandle = nullptr;
 static QueueHandle_t sensorDataQueue = nullptr;
+static QueueHandle_t sensorTriggerQueue = nullptr;  // Command queue for triggering reads
 static volatile uint32_t lastReadTimestamp = 0;
 static volatile uint32_t successfulReadCount = 0;
 static volatile uint32_t failedReadCount = 0;
 
 /**
- * @brief Main FreeRTOS task function for sensor reading
+ * @brief Main FreeRTOS task function for sensor reading (ON-DEMAND mode)
  * 
- * Runs on core 0 and periodically reads sensor data, placing results
- * into a queue for the main application to consume. Task is infinite
- * loop - exits only on shutdown.
+ * Runs on core 0 and waits for trigger commands from main application.
+ * When triggered, reads sensor data and sends results to queue.
+ * Task is on-demand only - no scheduled reads.
  * 
- * **Task Characteristics:**
- * - Core: Pinned to core 0 (separate from main application)
- * - Priority: tskIDLE_PRIORITY (won't starve other critical tasks)
- * - Stack: 4KB (sufficient for UART + Modbus operations)
- * - Interval: 10 minutes between sensor reads
- * - Blocking: Yes, but only for sensor read (~125ms max)
- * 
- * **Operation:**
- * 1. Delay 10 minutes
- * 2. Read sensor via SoilSensorService::readData()
- * 3. Send result to queue (main app consumes via getData())
- * 4. Log timing and any errors
- * 5. Loop back to step 1
- * 
- * @param param Unused (nullptr passed)
- * 
- * @note Never returns under normal conditions
- * @note Exits via vTaskDelete() on SensorTaskManager::shutdown()
+ * @note Triggered by main app via SensorTaskManager::triggerRead()
+ * @note Task blocks until trigger received
  */
 void SensorTaskManager::sensorTaskFunction(void* param) {
-    ESP_LOGI(TAG, "📊 Sensor task started on core %d", xPortGetCoreID());
+    ESP_LOGI(TAG, "📊 Sensor task started on core %d (ON-DEMAND mode)", xPortGetCoreID());
     vTaskDelay(pdMS_TO_TICKS(1000)); // Delay 1s to stabilize
 
     while (true) {
-        // **READ PHASE**: Read sensor (may block for ~125ms)
-        ESP_LOGI(TAG, "🔄 Starting scheduled sensor read...");
+        // Wait for trigger command from main app (blocks indefinitely)
+        uint8_t trigger = 0;
+        if (xQueueReceive(sensorTriggerQueue, &trigger, portMAX_DELAY) != pdTRUE) {
+            continue;  // Should never happen, but handle gracefully
+        }
+        
+        // **READ PHASE**: Read sensor on demand
+        ESP_LOGI(TAG, "🔄 Starting on-demand sensor read (triggered by button)...");
         uint32_t readStartTime = xTaskGetTickCount();
         
         sensorData reading = SoilSensorService::readData();
@@ -104,11 +95,9 @@ void SensorTaskManager::sensorTaskFunction(void* param) {
             ESP_LOGD(TAG, "📦 Queue depth: %u items waiting", itemsInQueue);
         }
 
-        // **WAIT PHASE**: Block for 10 minutes before NEXT reading
-        // Using vTaskDelay allows other tasks on core 0 to run if needed
-        const uint32_t delayTicks = pdMS_TO_TICKS(SENSOR_READ_INTERVAL_MS);
-        ESP_LOGI(TAG, "⏳ Waiting %u ms until next sensor read...", SENSOR_READ_INTERVAL_MS);
-        vTaskDelay(delayTicks);
+        // **WAIT PHASE**: Loop back to wait for next trigger
+        // Task blocks at xQueueReceive() until main app calls triggerRead()
+        ESP_LOGD(TAG, "⏳ Waiting for next trigger command...");
     }
     
     // This line never executes under normal conditions
@@ -129,8 +118,16 @@ bool SensorTaskManager::initialize() {
         return false;
     }
     
-    // Create FreeRTOS task pinned to core 0
-    // Task starts in READY state and runs when scheduled
+    // Create queue for trigger commands (on-demand mode)
+    sensorTriggerQueue = xQueueCreate(1, sizeof(uint8_t));
+    if (sensorTriggerQueue == nullptr) {
+        ESP_LOGE(TAG, "❌ Failed to create trigger queue");
+        vQueueDelete(sensorDataQueue);
+        sensorDataQueue = nullptr;
+        return false;
+    }
+    
+    // Create FreeRTOS task pinned to core 1
     BaseType_t result = xTaskCreatePinnedToCore(
         sensorTaskFunction,           // Task function
         "SensorTask",                 // Task name (for debugging)
@@ -143,9 +140,11 @@ bool SensorTaskManager::initialize() {
     
     if (result != pdPASS) {
         ESP_LOGE(TAG, "❌ Failed to create FreeRTOS task - xTaskCreatePinnedToCore returned %d", result);
-        // Clean up queue since task creation failed
+        // Clean up queues since task creation failed
         vQueueDelete(sensorDataQueue);
+        vQueueDelete(sensorTriggerQueue);
         sensorDataQueue = nullptr;
+        sensorTriggerQueue = nullptr;
         return false;
     }
     
@@ -153,6 +152,8 @@ bool SensorTaskManager::initialize() {
     successfulReadCount = 0;
     failedReadCount = 0;
     lastReadTimestamp = millis();
+    
+    ESP_LOGI(TAG, "✅ Initialized (ON-DEMAND mode - reads triggered by button press)");
 
     return true;
 }
@@ -169,10 +170,15 @@ bool SensorTaskManager::shutdown() {
     vTaskDelete(sensorTaskHandle);
     sensorTaskHandle = nullptr;
     
-    // Delete the queue (free queue memory)
+    // Delete the queues (free queue memory)
     if (sensorDataQueue != nullptr) {
         vQueueDelete(sensorDataQueue);
         sensorDataQueue = nullptr;
+    }
+    
+    if (sensorTriggerQueue != nullptr) {
+        vQueueDelete(sensorTriggerQueue);
+        sensorTriggerQueue = nullptr;
     }
     
     ESP_LOGI(TAG, "✅ Sensor task shut down");
@@ -180,6 +186,23 @@ bool SensorTaskManager::shutdown() {
              successfulReadCount, failedReadCount);
     
     return true;
+}
+
+bool SensorTaskManager::triggerRead() {
+    if (sensorTriggerQueue == nullptr) {
+        ESP_LOGW(TAG, "Cannot trigger read - queue not initialized");
+        return false;
+    }
+    
+    // Send trigger command to task (non-blocking)
+    uint8_t trigger = 1;
+    if (xQueueSend(sensorTriggerQueue, &trigger, 0) == pdTRUE) {
+        ESP_LOGI(TAG, "📍 Trigger command sent to sensor task");
+        return true;
+    } else {
+        ESP_LOGW(TAG, "⚠️ Failed to send trigger (queue may be full)");
+        return false;
+    }
 }
 
 bool SensorTaskManager::getData(sensorData& outData, uint32_t timeoutMs) {

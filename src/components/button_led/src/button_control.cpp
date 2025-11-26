@@ -11,31 +11,36 @@ static button_callback_t button_event_callback = nullptr;
 
 // Timing configuration
 static uint32_t debounce_time_ms = BUTTON_DEBOUNCE_MS;
-static uint32_t long_press_time_ms = 1000;  // 1 second for long press
-static uint32_t double_click_time_ms = 300;  // 300ms window for double click
+static uint32_t long_press_time_ms = 1000;     // Short long-press (1s)
+static uint32_t extended_press_time_ms = 5000; // Extended long-press (5s)
+static uint32_t double_click_time_ms = 300;    // 300ms window for double click
 
 // Internal state tracking
 static bool waiting_for_double_click = false;
-static bool long_press_triggered = false;
+static bool short_long_press_triggered = false;
+static bool extended_long_press_triggered = false;
 
 void IRAM_ATTR button_isr() {
     uint32_t now = millis();
     bool current_reading = (digitalRead(BOARD_BUTTON) == BUTTON_PRESSED);
     
-    // Simple debouncing in ISR - more detailed processing in task/update
+    // Debouncing: only update state if enough time has passed
     if (now - button_last_change_time > debounce_time_ms) {
         if (current_reading != button_current_state) {
             button_current_state = current_reading;
             button_last_change_time = now;
             
             if (current_reading) {
-                // Button pressed
+                // Button pressed (falling edge - GPIO goes LOW)
                 button_press_start_time = now;
-                long_press_triggered = false;
+                short_long_press_triggered = false;
+                extended_long_press_triggered = false;
                 button_last_event = BUTTON_EVENT_PRESS;
+                // NO LOGGING in ISR - avoid blocking
             } else {
-                // Button released
+                // Button released (rising edge - GPIO goes HIGH)
                 button_last_event = BUTTON_EVENT_RELEASE;
+                // NO LOGGING in ISR - avoid blocking
             }
         }
     }
@@ -63,49 +68,60 @@ void button_update() {
     uint32_t now = millis();
     static button_event_t last_processed_event = BUTTON_EVENT_NONE;
     
-    // Process button events
+    // Process button events when state changes
     if (button_last_event != last_processed_event) {
         last_processed_event = button_last_event;
         
         if (button_last_event == BUTTON_EVENT_PRESS) {
-            // Reset double-click detection if we were waiting
+            // Button just pressed - reset long-press tracking
             waiting_for_double_click = false;
-            
             if (button_event_callback) {
                 button_event_callback(BUTTON_EVENT_PRESS);
             }
         } 
-        else if (button_last_event == BUTTON_EVENT_RELEASE && !long_press_triggered) {
-            // Handle click and double-click detection
-            if (waiting_for_double_click) {
-                // This is a double click
-                waiting_for_double_click = false;
-                button_last_event = BUTTON_EVENT_DOUBLE_CLICK;
-                
-                if (button_event_callback) {
-                    button_event_callback(BUTTON_EVENT_DOUBLE_CLICK);
-                }
+        else if (button_last_event == BUTTON_EVENT_RELEASE) {
+            // Button released - check if it was a long press
+            if (short_long_press_triggered || extended_long_press_triggered) {
+                // Long press was already triggered - don't generate click
+                short_long_press_triggered = false;
+                extended_long_press_triggered = false;
             } else {
-                // Start waiting for potential double click
-                waiting_for_double_click = true;
-                button_last_click_time = now;
-                
-                if (button_event_callback) {
-                    button_event_callback(BUTTON_EVENT_RELEASE);
+                // Short tap - handle click/double-click detection
+                if (waiting_for_double_click) {
+                    // This is a double click
+                    waiting_for_double_click = false;
+                    if (button_event_callback) {
+                        button_event_callback(BUTTON_EVENT_DOUBLE_CLICK);
+                    }
+                } else {
+                    // Start waiting for potential double click
+                    waiting_for_double_click = true;
+                    button_last_click_time = now;
                 }
             }
         }
     }
     
-    // Check for long press
-    if (button_current_state && !long_press_triggered) {
-        if (now - button_press_start_time >= long_press_time_ms) {
-            long_press_triggered = true;
-            button_last_event = BUTTON_EVENT_LONG_PRESS;
-            waiting_for_double_click = false;  // Cancel double-click detection
-            
+    // Monitor press duration for long-press detection
+    if (button_current_state) {
+        uint32_t press_duration = now - button_press_start_time;
+        
+        // Extended long press (5 seconds) - takes priority
+        if (!extended_long_press_triggered && press_duration >= extended_press_time_ms) {
+            extended_long_press_triggered = true;
+            short_long_press_triggered = false;  // Don't trigger short press too
+            waiting_for_double_click = false;
             if (button_event_callback) {
-                button_event_callback(BUTTON_EVENT_LONG_PRESS);
+                button_event_callback(BUTTON_EVENT_EXTENDED_PRESS);  // Send extended event
+            }
+        }
+        // Short long press (1 second) - only if 5s not yet triggered
+        else if (!short_long_press_triggered && !extended_long_press_triggered && 
+                 press_duration >= long_press_time_ms) {
+            short_long_press_triggered = true;
+            waiting_for_double_click = false;
+            if (button_event_callback) {
+                button_event_callback(BUTTON_EVENT_LONG_PRESS);  // Send short long-press event
             }
         }
     }
@@ -113,8 +129,6 @@ void button_update() {
     // Handle single click timeout
     if (waiting_for_double_click && (now - button_last_click_time >= double_click_time_ms)) {
         waiting_for_double_click = false;
-        button_last_event = BUTTON_EVENT_CLICK;
-        
         if (button_event_callback) {
             button_event_callback(BUTTON_EVENT_CLICK);
         }
@@ -142,6 +156,10 @@ void button_set_debounce_time(uint32_t ms) {
 
 void button_set_long_press_time(uint32_t ms) {
     long_press_time_ms = ms;
+}
+
+void button_set_extended_press_time(uint32_t ms) {
+    extended_press_time_ms = ms;
 }
 
 void button_set_double_click_time(uint32_t ms) {

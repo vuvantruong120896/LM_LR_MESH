@@ -6,9 +6,9 @@
 #include "../../components/rs485_soil_sensor/include/sensor_data.h"
 #include "../../components/rs485_soil_sensor/include/soil_sensor_service.h"
 #include "../../components/rs485_soil_sensor/include/sensor_task.h"
-#include "../../components/tft_display/include/tft_display_manager.h"
-#include "../../components/tft_display/include/tft_init_helper.h"
+#include "../../components/tft_display/include/tft_display_manager_lvgl.h"
 #include "../../components/tft_display/include/display_colors.h"
+#include "../../components/tft_display/include/display_strings.h"
 #include <esp_log.h>
 #include <esp_system.h>
 #include <nvs_flash.h>
@@ -23,17 +23,21 @@ HandheldApp* HandheldApp::instance = nullptr;
 HandheldApp::HandheldApp() :
     displayManager(nullptr),
     firebaseUploader(nullptr),
+    bleProvisioning(nullptr),
+    bleSensorData(nullptr),
     currentState(AppState::INITIALIZING),
+    wifiConfigSubState(WiFiConfigState::WAITING_FOR_APP),
     lastSensorRead(0),
     lastAutoUpload(0),
     lastBatteryCheck(0),
     lastDisplayUpdate(0),
     displayTimeout(0),
     hasNewSensorData(false),
+    beepedForCurrentMeasurement(false),
+    displayingSensorData(false),
     stateChangeTime(0),
     lastUploadTime(0),
     lastWiFiCheck(0),
-    currentUIScreen(DisplayScreen::HOME),
     menuSelection(0)
 {
     instance = this;
@@ -43,6 +47,8 @@ HandheldApp::HandheldApp() :
 
 HandheldApp::~HandheldApp() {
     //if (wifiService) delete wifiService;  // TODO: Implement WiFi service
+    if (bleProvisioning) delete bleProvisioning;
+    if (bleSensorData) delete bleSensorData;
     if (displayManager) delete displayManager;
     if (firebaseUploader) delete firebaseUploader;
     instance = nullptr;
@@ -63,6 +69,12 @@ bool HandheldApp::initialize() {
 }
 
 void HandheldApp::loop() {
+    // **CRITICAL**: Process button events (polling every loop iteration)
+    // ISR sets the flag, button_update() processes it
+    button_update();
+    
+    // Update currentTime AFTER processing button events
+    // This ensures stateChangeTime (set during button processing) is always <= currentTime
     uint32_t currentTime = millis();
     
     // Update system status
@@ -83,6 +95,13 @@ void HandheldApp::loop() {
             handleBatteryCheck();
             handleDisplayUpdate();
             handleWiFiReconnect();
+            
+            // Auto-return to home after 60 seconds if displaying sensor data
+            if (displayingSensorData && (currentTime - stateChangeTime > 60000)) {
+                ESP_LOGI(TAG, "Sensor data display timeout (60s) - returning to home screen");
+                displayingSensorData = false;
+                displayManager->drawHomeScreen();
+            }
             break;
             
         case AppState::MEASURING: {
@@ -92,41 +111,104 @@ void HandheldApp::loop() {
                 hasNewSensorData = true;
                 ESP_LOGI(TAG, "New sensor data: Moisture=%.1f%%, pH=%.1f", 
                         newData.data.soil.soilMoisture, newData.data.soil.pH);
+                // Display sensor data
+                displayManager->displaySensorData(
+                    newData.data.soil.soilTemperature,
+                    newData.data.soil.soilMoisture,
+                    newData.data.soil.conductivity,
+                    newData.data.soil.nitrogen,
+                    newData.data.soil.phosphorus,
+                    newData.data.soil.potassium
+                );
+                // TODO: Beep once to signal completion (temporarily disabled)
+                // if (!beepedForCurrentMeasurement) {
+                //     beepSuccess();
+                //     beepedForCurrentMeasurement = true;
+                // }
+                displayingSensorData = true;  // Mark that we're displaying sensor data
+                changeState(AppState::IDLE);
             }
-            changeState(AppState::IDLE);
             break;
         }
         case AppState::UPLOADING:
-        case AppState::WIFI_CONFIG:
+            // TODO: Show BLE/Firebase upload status
+            // displayManager->drawBleSendingScreen(progress);
             break;
+        case AppState::WIFI_CONFIG: {
+            // WiFi config: Show BLE waiting screen with countdown
+            uint32_t wifiConfigDuration = currentTime - stateChangeTime;
+            wifiConfigSubState = WiFiConfigState::APP_CONNECTED;
+            
+            // Draw full screen only once, then update countdown only
+            static bool screenDrawn = false;
+            if (!screenDrawn) {
+                displayManager->drawBLEWaitingScreen(60);
+                screenDrawn = true;
+            }
+            
+            // Update countdown every 1 second (only refresh countdown text)
+            static uint32_t lastCountdownUpdate = 0;
+            if (currentTime - lastCountdownUpdate > 1000) {  // Update every 1 second
+                int remainingSeconds = (60000 - wifiConfigDuration) / 1000;
+                if (remainingSeconds < 0) remainingSeconds = 0;
+                displayManager->updateBLEWaitingScreenCountdown(remainingSeconds);
+                lastCountdownUpdate = currentTime;
+            }
+            
+            // Log every 5 seconds for debugging
+            static uint32_t lastLogTime = 0;
+            if (currentTime - lastLogTime > 5000) {
+                ESP_LOGI(TAG, "WIFI_CONFIG: duration=%lu ms, BLE active=%d", 
+                         wifiConfigDuration, bleProvisioning ? bleProvisioning->isActive() : 0);
+                lastLogTime = currentTime;
+            }
+            
+            // Timeout after 60 seconds
+            if (wifiConfigDuration > 60000) {
+                ESP_LOGI(TAG, "WiFi config timeout (%lu ms) - returning to IDLE", wifiConfigDuration);
+                displayingSensorData = false;  // Reset flag
+                displayManager->drawHomeScreen();
+                changeState(AppState::IDLE);
+            }
+            break;
+        }
+        case AppState::SENSOR_DATA_TRANSFER: {
+            // Sensor data transmission via BLE
+            uint32_t dataTransferDuration = currentTime - stateChangeTime;
+            
+            // Draw full screen only once, then update countdown only
+            static bool screenDrawn = false;
+            if (!screenDrawn) {
+                displayManager->drawBLEWaitingScreen(120);  // 120 second timeout for data transfer
+                screenDrawn = true;
+            }
+            
+            // Update countdown every 1 second
+            static uint32_t lastCountdownUpdate = 0;
+            if (currentTime - lastCountdownUpdate > 1000) {
+                int remainingSeconds = (120000 - dataTransferDuration) / 1000;
+                if (remainingSeconds < 0) remainingSeconds = 0;
+                displayManager->updateBLEWaitingScreenCountdown(remainingSeconds);
+                lastCountdownUpdate = currentTime;
+            }
+            
+            // Timeout after 120 seconds
+            if (dataTransferDuration > 120000) {
+                ESP_LOGI(TAG, "Sensor data transfer timeout - returning to IDLE");
+                displayingSensorData = false;  // Reset flag
+                displayManager->drawHomeScreen();
+                changeState(AppState::IDLE);
+            }
+            break;
+        }
         case AppState::ERROR:
-            if (currentTime - status.uptime > 30000) {
+            if (currentTime - stateChangeTime > 30000) {
                 ESP_LOGI(TAG, "Auto-recovery from error");
+                displayManager->drawHomeScreen();
                 changeState(AppState::IDLE);
             }
             break;
     }
-    
-    // Update display
-    // if (displayManager) {
-    //     displayManager->update();
-    // }
-    
-    // Handle touch events
-    // if (displayManager && displayManager->isDisplayOn()) {
-    //     auto touchEvent = displayManager->getTouchEvent();
-    //     if (touchEvent.pressed) {
-    //         displayTimeout = currentTime + DISPLAY_TIMEOUT_MS;  // Reset display timeout
-    //     }
-    // }
-    
-    // Handle display timeout
-    // if (displayManager && displayManager->isDisplayOn() && 
-    //     currentTime > displayTimeout) {
-    //     displayManager->setDisplayOn(false);
-    //     changeState(AppState::SLEEP);
-    //     ESP_LOGI(TAG, "Display timeout - entering sleep mode");
-    // }
     
     // Log system info periodically
     if (currentTime % 60000 == 0) {  // Every minute
@@ -192,67 +274,66 @@ void HandheldApp::buttonCallback(button_event_t event) {
 void HandheldApp::handleButtonPress(button_event_t event) {
     // Reset display timeout on any button press
     displayTimeout = millis() + DISPLAY_TIMEOUT_MS;
-    // displayManager->setBrightness(100);  // Wake up display
     
-    switch (currentUIScreen) {
-        case DisplayScreen::HOME:
-            handleMenuNavigation(event);
-            break;
-        case DisplayScreen::SOIL_DATA:
-            handleSoilDataScreen();
-            break;
-        case DisplayScreen::DEVICE_CONFIG:
-            handleConfigScreen();
-            break;
-        default:
-            if (event == BUTTON_EVENT_CLICK) {
-                currentUIScreen = DisplayScreen::HOME;
-                displayManager->drawHomeScreen();
+    // Log all button events
+    const char* eventName = "";
+    switch(event) {
+        case BUTTON_EVENT_CLICK: eventName = "CLICK"; break;
+        case BUTTON_EVENT_DOUBLE_CLICK: eventName = "DOUBLE_CLICK"; break;
+        case BUTTON_EVENT_LONG_PRESS: eventName = "LONG_PRESS (1s)"; break;
+        case BUTTON_EVENT_EXTENDED_PRESS: eventName = "EXTENDED_PRESS (5s)"; break;
+        case BUTTON_EVENT_PRESS: eventName = "PRESS"; break;
+        case BUTTON_EVENT_RELEASE: eventName = "RELEASE"; break;
+        default: eventName = "UNKNOWN"; break;
+    }
+    ESP_LOGI(TAG, "📱 Button event: %s (state=%s)", eventName, 
+             currentState == AppState::IDLE ? "IDLE" : "OTHER");
+    
+    if (event == BUTTON_EVENT_CLICK) {
+        // Short click: Trigger on-demand sensor read
+        if (currentState == AppState::IDLE) {
+            ESP_LOGI(TAG, "📍 Button clicked - triggering sensor read...");
+            displayManager->drawMeasuringScreen();  // Show measuring screen
+            changeState(AppState::MEASURING);
+            
+            // Send trigger to sensor task
+            if (SensorTaskManager::triggerRead()) {
+                ESP_LOGI(TAG, "✅ Sensor read triggered - waiting for result...");
+            } else {
+                ESP_LOGE(TAG, "❌ Failed to trigger sensor read");
             }
-            break;
+        }
+    } 
+    else if (event == BUTTON_EVENT_LONG_PRESS) {
+        // 1s long-press: Reserved for future use
+        ESP_LOGI(TAG, "⏱️ Long press (1s) - reserved");
+    }
+    else if (event == BUTTON_EVENT_EXTENDED_PRESS) {
+        // 5s extended press: Context-dependent action
+        if (displayingSensorData) {
+            // If showing sensor data: Trigger BLE data transmission
+            ESP_LOGI(TAG, "📱 Extended press (5s) - starting sensor data BLE transmission");
+            displayingSensorData = false;  // Reset flag
+            changeState(AppState::SENSOR_DATA_TRANSFER);
+        } else if (currentState == AppState::IDLE) {
+            // In IDLE state without sensor data: WiFi config mode
+            ESP_LOGI(TAG, "🔧 Extended press (5s) - entering WiFi config mode");
+            changeState(AppState::WIFI_CONFIG);
+        }
     }
 }
 
 void HandheldApp::handleMenuNavigation(button_event_t event) {
-    switch (event) {
-        case BUTTON_EVENT_CLICK:
-            if (menuSelection == 0) {
-                // Read sensor and queue soil data display (async)
-                readSensorManual();
-                currentUIScreen = DisplayScreen::SOIL_DATA;
-                displayManager->displaySensorData(
-                    lastSensorReading.data.soil.soilTemperature,
-                    lastSensorReading.data.soil.soilMoisture,
-                    lastSensorReading.data.soil.pH,
-                    0.0f, 0.0f, 0.0f  // N, P, K placeholder
-                );
-            } else if (menuSelection == 1) {
-                // Navigate to device config screen (async)
-                currentUIScreen = DisplayScreen::DEVICE_CONFIG;
-                displayManager->drawText(20, 100, "Device Configuration", DisplayColor::ACCENT);
-                displayManager->drawText(20, 140, "WiFi: Not connected", DisplayColor::TEXT_PRIMARY);
-                displayManager->drawText(20, 160, "Firebase: Ready", DisplayColor::TEXT_SUCCESS);
-            }
-            break;
-        case BUTTON_EVENT_LONG_PRESS:
-            // Manual sensor read + upload (non-blocking command queued)
-            readSensorManual();
-            uploadNow();
-            break;
-        default:
-            break;
-    }
+    // Handled by handleButtonPress
 }
 
 void HandheldApp::handleSoilDataScreen() {
-    // Back button: return to HOME
-    currentUIScreen = DisplayScreen::HOME;
+    // Back to home screen
     displayManager->drawHomeScreen();
 }
 
 void HandheldApp::handleConfigScreen() {
-    // Back button: return to HOME
-    currentUIScreen = DisplayScreen::HOME;
+    // Back to home screen
     displayManager->drawHomeScreen();
 }
 
@@ -262,6 +343,30 @@ bool HandheldApp::initializeComponents() {
     initializeBuzzer();
     initializeWiFi();
     // initializeFirebase();
+    
+    // Initialize BLE provisioning (starts in stopped state)
+    bleProvisioning = new BleProvisioning();
+    if (!bleProvisioning) {
+        ESP_LOGE(TAG, "Failed to create BLE provisioning object");
+        return false;
+    }
+    
+    // Set callback for when WiFi credentials received via BLE
+    bleProvisioning->setProvisionCallback([this](const BleProvisioning::ProvisionData& data) {
+        onWiFiCredentialsReceived(data);
+    });
+    
+    ESP_LOGI(TAG, "BLE provisioning object created (will start when entering WIFI_CONFIG state)");
+    
+    // Initialize BLE sensor data service (starts in stopped state)
+    bleSensorData = new BleSensorData();
+    if (!bleSensorData) {
+        ESP_LOGE(TAG, "Failed to create BLE sensor data object");
+        return false;
+    }
+    
+    ESP_LOGI(TAG, "BLE sensor data object created (will start when entering SENSOR_DATA_TRANSFER state)");
+    
     return true;
 }
 
@@ -281,9 +386,10 @@ void HandheldApp::loadConfiguration() {
 
 bool HandheldApp::initializeButtons() {
     button_init();
-    button_set_long_press_time(3000);
+    button_set_long_press_time(1000);          // 1s for short long-press event
+    button_set_extended_press_time(5000);      // 5s for extended long-press (config mode)
     button_set_callback(buttonCallback);
-    ESP_LOGI(TAG, "Button initialized: IO3 pull-up");
+    ESP_LOGI(TAG, "Button initialized: GPIO3 (pull-up, 1s/5s long-press)");
     return true;
 }
 
@@ -303,20 +409,7 @@ bool HandheldApp::initializeDisplay() {
         return false;
     }
 
-    // Draw splash screen
-    auto display = displayManager->getDisplay();
-    display->setTextSize(3);
-    displayManager->drawText(80, 100, "KAGRI", DisplayColor::ACCENT);
-
-    display->setTextSize(2);
-    // Hiển thị tên model
-    displayManager->drawText(20, 150, HANDHELD_DEVICE_MODEL, DisplayColor::TEXT_WARN);
-    // Hiển thị version
-    char version_str[32];
-    snprintf(version_str, sizeof(version_str), "Version %s", HANDHELD_FIRMWARE_VER);
-    displayManager->drawText(20, 180, version_str, DisplayColor::TEXT_WARN);
-
-    vTaskDelay(5000 / portTICK_PERIOD_MS);
+    displayManager->drawInitialScreen();
 
     displayManager->drawHomeScreen();
     
@@ -342,25 +435,29 @@ bool HandheldApp::initializeSensor() {
 bool HandheldApp::initializeWiFi() {
     WiFi.mode(WIFI_STA);
     
-    nvs_handle_t handle;
-    if (nvs_open("nvs.wifi", NVS_READONLY, &handle) == ESP_OK) {
-        char ssid[32] = {0};
-        char password[64] = {0};
-        size_t ssid_len = 32, pwd_len = 64;
+    // Try to load WiFi credentials from NVS
+    char ssid[32] = {0};
+    char password[64] = {0};
+    
+    if (loadWiFiCredentialsFromNVS(ssid, sizeof(ssid), password, sizeof(password))) {
+        WiFi.begin(ssid, password);
+        ESP_LOGI(TAG, "Attempting WiFi connection with stored credentials: %s", ssid);
         
-        if (nvs_get_str(handle, "ssid", ssid, &ssid_len) == ESP_OK &&
-            nvs_get_str(handle, "password", password, &pwd_len) == ESP_OK) {
-            WiFi.begin(ssid, password);
-            ESP_LOGI(TAG, "Connecting to WiFi: %s", ssid);
-            
-            for (int i = 0; i < 20 && !WiFi.isConnected(); i++) {
-                delay(500);
-            }
+        // Wait up to 10 seconds for connection
+        for (int i = 0; i < 20 && !WiFi.isConnected(); i++) {
+            delay(500);
         }
-        nvs_close(handle);
+        
+        if (WiFi.isConnected()) {
+            ESP_LOGI(TAG, "✓ WiFi Connected: IP=%s", WiFi.localIP().toString().c_str());
+        } else {
+            ESP_LOGW(TAG, "✗ WiFi connection failed - will retry on next boot");
+        }
+    } else {
+        ESP_LOGI(TAG, "No stored WiFi credentials - device operational without WiFi");
+        ESP_LOGI(TAG, "Configure WiFi via BLE when needed (hold button 5s)");
     }
     
-    ESP_LOGI(TAG, "WiFi: %s", WiFi.isConnected() ? "Connected" : "Not connected");
     return true;
 }
 
@@ -378,11 +475,194 @@ void HandheldApp::updateSystemStatus() {
 }
 
 void HandheldApp::changeState(AppState newState) {
+    ESP_LOGI(TAG, "changeState() called: currentState=%d, newState=%d", (int)currentState, (int)newState);
     if (currentState != newState) {
+        // Handle state-specific exit transitions (BEFORE changing state)
+        if (currentState == AppState::WIFI_CONFIG) {
+            // Stop BLE when leaving WiFi config mode
+            if (bleProvisioning && bleProvisioning->isActive()) {
+                ESP_LOGI(TAG, "Stopping BLE provisioning...");
+                bleProvisioning->stop();
+            }
+        } else if (currentState == AppState::SENSOR_DATA_TRANSFER) {
+            // Stop BLE sensor data when leaving this state
+            if (bleSensorData && bleSensorData->isActive()) {
+                ESP_LOGI(TAG, "Stopping BLE sensor data...");
+                bleSensorData->stop();
+            }
+        }
+        
         ESP_LOGI(TAG, "State change: %d -> %d", (int)currentState, (int)newState);
         currentState = newState;
         stateChangeTime = millis();
+        ESP_LOGI(TAG, "stateChangeTime updated to %lu", stateChangeTime);
+        
+        // Reset beep flag when entering MEASURING state
+        if (newState == AppState::MEASURING) {
+            beepedForCurrentMeasurement = false;
+        }
+        
+        // Handle state-specific entry transitions (AFTER changing state)
+        if (newState == AppState::WIFI_CONFIG) {
+            // Start BLE advertising when entering WiFi config mode
+            if (bleProvisioning) {
+                ESP_LOGI(TAG, "Starting BLE provisioning...");
+                if (bleProvisioning->begin()) {
+                    ESP_LOGI(TAG, "BLE provisioning started successfully");
+                } else {
+                    ESP_LOGE(TAG, "Failed to start BLE provisioning");
+                }
+            }
+        } else if (newState == AppState::SENSOR_DATA_TRANSFER) {
+            // Start BLE sensor data service
+            if (bleSensorData) {
+                ESP_LOGI(TAG, "Starting BLE sensor data service...");
+                if (bleSensorData->begin()) {
+                    ESP_LOGI(TAG, "BLE sensor data service started successfully");
+                    // Send current sensor data immediately
+                    if (hasNewSensorData) {
+                        bleSensorData->sendSensorData(lastSensorReading);
+                    }
+                } else {
+                    ESP_LOGE(TAG, "Failed to start BLE sensor data service");
+                }
+            }
+        }
+    } else {
+        ESP_LOGI(TAG, "State already is %d, not changing", (int)currentState);
     }
+}
+
+void HandheldApp::onWiFiCredentialsReceived(const BleProvisioning::ProvisionData& data) {
+    ESP_LOGI(TAG, "WiFi credentials received from BLE:");
+    ESP_LOGI(TAG, "  SSID: %s", data.ssid.c_str());
+    ESP_LOGI(TAG, "  UserUID: %s", data.userUID.c_str());
+    
+    // Display receiving credentials screen
+    displayManager->drawCredentialsReceivedScreen(data.ssid.c_str(), -45);
+    delay(1000);  // Show credentials screen for 1 second
+    
+    // Store credentials to NVS
+    if (saveWiFiCredentialsToNVS(data.ssid.c_str(), data.password.c_str())) {
+        ESP_LOGI(TAG, "WiFi credentials saved to NVS");
+    } else {
+        ESP_LOGE(TAG, "Failed to save WiFi credentials to NVS");
+    }
+    
+    // Display connecting screen
+    displayManager->drawWiFiConnectingScreen(0);
+    
+    // Connect to WiFi
+    WiFi.begin(data.ssid.c_str(), data.password.c_str());
+    ESP_LOGI(TAG, "Connecting to WiFi: %s", data.ssid.c_str());
+    
+    // Wait up to 10 seconds for WiFi connection with progress updates
+    int progress = 0;
+    for (int i = 0; i < 20 && !WiFi.isConnected(); i++) {
+        delay(500);
+        progress = (i * 100) / 20;
+        displayManager->drawWiFiConnectingScreen(progress);
+    }
+    
+    // Display result based on connection status
+    if (WiFi.isConnected()) {
+        ESP_LOGI(TAG, "✓ WiFi connected! IP: %s", WiFi.localIP().toString().c_str());
+        displayManager->drawWiFiConnectSuccessScreen(WiFi.localIP().toString().c_str());
+        
+        // Show success screen for 3 seconds before returning to HOME
+        delay(3000);
+    } else {
+        ESP_LOGW(TAG, "✗ WiFi connection failed - timeout");
+        displayManager->drawWiFiConnectErrorScreen("Connection timeout");
+        
+        // Show error screen for 3 seconds before returning to HOME
+        delay(3000);
+    }
+    
+    // Return to HOME screen
+    displayManager->drawHomeScreen();
+    changeState(AppState::IDLE);
+}
+
+bool HandheldApp::saveWiFiCredentialsToNVS(const char* ssid, const char* password) {
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS handle: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    err = nvs_set_str(nvs_handle, "wifi_ssid", ssid);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save SSID: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return false;
+    }
+    
+    err = nvs_set_str(nvs_handle, "wifi_password", password);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save password: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return false;
+    }
+    
+    err = nvs_commit(nvs_handle);
+    nvs_close(nvs_handle);
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to commit NVS: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    ESP_LOGI(TAG, "WiFi credentials saved: SSID=%s", ssid);
+    return true;
+}
+
+bool HandheldApp::loadWiFiCredentialsFromNVS(char* ssid, size_t ssid_len, char* password, size_t password_len) {
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "No NVS WiFi credentials available");
+        return false;
+    }
+    
+    err = nvs_get_str(nvs_handle, "wifi_ssid", ssid, &ssid_len);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to read SSID from NVS: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return false;
+    }
+    
+    err = nvs_get_str(nvs_handle, "wifi_password", password, &password_len);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to read password from NVS: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return false;
+    }
+    
+    nvs_close(nvs_handle);
+    ESP_LOGI(TAG, "WiFi credentials loaded from NVS: SSID=%s", ssid);
+    return true;
+}
+
+bool HandheldApp::clearWiFiCredentialsFromNVS() {
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS handle: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    nvs_erase_key(nvs_handle, "wifi_ssid");
+    nvs_erase_key(nvs_handle, "wifi_password");
+    err = nvs_commit(nvs_handle);
+    nvs_close(nvs_handle);
+    
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi credentials cleared from NVS");
+        return true;
+    }
+    return false;
 }
 
 void HandheldApp::logSystemInfo() {
@@ -442,6 +722,15 @@ void HandheldApp::handleWiFiReconnect() {
 
 void HandheldApp::handleError(const String& error) {
     ESP_LOGE(TAG, "Error: %s", error.c_str());
+    displayManager->drawErrorScreen(error.c_str());
+    changeState(AppState::ERROR);
+}
+
+void HandheldApp::beepSuccess() {
+    // Single beep to indicate successful sensor reading (500ms)
+    digitalWrite(BUZZER_PIN, LOW);   // Active low - beep ON
+    vTaskDelay(pdMS_TO_TICKS(500));  // 500ms beep duration
+    digitalWrite(BUZZER_PIN, HIGH);  // Turn off - beep OFF
 }
 
 void HandheldApp::storeSensorDataOffline(const sensorData& data) {

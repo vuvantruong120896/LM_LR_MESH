@@ -9,10 +9,12 @@
 #include "application/common/device_type.h"
 #include "components/rs485_soil_sensor/include/sensor_task.h"
 #include "components/button_led/include/button_control.h"
-#include "components/tft_display/include/tft_display_manager.h"
+#include "components/tft_display/include/tft_display_manager_lvgl.h"
 //#include "components/tft_display/include/display_task.h"  // For DisplayScreen enum
 //#include "components/lora_mesh_manager/include/wifi_connection_service.h"  // TODO: Create simplified WiFi service
 #include "firebase_uploader.h"
+#include "ble_provisioning.h"  // BLE WiFi configuration
+#include "ble_sensor_data.h"   // BLE sensor data transmission
 
 /**
  * @brief Handheld Device Application
@@ -43,7 +45,8 @@ public:
         UPLOADING,         ///< Uploading data to Firebase
         SLEEP,             ///< Display off, low power mode
         ERROR,             ///< Error state
-        WIFI_CONFIG        ///< WiFi configuration mode
+        WIFI_CONFIG,       ///< WiFi configuration mode
+        SENSOR_DATA_TRANSFER  ///< Transmitting sensor data via BLE
     };
 
     /**
@@ -113,14 +116,29 @@ public:
      */
     void factoryReset();
 
+    /**
+     * @brief WiFi Config Sub-states
+     */
+    enum class WiFiConfigState {
+        WAITING_FOR_APP,    ///< Show start screen, waiting for app connection (5s)
+        APP_CONNECTED,      ///< Show waiting screen, receiving credentials
+        CREDENTIALS_RECEIVED,///< Show credentials confirmation
+        CONNECTING_WIFI,    ///< Connecting to WiFi
+        SUCCESS,            ///< Connection successful
+        ERROR               ///< Connection error
+    };
+
 private:
     // Core components
     //WiFiConnectionService* wifiService;  // TODO: Implement simplified WiFi service
-    TFTDisplayManager* displayManager;
+    DisplayManager* displayManager;
     FirebaseUploader* firebaseUploader;
+    BleProvisioning* bleProvisioning;  // BLE WiFi provisioning
+    BleSensorData* bleSensorData;      // BLE sensor data transmission
     
     // State management
     AppState currentState;
+    WiFiConfigState wifiConfigSubState;  // Sub-state within WIFI_CONFIG
     uint32_t lastSensorRead;
     uint32_t lastAutoUpload;
     uint32_t lastBatteryCheck;
@@ -131,6 +149,8 @@ private:
     sensorData lastSensorReading;
     std::vector<sensorData> offlineReadings;
     bool hasNewSensorData;
+    bool beepedForCurrentMeasurement;  // Flag to ensure beep only happens once per measurement
+    bool displayingSensorData;  // Track if currently showing sensor data screen
     
     // System status
     SystemStatus status;
@@ -148,11 +168,16 @@ private:
     
     void handleButtonPress(button_event_t event);
     void handleSensorReading();
+    void beepSuccess();  // Beep to signal sensor reading completion
     void handleAutoUpload();
     void handleDisplayUpdate();
     void handleBatteryCheck();
     void handleWiFiReconnect();
     void readSensorManual();  // Manual sensor read on button press
+    void onWiFiCredentialsReceived(const BleProvisioning::ProvisionData& data);  // BLE callback
+    bool saveWiFiCredentialsToNVS(const char* ssid, const char* password);
+    bool loadWiFiCredentialsFromNVS(char* ssid, size_t ssid_len, char* password, size_t password_len);
+    bool clearWiFiCredentialsFromNVS();
     
     void updateSystemStatus();
     void changeState(AppState newState);
@@ -185,7 +210,6 @@ private:
     unsigned long lastWiFiCheck;
     
     // UI navigation
-    DisplayScreen currentUIScreen;
     int menuSelection;
     void handleMenuNavigation(button_event_t event);
     void handleSoilDataScreen();

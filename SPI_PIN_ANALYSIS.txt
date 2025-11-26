@@ -1,0 +1,31 @@
+/*
+ESP32-S3 SPI Port Pin Mapping Reference:
+
+SPI2 (HSPI):
+  MOSI: GPIO11, GPIO13, GPIO14, GPIO23
+  MISO: GPIO2, GPIO12, GPIO37, GPIO39
+  CLK:  GPIO10, GPIO12, GPIO14, GPIO18 (primary), GPIO26
+  CS:   Any GPIO
+
+SPI3 (VSPI) - **NOT AVAILABLE on S3** (S3 has SPI2 as main SPI)
+  Removed from S3!
+
+Current Handheld Config:
+  MOSI: GPIO19 ❌ NOT standard SPI pin
+  MISO: GPIO16 ❌ NOT standard SPI pin
+  CLK:  GPIO18 ✅ Can work for SPI2
+  CS:   GPIO5  ✅ Any GPIO OK
+  DC:   GPIO46 ✅ Any GPIO OK
+
+Analysis:
+- GPIO19 & GPIO16 are NOT valid SPI pins on ESP32-S3
+- These pins might work with GPIO matrix routing (slower)
+- TFT_eSPI might be trying to use VSPI (doesn't exist on S3)
+- Library might be using invalid pin configuration
+
+Solution:
+Need to check if TFT_eSPI can auto-route these pins or if we need HSPI with different pins.
+*/
+
+// Check TFT_eSPI SPI port detection
+// In TFT_eSPI Setup files, check the SPI port assignment logic

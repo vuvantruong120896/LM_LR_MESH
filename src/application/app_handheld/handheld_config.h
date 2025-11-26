@@ -3,8 +3,9 @@
 
 // Device identification
 #define HANDHELD_DEVICE_TYPE    DeviceType::HANDHELD
-#define HANDHELD_DEVICE_NAME    "KAgri Handheld"
-#define HANDHELD_FIRMWARE_VER   "1.0.0"
+#define HANDHELD_DEVICE_NAME    "Kagri Handheld"
+#define HANDHELD_FIRMWARE_VER   "V1.0.0"
+#define HANDHELD_DEVICE_MODEL   "MODEL KGI-01"
 
 // GPIO Pin Configuration for ESP32-S3
 // LCD TFT 2.4" ILI9341 SPI pins (actual hardware wiring - VERIFIED WORKING)
