@@ -10,7 +10,7 @@
 #include "components/rs485_soil_sensor/include/sensor_task.h"
 #include "components/button_led/include/button_control.h"
 #include "components/tft_display/include/tft_display_manager.h"
-#include "components/tft_display/include/display_task.h"  // For DisplayScreen enum
+//#include "components/tft_display/include/display_task.h"  // For DisplayScreen enum
 //#include "components/lora_mesh_manager/include/wifi_connection_service.h"  // TODO: Create simplified WiFi service
 #include "firebase_uploader.h"
 

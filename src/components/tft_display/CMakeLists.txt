@@ -1,11 +1,8 @@
 idf_component_register(
     SRCS 
-        "src/display_manager.cpp"
-        "src/simple_ili9341.cpp"
-        "src/display_task.cpp"
+        "src/tft_display_manager.cpp"
     INCLUDE_DIRS 
         "include"
     REQUIRES
         "arduino"
-        "nvs_flash"
 )
