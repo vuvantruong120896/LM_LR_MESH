@@ -132,8 +132,9 @@ float BatteryMonitor::readVoltage() {
     // Round to 2 decimal places for consistency
     battery_voltage = roundf(battery_voltage * 100.0f) / 100.0f;
 
-    ESP_LOGD(TAG, "Raw ADC: %d → %umV → %.2fV → VBAT: %.2fV (eFuse calibrated)", 
-             raw_adc, voltage_mv, adc_voltage, battery_voltage);
+    // Disable verbose logging - too much spam
+    // ESP_LOGD(TAG, "Raw ADC: %d → %umV → %.2fV → VBAT: %.2fV (eFuse calibrated)", 
+    //          raw_adc, voltage_mv, adc_voltage, battery_voltage);
 
     return battery_voltage;
 }
@@ -159,8 +160,9 @@ uint8_t BatteryMonitor::voltageToPercentage(float voltage) {
     if (percentage < 0.0f) percentage = 0.0f;
     if (percentage > 100.0f) percentage = 100.0f;
 
-    ESP_LOGI(TAG, "[BatteryMonitor] %.2fV → %d%% [%.1fV - %.1fV range]", 
-             voltage, (uint8_t)percentage, BATTERY_VOLTAGE_MIN, BATTERY_VOLTAGE_MAX);
+    // Disable verbose logging - too much spam
+    // ESP_LOGI(TAG, "[BatteryMonitor] %.2fV → %d%% [%.1fV - %.1fV range]", 
+    //          voltage, (uint8_t)percentage, BATTERY_VOLTAGE_MIN, BATTERY_VOLTAGE_MAX);
 
     return (uint8_t)percentage;
 }

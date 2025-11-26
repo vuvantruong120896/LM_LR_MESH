@@ -1,7 +1,10 @@
 #pragma once
 
-#include <TFT_eSPI.h>
+#include <LovyanGFX.hpp>
 #include <stdint.h>
+#include <esp_log.h>
+
+#define TAG_DISPLAY "TFTDisplay"
 
 // Screen types
 enum class DisplayScreen {
@@ -23,8 +26,8 @@ public:
     
     void init();
     bool initialize();
-    void clear(uint16_t color = TFT_BLACK);
-    void drawText(uint16_t x, uint16_t y, const char* text, uint16_t color = TFT_WHITE, uint16_t bg = TFT_BLACK);
+    void clear(uint16_t color = 0x0000);
+    void drawText(uint16_t x, uint16_t y, const char* text, uint16_t color = 0xFFFF, uint16_t bg = 0x0000);
     void fillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
     void drawRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
     void drawPixel(uint16_t x, uint16_t y, uint16_t color);
@@ -38,13 +41,21 @@ public:
     // Color utilities
     uint16_t RGB565(uint8_t r, uint8_t g, uint8_t b);
     
-    // Direct access to TFT object
-    TFT_eSPI* getTFT() { return &tft; }
+    // Backlight control
+    void enableBacklight();
+    void disableBacklight();
+    
+    // Direct access to display object
+    LGFX_Device* getDisplay() { return display; }
+    
+    // Destructor
+    ~DisplayManager();
     
 private:
     DisplayManager();
     static DisplayManager* instance;
-    TFT_eSPI tft;
+    LGFX_Device* display;
+    bool initialized;
 };
 
 // For backward compatibility

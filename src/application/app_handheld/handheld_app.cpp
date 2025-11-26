@@ -7,6 +7,8 @@
 #include "../../components/rs485_soil_sensor/include/soil_sensor_service.h"
 #include "../../components/rs485_soil_sensor/include/sensor_task.h"
 #include "../../components/tft_display/include/tft_display_manager.h"
+#include "../../components/tft_display/include/tft_init_helper.h"
+#include "../../components/tft_display/include/display_colors.h"
 #include <esp_log.h>
 #include <esp_system.h>
 #include <nvs_flash.h>
@@ -227,9 +229,9 @@ void HandheldApp::handleMenuNavigation(button_event_t event) {
             } else if (menuSelection == 1) {
                 // Navigate to device config screen (async)
                 currentUIScreen = DisplayScreen::DEVICE_CONFIG;
-                displayManager->drawText(20, 100, "Device Configuration", 0x07FF);
-                displayManager->drawText(20, 140, "WiFi: Not connected", 0xFFFF);
-                displayManager->drawText(20, 160, "Firebase: Ready", 0x07E0);
+                displayManager->drawText(20, 100, "Device Configuration", DisplayColor::ACCENT);
+                displayManager->drawText(20, 140, "WiFi: Not connected", DisplayColor::TEXT_PRIMARY);
+                displayManager->drawText(20, 160, "Firebase: Ready", DisplayColor::TEXT_SUCCESS);
             }
             break;
         case BUTTON_EVENT_LONG_PRESS:
@@ -259,7 +261,7 @@ bool HandheldApp::initializeComponents() {
     initializeSensor();
     initializeBuzzer();
     initializeWiFi();
-    initializeFirebase();
+    // initializeFirebase();
     return true;
 }
 
@@ -295,18 +297,26 @@ bool HandheldApp::initializeBuzzer() {
 }
 
 bool HandheldApp::initializeDisplay() {
-    displayManager = TFTDisplayManager::getInstance();
+    displayManager = DisplayManager::getInstance();
     if (!displayManager->initialize()) {
         ESP_LOGE(TAG, "Display init failed");
         return false;
     }
 
-    displayManager->clear();
-
     // Draw splash screen
-    displayManager->drawText(40, 150, "KAGRI SYSTEM", 0x07FF);
-    displayManager->drawText(60, 170, "Loading...", 0xFFFF);
-    vTaskDelay(3000 / portTICK_PERIOD_MS);
+    auto display = displayManager->getDisplay();
+    display->setTextSize(3);
+    displayManager->drawText(80, 100, "KAGRI", DisplayColor::ACCENT);
+
+    display->setTextSize(2);
+    // Hiển thị tên model
+    displayManager->drawText(20, 150, HANDHELD_DEVICE_MODEL, DisplayColor::TEXT_WARN);
+    // Hiển thị version
+    char version_str[32];
+    snprintf(version_str, sizeof(version_str), "Version %s", HANDHELD_FIRMWARE_VER);
+    displayManager->drawText(20, 180, version_str, DisplayColor::TEXT_WARN);
+
+    vTaskDelay(5000 / portTICK_PERIOD_MS);
 
     displayManager->drawHomeScreen();
     
