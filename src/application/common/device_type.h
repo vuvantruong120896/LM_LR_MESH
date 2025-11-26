@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>  // For strcmp function
 
 /**
  * @brief Device type enumeration for multi-sensor IoT system
@@ -16,8 +17,9 @@ enum class DeviceType : uint8_t {
     SOIL_SENSOR = 2,       ///< Soil moisture sensor (7 parameters: moisture, temp, pH, EC, N, P, K)
     ENV_SENSOR = 3,        ///< Environment sensor (temp, humidity, pressure, light)
     WATER_SENSOR = 4,      ///< Water quality sensor (pH, TDS, temp, turbidity)
-    CAMERA = 5,            ///< Camera + AI vision
-    ACTUATOR = 6,          ///< Actuator device (relay, valve, motor control)
+    HANDHELD = 5,          ///< Handheld device (RS485 soil sensor + WiFi Firebase + LCD display)
+    CAMERA = 6,            ///< Camera + AI vision
+    ACTUATOR = 7,          ///< Actuator device (relay, valve, motor control)
     CUSTOM = 255           ///< Custom sensor type (user-defined)
 };
 
@@ -33,6 +35,7 @@ inline const char* deviceTypeToString(DeviceType type) {
         case DeviceType::SOIL_SENSOR:  return "soil_sensor";
         case DeviceType::ENV_SENSOR:   return "env_sensor";
         case DeviceType::WATER_SENSOR: return "water_sensor";
+        case DeviceType::HANDHELD:     return "handheld";
         case DeviceType::CAMERA:       return "camera";
         case DeviceType::ACTUATOR:     return "actuator";
         case DeviceType::CUSTOM:       return "custom";
@@ -50,6 +53,7 @@ inline DeviceType stringToDeviceType(const char* str) {
     if (strcmp(str, "soil_sensor") == 0)  return DeviceType::SOIL_SENSOR;
     if (strcmp(str, "env_sensor") == 0)   return DeviceType::ENV_SENSOR;
     if (strcmp(str, "water_sensor") == 0) return DeviceType::WATER_SENSOR;
+    if (strcmp(str, "handheld") == 0)     return DeviceType::HANDHELD;
     if (strcmp(str, "camera") == 0)       return DeviceType::CAMERA;
     if (strcmp(str, "actuator") == 0)     return DeviceType::ACTUATOR;
     if (strcmp(str, "custom") == 0)       return DeviceType::CUSTOM;

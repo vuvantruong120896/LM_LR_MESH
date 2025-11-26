@@ -5,11 +5,11 @@
 
 // Default button configuration (can be overridden by app_config.h)
 #ifndef BOARD_BUTTON
-#define BOARD_BUTTON    2  // GPIO2 is common for ESP32 DevKit boards
+#define BOARD_BUTTON    3  // GPIO3 for handheld (can override in config)
 #endif
 
 #ifndef BUTTON_PRESSED
-#define BUTTON_PRESSED  LOW  // Active LOW (typical for ESP32 boards)
+#define BUTTON_PRESSED  LOW  // Active LOW (pull-up, typical for ESP32)
 #endif
 
 #ifndef BUTTON_DEBOUNCE_MS

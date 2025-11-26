@@ -12,21 +12,28 @@
 #endif
 
 #include <Arduino.h>
-#include "components/lora_mesh_manager/include/LoraMesher.h"
 
-// Global radio reference for common utilities
-LoraMesher &radio = LoraMesher::getInstance();
-
-#if DEVICE_MODE == 2
+#if DEVICE_MODE == 4
+// Handheld mode
+#include "application/app_handheld/handheld_app.h"
+static HandheldApp app;
+#define LM_TAG "HandheldMAIN"
+#elif DEVICE_MODE == 2
 // Gateway mode
+#include "components/lora_mesh_manager/include/LoraMesher.h"
 #include "application/app_gateway/gateway_app.h"
 static GatewayApp app;
 #define LM_TAG "GatewayMAIN"
+// Global radio reference for common utilities
+LoraMesher &radio = LoraMesher::getInstance();
 #else
 // Node mode (default)
+#include "components/lora_mesh_manager/include/LoraMesher.h"
 #include "application/app_node/node_app.h"
 static NodeApp app;
 #define LM_TAG "NodeMAIN"
+// Global radio reference for common utilities
+LoraMesher &radio = LoraMesher::getInstance();
 #endif
 
 // ===== MAIN ARDUINO FUNCTIONS =====

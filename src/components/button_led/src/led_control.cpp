@@ -1,5 +1,16 @@
 #include "led_control.h"
 
+// LED pin definitions (will be defined in app config)
+#ifndef BOARD_LED
+#define BOARD_LED 8  // Default ESP32-S3 built-in LED
+#endif
+#ifndef LED_ON
+#define LED_ON HIGH
+#endif
+#ifndef LED_OFF
+#define LED_OFF LOW
+#endif
+
 void led_init() {
     pinMode(BOARD_LED, OUTPUT);
     led_off();

@@ -2,6 +2,7 @@
 #define _SENSOR_DATA_H
 
 #include <cstdint>
+#include "../../application/common/device_type.h"  // Include DeviceType definition
 
 /**
  * @file sensor_data.h
@@ -11,15 +12,6 @@
  * No dependencies on LoRa, mesh, or application code.
  * Can be used in test environments or minimal builds.
  */
-
-/**
- * @brief Device type enumeration
- */
-enum class DeviceType : uint8_t {
-    SOIL_SENSOR = 1,      ///< 7-parameter soil sensor (NPK + pH + EC + moisture + temp)
-    ENV_SENSOR = 2,       ///< Environment sensor (temp + humidity + pressure + light)
-    UNKNOWN = 255         ///< Unknown or uninitialized
-};
 
 /**
  * @brief Unified sensor data structure supporting multiple sensor types

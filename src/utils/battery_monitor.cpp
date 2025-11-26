@@ -29,7 +29,7 @@ bool BatteryMonitor::init() {
     // This corrects for chip-specific internal Vref variation (1100-1200mV)
     esp_adc_cal_value_t cal_status = esp_adc_cal_characterize(
         ADC_UNIT_1,                           // ADC1 (GPIO8 is on ADC1)
-        ADC_ATTEN_DB_11,                      // Attenuation 11dB (0-3.3V)
+        ADC_ATTEN_DB_12,                      // Attenuation 12dB (0-3.3V) for ESP32-S3
         ADC_WIDTH_BIT_12,                     // 12-bit resolution (0-4095)
         ADC_VREF_MV,                          // Use typical Vref as default
         adc_chars
