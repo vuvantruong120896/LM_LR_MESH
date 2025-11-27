@@ -73,12 +73,34 @@ void BleProvisioning::stop() {
     
     ESP_LOGI(TAG, "Stopping BLE provisioning...");
     
-    if (_server) {
+    try {
+        // Stop advertising first
         NimBLEDevice::getAdvertising()->stop();
-        _server->disconnect(0);  // Disconnect all clients
+        ESP_LOGI(TAG, "Advertising stopped");
+        
+        // Disconnect all clients
+        if (_server) {
+            // Get all connected devices and disconnect them
+            std::vector<uint16_t> connHandles = _server->getPeerDevices();
+            ESP_LOGI(TAG, "Found %d connected clients", connHandles.size());
+            for (auto connHandle : connHandles) {
+                ESP_LOGI(TAG, "Disconnecting client with handle: %d", connHandle);
+                _server->disconnect(connHandle);
+            }
+        }
+        
+        // Small delay to allow disconnect to complete
+        delay(100);
+        
+        // Deinit NimBLE safely
+        NimBLEDevice::deinit(false);  // false = don't force, allow graceful shutdown
+        ESP_LOGI(TAG, "NimBLE deinitialized");
+        
+    } catch (const std::exception& e) {
+        ESP_LOGE(TAG, "Exception during BLE stop: %s", e.what());
+    } catch (...) {
+        ESP_LOGE(TAG, "Unknown exception during BLE stop");
     }
-    
-    NimBLEDevice::deinit(true);
     
     _active = false;
     _server = nullptr;
@@ -184,6 +206,8 @@ void BleProvisioning::ServerCallbacks::onConnect(NimBLEServer* pServer) {
 
 void BleProvisioning::ServerCallbacks::onDisconnect(NimBLEServer* pServer) {
     ESP_LOGI(TAG, "Client disconnected from BLE");
-    // Restart advertising so app can reconnect if needed
-    NimBLEDevice::startAdvertising();
+    // Only restart advertising if provisioning is still active
+    if (_parent && _parent->isActive()) {
+        NimBLEDevice::startAdvertising();
+    }
 }

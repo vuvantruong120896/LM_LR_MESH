@@ -35,6 +35,10 @@ HandheldApp::HandheldApp() :
     hasNewSensorData(false),
     beepedForCurrentMeasurement(false),
     displayingSensorData(false),
+    wifiConfigScreenDrawn(false),
+    wifiConfigLastCountdownUpdate(0),
+    sensorDataScreenDrawn(false),
+    sensorDataLastCountdownUpdate(0),
     stateChangeTime(0),
     lastUploadTime(0),
     lastWiFiCheck(0),
@@ -139,20 +143,18 @@ void HandheldApp::loop() {
             uint32_t wifiConfigDuration = currentTime - stateChangeTime;
             wifiConfigSubState = WiFiConfigState::APP_CONNECTED;
             
-            // Draw full screen only once, then update countdown only
-            static bool screenDrawn = false;
-            if (!screenDrawn) {
+            // Draw full screen only once per state entry, then update countdown only
+            if (!wifiConfigScreenDrawn) {
                 displayManager->drawBLEWaitingScreen(60);
-                screenDrawn = true;
+                wifiConfigScreenDrawn = true;
             }
             
             // Update countdown every 1 second (only refresh countdown text)
-            static uint32_t lastCountdownUpdate = 0;
-            if (currentTime - lastCountdownUpdate > 1000) {  // Update every 1 second
+            if (currentTime - wifiConfigLastCountdownUpdate > 1000) {  // Update every 1 second
                 int remainingSeconds = (60000 - wifiConfigDuration) / 1000;
                 if (remainingSeconds < 0) remainingSeconds = 0;
                 displayManager->updateBLEWaitingScreenCountdown(remainingSeconds);
-                lastCountdownUpdate = currentTime;
+                wifiConfigLastCountdownUpdate = currentTime;
             }
             
             // Log every 5 seconds for debugging
@@ -176,20 +178,18 @@ void HandheldApp::loop() {
             // Sensor data transmission via BLE
             uint32_t dataTransferDuration = currentTime - stateChangeTime;
             
-            // Draw full screen only once, then update countdown only
-            static bool screenDrawn = false;
-            if (!screenDrawn) {
+            // Draw full screen only once per state entry, then update countdown only
+            if (!sensorDataScreenDrawn) {
                 displayManager->drawBLEWaitingScreen(120);  // 120 second timeout for data transfer
-                screenDrawn = true;
+                sensorDataScreenDrawn = true;
             }
             
             // Update countdown every 1 second
-            static uint32_t lastCountdownUpdate = 0;
-            if (currentTime - lastCountdownUpdate > 1000) {
+            if (currentTime - sensorDataLastCountdownUpdate > 1000) {
                 int remainingSeconds = (120000 - dataTransferDuration) / 1000;
                 if (remainingSeconds < 0) remainingSeconds = 0;
                 displayManager->updateBLEWaitingScreenCountdown(remainingSeconds);
-                lastCountdownUpdate = currentTime;
+                sensorDataLastCountdownUpdate = currentTime;
             }
             
             // Timeout after 120 seconds
@@ -470,7 +470,7 @@ void HandheldApp::updateSystemStatus() {
     status.uptime = millis();
     status.freeHeap = ESP.getFreeHeap();
     status.wifiConnected = WiFi.isConnected();
-    status.batteryLevel = (float)BatteryMonitor::getPercentage();
+    // status.batteryLevel = (float)BatteryMonitor::getPercentage();
     status.sensorStatus = true; // Would check actual sensor status
 }
 
@@ -484,12 +484,18 @@ void HandheldApp::changeState(AppState newState) {
                 ESP_LOGI(TAG, "Stopping BLE provisioning...");
                 bleProvisioning->stop();
             }
+            // Reset screenDrawn flag for next WiFi_CONFIG entry
+            wifiConfigScreenDrawn = false;
+            wifiConfigLastCountdownUpdate = 0;
         } else if (currentState == AppState::SENSOR_DATA_TRANSFER) {
             // Stop BLE sensor data when leaving this state
             if (bleSensorData && bleSensorData->isActive()) {
                 ESP_LOGI(TAG, "Stopping BLE sensor data...");
                 bleSensorData->stop();
             }
+            // Reset screenDrawn flag for next SENSOR_DATA_TRANSFER entry
+            sensorDataScreenDrawn = false;
+            sensorDataLastCountdownUpdate = 0;
         }
         
         ESP_LOGI(TAG, "State change: %d -> %d", (int)currentState, (int)newState);
@@ -556,32 +562,49 @@ void HandheldApp::onWiFiCredentialsReceived(const BleProvisioning::ProvisionData
     WiFi.begin(data.ssid.c_str(), data.password.c_str());
     ESP_LOGI(TAG, "Connecting to WiFi: %s", data.ssid.c_str());
     
-    // Wait up to 10 seconds for WiFi connection with progress updates
+    // Wait up to 15 seconds for WiFi connection with progress updates
+    // Check both connected status AND got valid IP
     int progress = 0;
-    for (int i = 0; i < 20 && !WiFi.isConnected(); i++) {
+    bool wifiConnected = false;
+    for (int i = 0; i < 30 && !wifiConnected; i++) {  // 30 iterations × 500ms = 15 seconds
         delay(500);
-        progress = (i * 100) / 20;
+        progress = (i * 100) / 30;
         displayManager->drawWiFiConnectingScreen(progress);
+        
+        // Check if connected AND has valid IP (not 0.0.0.0)
+        if (WiFi.isConnected() && WiFi.localIP() != IPAddress(0, 0, 0, 0)) {
+            wifiConnected = true;
+            ESP_LOGI(TAG, "WiFi connected with valid IP after %d ms", (i + 1) * 500);
+        }
     }
     
     // Display result based on connection status
-    if (WiFi.isConnected()) {
+    if (wifiConnected) {
+        wifiConfigLastCountdownUpdate = 0;
+        wifiConfigScreenDrawn = false;  // Reset screen flag for next entry
         ESP_LOGI(TAG, "✓ WiFi connected! IP: %s", WiFi.localIP().toString().c_str());
         displayManager->drawWiFiConnectSuccessScreen(WiFi.localIP().toString().c_str());
         
         // Show success screen for 3 seconds before returning to HOME
         delay(3000);
+
+        // reboot to apply new settings
+        ESP_LOGI(TAG, "Rebooting to apply new WiFi settings...");
+        esp_restart();
+
     } else {
         ESP_LOGW(TAG, "✗ WiFi connection failed - timeout");
         displayManager->drawWiFiConnectErrorScreen("Connection timeout");
         
         // Show error screen for 3 seconds before returning to HOME
         delay(3000);
+
+        // Return to HOME screen - must reset display flags and state
+        wifiConfigScreenDrawn = false;  // Reset screen flag for next entry
+        wifiConfigLastCountdownUpdate = 0;
+        displayManager->drawHomeScreen();
+        changeState(AppState::IDLE);
     }
-    
-    // Return to HOME screen
-    displayManager->drawHomeScreen();
-    changeState(AppState::IDLE);
 }
 
 bool HandheldApp::saveWiFiCredentialsToNVS(const char* ssid, const char* password) {

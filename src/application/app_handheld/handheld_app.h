@@ -152,6 +152,13 @@ private:
     bool beepedForCurrentMeasurement;  // Flag to ensure beep only happens once per measurement
     bool displayingSensorData;  // Track if currently showing sensor data screen
     
+    // Screen drawing flags (per state)
+    bool wifiConfigScreenDrawn;  // Reset when exiting WIFI_CONFIG state
+    uint32_t wifiConfigLastCountdownUpdate;
+    
+    bool sensorDataScreenDrawn;  // Reset when exiting SENSOR_DATA_TRANSFER state
+    uint32_t sensorDataLastCountdownUpdate;
+    
     // System status
     SystemStatus status;
     String deviceId;

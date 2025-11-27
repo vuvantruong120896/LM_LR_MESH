@@ -862,11 +862,11 @@ void DisplayManager::drawWiFiConnectSuccessScreen(const char* ipAddress) {
         display.print("Assigned");
     }
     
-    // Return message
-    display.setTextSize(1);
-    display.setTextColor(DisplayColor::ORANGE);
-    display.setCursor(40, 260);
-    display.print("Returning to HOME...");
+    // // Return message
+    // display.setTextSize(1);
+    // display.setTextColor(DisplayColor::ORANGE);
+    // display.setCursor(40, 260);
+    // display.print("Returning to HOME...");
 }
 
 void DisplayManager::drawWiFiConnectErrorScreen(const char* errorMsg) {
