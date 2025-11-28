@@ -159,6 +159,13 @@ private:
     bool sensorDataScreenDrawn;  // Reset when exiting SENSOR_DATA_TRANSFER state
     uint32_t sensorDataLastCountdownUpdate;
     
+    // BLE disconnection flag (set from callback thread, handled in main loop)
+    bool shouldReturnToHome = false;
+    
+    // WiFi state tracking for home screen refresh
+    bool lastWiFiConnectedState;
+    uint32_t lastWiFiStatusCheckTime;
+    
     // System status
     SystemStatus status;
     String deviceId;

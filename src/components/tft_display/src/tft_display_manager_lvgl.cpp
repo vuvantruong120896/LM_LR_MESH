@@ -8,6 +8,7 @@
 #include "display_strings.h"
 #include "display_colors.h"
 #include <freertos/FreeRTOS.h>
+#include <WiFi.h>
 #include <freertos/task.h>
 #include <esp_log.h>
 #include <driver/gpio.h>
@@ -69,9 +70,6 @@ void DisplayManager::drawInitialScreen() {
     
     ESP_LOGI(TAG_DISPLAY, "Drawing initial screen");
     
-    // // Clear screen with gradient-like effect
-    // display.fillScreen(TFT_BLACK);
-    // display.fillRect(0, 0, 240, 80, DisplayColor::DARK_BLUE);
     
     // Draw title "KAGRI" in big cyan
     display.setTextSize(4);
@@ -106,7 +104,7 @@ void DisplayManager::drawInitialScreen() {
     display.fillRect(30, 260, 180, 10, DisplayColor::DARK_GRAY);
     display.fillRect(30, 260, 180, 10, DisplayColor::GREEN);
     
-    vTaskDelay(pdMS_TO_TICKS(5000));  // Display for 5 seconds
+    vTaskDelay(pdMS_TO_TICKS(3000));  // Display for 3 seconds
 }
 
 void DisplayManager::drawHomeScreen() {
@@ -134,16 +132,18 @@ void DisplayManager::drawHomeScreen() {
     display.drawRect(180, 8, 50, 20, DisplayColor::CYAN);
     display.fillRect(181, 9, 48, 18, DisplayColor::DARK_BLUE);
     
-    // Draw WiFi icon (simplified text)
+    // Draw WiFi icon and status
     display.setTextSize(1);
     display.setTextColor(DisplayColor::CYAN);
     display.setCursor(185, 15);
     display.print("WiFi");
     
+    // Check actual WiFi status
+    bool isWiFiConnected = WiFi.isConnected();
     display.setTextSize(1);
-    display.setTextColor(DisplayColor::GREEN);
+    display.setTextColor(isWiFiConnected ? DisplayColor::GREEN : DisplayColor::RED);
     display.setCursor(215, 15);
-    display.print("OK");
+    display.print(isWiFiConnected ? "OK" : "X");
     
     // Battery icon box (below WiFi)
     display.drawRect(180, 32, 50, 20, DisplayColor::YELLOW);
@@ -211,7 +211,7 @@ void DisplayManager::drawHomeScreen() {
     display.print("v1.0");
 }
 
-void DisplayManager::displaySensorData(float temperature, float moisture, float ec, 
+void DisplayManager::displaySensorData(float temperature, float moisture, float ph, float ec, 
                                        float n, float p, float k) {
     if (!initialized) {
         ESP_LOGW(TAG_DISPLAY, "Display not initialized");
@@ -231,70 +231,100 @@ void DisplayManager::displaySensorData(float temperature, float moisture, float 
     // Separator line
     display.drawLine(0, 42, 240, 42, DisplayColor::GREEN);
     
+    // === LEFT COLUMN ===
     // Temperature (Orange)
     display.setTextSize(1);
     display.setTextColor(DisplayColor::ORANGE);
     display.setCursor(10, 60);
     display.print("Temp:");
-    display.setTextSize(2);
+    display.setTextSize(1.5);
     display.setTextColor(DisplayColor::YELLOW);
-    display.setCursor(50, 55);
+    display.setCursor(50, 57);
     display.print(temperature, 1);
     display.print("C");
     
     // Moisture (Cyan)
     display.setTextSize(1);
     display.setTextColor(DisplayColor::CYAN);
-    display.setCursor(10, 90);
-    display.print("Moisture:");
-    display.setTextSize(2);
+    display.setCursor(10, 85);
+    display.print("RH:");
+    display.setTextSize(1.5);
     display.setTextColor(DisplayColor::LIGHT_GREEN);
-    display.setCursor(100, 85);
+    display.setCursor(50, 82);
     display.print(moisture, 1);
     display.print("%");
     
-    // EC (Magenta)
+    // pH (Purple/Magenta)
     display.setTextSize(1);
     display.setTextColor(DisplayColor::MAGENTA);
-    display.setCursor(10, 120);
-    display.print("EC:");
-    display.setTextSize(2);
-    display.setTextColor(DisplayColor::YELLOW);
-    display.setCursor(50, 115);
-    display.print(ec, 2);
+    display.setCursor(10, 110);
+    display.print("pH:");
+    display.setTextSize(1.5);
+    display.setTextColor(DisplayColor::CYAN);
+    display.setCursor(50, 107);
+    display.print(ph, 1);
     
+    // EC (Yellow)
+    display.setTextSize(1);
+    display.setTextColor(DisplayColor::YELLOW);
+    display.setCursor(10, 135);
+    display.print("EC:");
+    display.setTextSize(1.5);
+    display.setTextColor(DisplayColor::LIGHT_BLUE);
+    display.setCursor(50, 132);
+    display.print(ec, 1);
+    
+    // === RIGHT COLUMN (NPK) ===
     // N (Green)
     display.setTextSize(1);
     display.setTextColor(DisplayColor::GREEN);
-    display.setCursor(10, 150);
+    display.setCursor(130, 60);
     display.print("N:");
-    display.setTextSize(2);
+    display.setTextSize(1.5);
     display.setTextColor(DisplayColor::LIGHT_GREEN);
-    display.setCursor(50, 145);
+    display.setCursor(145, 57);
     display.print(n, 1);
-    display.print(" mg");
+    display.print("mg");
     
     // P (Orange)
     display.setTextSize(1);
     display.setTextColor(DisplayColor::ORANGE);
-    display.setCursor(10, 180);
+    display.setCursor(130, 85);
     display.print("P:");
-    display.setTextSize(2);
+    display.setTextSize(1.5);
     display.setTextColor(DisplayColor::YELLOW);
-    display.setCursor(50, 175);
+    display.setCursor(145, 82);
     display.print(p, 1);
-    display.print(" mg");
+    display.print("mg");
     
-    // K (Yellow)
+    // K (Cyan)
+    display.setTextSize(1);
+    display.setTextColor(DisplayColor::CYAN);
+    display.setCursor(130, 110);
+    display.print("K:");
+    display.setTextSize(1.5);
+    display.setTextColor(DisplayColor::LIGHT_GREEN);
+    display.setCursor(145, 107);
+    display.print(k, 1);
+    display.print("mg");
+    
+    // Info box
+    display.drawRect(10, 170, 220, 90, DisplayColor::CYAN);
+    display.fillRect(11, 171, 218, 88, DisplayColor::DARK_BLUE);
+    
     display.setTextSize(1);
     display.setTextColor(DisplayColor::YELLOW);
-    display.setCursor(10, 210);
-    display.print("K:");
-    display.setTextSize(2);
+    display.setCursor(15, 180);
+    display.print("Optimal Ranges:");
+    
+    display.setTextSize(1);
     display.setTextColor(DisplayColor::GREEN);
-    display.setCursor(50, 205);
-    display.print(k, 1);
-    display.print(" mg");
+    display.setCursor(15, 200);
+    display.print("RH: 40-60%");
+    display.setCursor(15, 215);
+    display.print("pH: 6-7");
+    display.setCursor(15, 230);
+    display.print("NPK: for growth");
     
     // Footer
     display.setTextSize(1);
@@ -302,7 +332,9 @@ void DisplayManager::displaySensorData(float temperature, float moisture, float 
     display.setCursor(50, 280);
     display.print("Press button to return");
     display.drawLine(0, 270, 240, 270, DisplayColor::LIGHT_GRAY);
-}void DisplayManager::clearScreen() {
+}
+
+void DisplayManager::clearScreen() {
     if (!initialized) return;
     display.fillScreen(TFT_BLACK);
 }
@@ -631,6 +663,9 @@ void DisplayManager::drawBLEWaitingScreen(int timeoutSeconds) {
         return;
     }
     
+    // Mark that we're on BLE waiting screen
+    currentScreen = CurrentScreen::BLE_WAITING;
+    
     display.fillScreen(TFT_BLACK);
     
     // Header
@@ -669,6 +704,12 @@ void DisplayManager::drawBLEWaitingScreen(int timeoutSeconds) {
 void DisplayManager::updateBLEWaitingScreenCountdown(int timeoutSeconds) {
     if (!initialized) {
         ESP_LOGW(TAG_DISPLAY, "Display not initialized");
+        return;
+    }
+    
+    // Only update countdown if we're still on BLE waiting screen
+    // Skip update if we've switched to sensor data sent screen
+    if (currentScreen != CurrentScreen::BLE_WAITING) {
         return;
     }
     
@@ -970,4 +1011,61 @@ void DisplayManager::drawBLEErrorScreen(int timeoutSeconds) {
     display.print("Return in: ");
     display.print(timeoutSeconds);
     display.print("s");
+}
+
+void DisplayManager::drawSensorDataSentScreen() {
+    if (!initialized) {
+        ESP_LOGW(TAG_DISPLAY, "Display not initialized");
+        return;
+    }
+    
+    // Mark that we're on sensor data sent screen
+    currentScreen = CurrentScreen::SENSOR_DATA_SENT;
+    
+    display.fillScreen(TFT_BLACK);
+    
+    // Header (Green for success)
+    display.fillRect(0, 0, 240, 50, DisplayColor::DARK_GREEN);
+    display.setTextSize(2);
+    display.setTextColor(DisplayColor::WHITE);
+    display.setCursor(30, 12);
+    display.print("SUCCESS!");
+    
+    // Success message
+    display.setTextSize(1);
+    display.setTextColor(DisplayColor::GREEN);
+    display.setCursor(20, 80);
+    display.print("Sensor Data Sent");
+    
+    display.setTextSize(1);
+    display.setTextColor(DisplayColor::CYAN);
+    display.setCursor(30, 110);
+    display.print("to Mobile App");
+    
+    // Success icon area
+    display.setTextSize(1);
+    display.setTextColor(DisplayColor::GREEN);
+    display.setCursor(100, 150);
+    display.print("[OK]");
+    
+    // Data transmitted message
+    display.setTextSize(1);
+    display.setTextColor(DisplayColor::YELLOW);
+    display.setCursor(20, 200);
+    display.print("Data transmitted:");
+    
+    display.setTextSize(1);
+    display.setTextColor(DisplayColor::WHITE);
+    display.setCursor(30, 220);
+    display.print("- Temperature");
+    display.setCursor(30, 235);
+    display.print("- Moisture");
+    display.setCursor(30, 250);
+    display.print("- pH, EC, NPK");
+    
+    // Rebooting message
+    display.setTextSize(1);
+    display.setTextColor(DisplayColor::ORANGE);
+    display.setCursor(30, 285);
+    display.print("Rebooting...");
 }

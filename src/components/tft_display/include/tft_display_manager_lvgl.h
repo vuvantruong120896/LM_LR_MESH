@@ -38,9 +38,9 @@ public:
     void drawHomeScreen();
     
     /**
-     * Display sensor data (temperature, moisture, EC, NPK)
+     * Display sensor data (temperature, moisture, pH, EC, NPK)
      */
-    void displaySensorData(float temperature, float moisture, float ec, 
+    void displaySensorData(float temperature, float moisture, float ph, float ec, 
                           float n = 0, float p = 0, float k = 0);
     
     /**
@@ -82,6 +82,11 @@ public:
     void drawBLEErrorScreen(int timeoutSeconds = 10);
     
     /**
+     * Sensor Data Transfer Success Screen
+     */
+    void drawSensorDataSentScreen();
+    
+    /**
      * Clear screen
      */
     void clearScreen();
@@ -103,6 +108,16 @@ private:
     DisplayManager();
     static DisplayManager* instance;
     bool initialized;
+    
+    // Track current screen type to prevent countdown updates on success screen
+    enum class CurrentScreen {
+        HOME,
+        MEASURING,
+        BLE_WAITING,
+        SENSOR_DATA_SENT,
+        OTHER
+    };
+    CurrentScreen currentScreen = CurrentScreen::HOME;
     
     // Placeholder members (not used in LovyanGFX-only version)
     void* scr;

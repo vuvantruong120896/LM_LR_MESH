@@ -39,6 +39,8 @@ HandheldApp::HandheldApp() :
     wifiConfigLastCountdownUpdate(0),
     sensorDataScreenDrawn(false),
     sensorDataLastCountdownUpdate(0),
+    lastWiFiConnectedState(false),
+    lastWiFiStatusCheckTime(0),
     stateChangeTime(0),
     lastUploadTime(0),
     lastWiFiCheck(0),
@@ -67,6 +69,16 @@ bool HandheldApp::initialize() {
     }
     
     loadConfiguration();
+    
+    // Clear BLE disconnect flag from NVS at end of initialization
+    nvs_handle_t nvs_handle;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle) == ESP_OK) {
+        nvs_erase_key(nvs_handle, "ble_disconnect");
+        nvs_commit(nvs_handle);
+        nvs_close(nvs_handle);
+        ESP_LOGI(TAG, "BLE disconnect flag cleared from NVS");
+    }
+    
     changeState(AppState::IDLE);
     ESP_LOGI(TAG, "Handheld application initialized");
     return true;
@@ -100,6 +112,18 @@ void HandheldApp::loop() {
             handleDisplayUpdate();
             handleWiFiReconnect();
             
+            // Check WiFi status and refresh home screen if changed
+            if (currentTime - lastWiFiStatusCheckTime > 2000) {  // Check every 2 seconds
+                bool currentWiFiState = WiFi.isConnected();
+                if (currentWiFiState != lastWiFiConnectedState) {
+                    ESP_LOGI(TAG, "WiFi status changed: %d -> %d, refreshing display", 
+                             lastWiFiConnectedState, currentWiFiState);
+                    lastWiFiConnectedState = currentWiFiState;
+                    displayManager->drawHomeScreen();
+                }
+                lastWiFiStatusCheckTime = currentTime;
+            }
+            
             // Auto-return to home after 60 seconds if displaying sensor data
             if (displayingSensorData && (currentTime - stateChangeTime > 60000)) {
                 ESP_LOGI(TAG, "Sensor data display timeout (60s) - returning to home screen");
@@ -119,6 +143,7 @@ void HandheldApp::loop() {
                 displayManager->displaySensorData(
                     newData.data.soil.soilTemperature,
                     newData.data.soil.soilMoisture,
+                    newData.data.soil.pH,
                     newData.data.soil.conductivity,
                     newData.data.soil.nitrogen,
                     newData.data.soil.phosphorus,
@@ -182,6 +207,7 @@ void HandheldApp::loop() {
             if (!sensorDataScreenDrawn) {
                 displayManager->drawBLEWaitingScreen(120);  // 120 second timeout for data transfer
                 sensorDataScreenDrawn = true;
+                sensorDataLastCountdownUpdate = currentTime;
             }
             
             // Update countdown every 1 second
@@ -192,12 +218,13 @@ void HandheldApp::loop() {
                 sensorDataLastCountdownUpdate = currentTime;
             }
             
+            // Data is sent via subscription callback - no need to check here
+            
             // Timeout after 120 seconds
             if (dataTransferDuration > 120000) {
-                ESP_LOGI(TAG, "Sensor data transfer timeout - returning to IDLE");
-                displayingSensorData = false;  // Reset flag
-                displayManager->drawHomeScreen();
-                changeState(AppState::IDLE);
+                ESP_LOGI(TAG, "Sensor data transfer timeout - REBOOTING");
+                delay(1000);
+                ESP.restart();
             }
             break;
         }
@@ -290,8 +317,14 @@ void HandheldApp::handleButtonPress(button_event_t event) {
              currentState == AppState::IDLE ? "IDLE" : "OTHER");
     
     if (event == BUTTON_EVENT_CLICK) {
-        // Short click: Trigger on-demand sensor read
-        if (currentState == AppState::IDLE) {
+        // Short click: Context-dependent action
+        if (displayingSensorData) {
+            // If showing sensor data: Return to home screen (keep IDLE state, just hide sensor data)
+            ESP_LOGI(TAG, "📍 Button clicked - hiding sensor data, returning to HOME");
+            displayingSensorData = false;
+            displayManager->drawHomeScreen();
+        } else if (currentState == AppState::IDLE) {
+            // In IDLE without sensor data: Trigger on-demand sensor read
             ESP_LOGI(TAG, "📍 Button clicked - triggering sensor read...");
             displayManager->drawMeasuringScreen();  // Show measuring screen
             changeState(AppState::MEASURING);
@@ -305,8 +338,14 @@ void HandheldApp::handleButtonPress(button_event_t event) {
         }
     } 
     else if (event == BUTTON_EVENT_LONG_PRESS) {
-        // 1s long-press: Reserved for future use
-        ESP_LOGI(TAG, "⏱️ Long press (1s) - reserved");
+        // 1s long-press: Trigger BLE data transmission if showing sensor data
+        if (displayingSensorData) {
+            ESP_LOGI(TAG, "⏱️ Long press (1s) - starting sensor data BLE transmission");
+            displayingSensorData = false;  // Reset flag
+            changeState(AppState::SENSOR_DATA_TRANSFER);
+        } else {
+            ESP_LOGI(TAG, "⏱️ Long press (1s) - reserved");
+        }
     }
     else if (event == BUTTON_EVENT_EXTENDED_PRESS) {
         // 5s extended press: Context-dependent action
@@ -396,8 +435,26 @@ bool HandheldApp::initializeButtons() {
 bool HandheldApp::initializeBuzzer() {
     pinMode(BUZZER_PIN, OUTPUT);
     digitalWrite(BUZZER_PIN, HIGH);
-    delay(500);
-    digitalWrite(BUZZER_PIN, LOW);
+    
+    // Check if this is a reboot after BLE disconnect
+    nvs_handle_t nvs_handle;
+    uint8_t ble_disconnect_flag = 0;
+    if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle) == ESP_OK) {
+        nvs_get_u8(nvs_handle, "ble_disconnect", &ble_disconnect_flag);
+        nvs_close(nvs_handle);
+    }
+    
+    // Only beep on startup if NOT a BLE disconnect reboot
+    if (ble_disconnect_flag == 0) {
+        delay(500);
+        digitalWrite(BUZZER_PIN, LOW);
+        ESP_LOGI(TAG, "Buzzer beep on startup");
+    } else {
+        // BLE disconnect reboot - skip beep, just set to OFF state
+        digitalWrite(BUZZER_PIN, LOW);
+        ESP_LOGI(TAG, "Buzzer initialized (skipped beep due to BLE disconnect reboot)");
+    }
+    
     ESP_LOGI(TAG, "Buzzer initialized");
     return true;
 }
@@ -409,9 +466,26 @@ bool HandheldApp::initializeDisplay() {
         return false;
     }
 
-    displayManager->drawInitialScreen();
-
+    // Check if this is a reboot after BLE disconnect
+    nvs_handle_t nvs_handle;
+    uint8_t ble_disconnect_flag = 0;
+    if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle) == ESP_OK) {
+        nvs_get_u8(nvs_handle, "ble_disconnect", &ble_disconnect_flag);
+        nvs_close(nvs_handle);
+    }
+    
+    // Only show initial screen if NOT a BLE disconnect reboot
+    if (ble_disconnect_flag == 0) {
+        displayManager->drawInitialScreen();
+    } else {
+        ESP_LOGI(TAG, "Skipping initial screen (BLE disconnect reboot)");
+    }
+    
     displayManager->drawHomeScreen();
+    
+    // Initialize WiFi status tracking with current state
+    lastWiFiConnectedState = WiFi.isConnected();
+    lastWiFiStatusCheckTime = millis();
     
     ESP_LOGI(TAG, "Display initialized successfully");
     return true;
@@ -458,6 +532,9 @@ bool HandheldApp::initializeWiFi() {
         ESP_LOGI(TAG, "Configure WiFi via BLE when needed (hold button 5s)");
     }
     
+    // Track initial WiFi state for home screen refresh logic
+    lastWiFiConnectedState = WiFi.isConnected();
+    
     return true;
 }
 
@@ -470,6 +547,8 @@ void HandheldApp::updateSystemStatus() {
     status.uptime = millis();
     status.freeHeap = ESP.getFreeHeap();
     status.wifiConnected = WiFi.isConnected();
+    // Update the tracked WiFi state for home screen refresh logic
+    lastWiFiConnectedState = status.wifiConnected;
     // status.batteryLevel = (float)BatteryMonitor::getPercentage();
     status.sensorStatus = true; // Would check actual sensor status
 }
@@ -525,7 +604,42 @@ void HandheldApp::changeState(AppState newState) {
                 ESP_LOGI(TAG, "Starting BLE sensor data service...");
                 if (bleSensorData->begin()) {
                     ESP_LOGI(TAG, "BLE sensor data service started successfully");
-                    // Send current sensor data immediately
+                    
+                    // Set callback to reboot when mobile app disconnects after data transfer
+                    bleSensorData->setDisconnectCallback([this]() {
+                        ESP_LOGI(TAG, "📱 Mobile app disconnected after sensor data transfer - saving flag and REBOOTING");
+                        
+                        // Show sensor data sent success screen
+                        displayManager->drawSensorDataSentScreen();
+                        delay(2000);  // Show success for 2 seconds
+                        
+                        // Save flag to NVS before reboot
+                        nvs_handle_t nvs_handle;
+                        if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle) == ESP_OK) {
+                            nvs_set_u8(nvs_handle, "ble_disconnect", 1);
+                            nvs_commit(nvs_handle);
+                            nvs_close(nvs_handle);
+                            ESP_LOGI(TAG, "BLE disconnect flag saved to NVS");
+                        }
+                        
+                        delay(1000);  // Give time for log to flush
+                        ESP.restart();
+                    });
+                    
+                    // Set callback when data is sent
+                    bleSensorData->setDataSentCallback([this]() {
+                        ESP_LOGI(TAG, "✅ Sensor data successfully sent to app");
+                    });
+                    
+                    // Set callback to send data when mobile app subscribes
+                    bleSensorData->setSubscriptionCallback([this]() {
+                        ESP_LOGI(TAG, "Mobile app subscribed - sending sensor data now");
+                        if (hasNewSensorData) {
+                            bleSensorData->sendSensorData(lastSensorReading);
+                        }
+                    });
+                    
+                    // Send current sensor data immediately (as fallback)
                     if (hasNewSensorData) {
                         bleSensorData->sendSensorData(lastSensorReading);
                     }

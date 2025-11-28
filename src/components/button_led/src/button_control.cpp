@@ -1,4 +1,7 @@
 #include "button_control.h"
+#include <esp_log.h>
+
+static const char* TAG = "Button";
 
 // Button state variables
 static volatile bool button_current_state = false;
@@ -75,12 +78,17 @@ void button_update() {
         if (button_last_event == BUTTON_EVENT_PRESS) {
             // Button just pressed - reset long-press tracking
             waiting_for_double_click = false;
+            ESP_LOGI(TAG, "🔘 PRESS detected (press_start_time=%lu)", button_press_start_time);
             if (button_event_callback) {
                 button_event_callback(BUTTON_EVENT_PRESS);
             }
         } 
         else if (button_last_event == BUTTON_EVENT_RELEASE) {
             // Button released - check if it was a long press
+            uint32_t press_duration = now - button_press_start_time;
+            ESP_LOGI(TAG, "🔘 RELEASE detected (duration=%lu ms, short_triggered=%d, extended_triggered=%d)", 
+                     press_duration, short_long_press_triggered, extended_long_press_triggered);
+            
             if (short_long_press_triggered || extended_long_press_triggered) {
                 // Long press was already triggered - don't generate click
                 short_long_press_triggered = false;
@@ -90,6 +98,7 @@ void button_update() {
                 if (waiting_for_double_click) {
                     // This is a double click
                     waiting_for_double_click = false;
+                    ESP_LOGI(TAG, "📱 DOUBLE_CLICK triggered");
                     if (button_event_callback) {
                         button_event_callback(BUTTON_EVENT_DOUBLE_CLICK);
                     }
@@ -97,6 +106,7 @@ void button_update() {
                     // Start waiting for potential double click
                     waiting_for_double_click = true;
                     button_last_click_time = now;
+                    ESP_LOGI(TAG, "⏱️ Waiting for double-click (window=%lu ms)", double_click_time_ms);
                 }
             }
         }
@@ -111,6 +121,7 @@ void button_update() {
             extended_long_press_triggered = true;
             short_long_press_triggered = false;  // Don't trigger short press too
             waiting_for_double_click = false;
+            ESP_LOGI(TAG, "🔴 EXTENDED_PRESS triggered (duration=%lu ms)", press_duration);
             if (button_event_callback) {
                 button_event_callback(BUTTON_EVENT_EXTENDED_PRESS);  // Send extended event
             }
@@ -120,6 +131,7 @@ void button_update() {
                  press_duration >= long_press_time_ms) {
             short_long_press_triggered = true;
             waiting_for_double_click = false;
+            ESP_LOGI(TAG, "🟠 LONG_PRESS triggered (duration=%lu ms)", press_duration);
             if (button_event_callback) {
                 button_event_callback(BUTTON_EVENT_LONG_PRESS);  // Send short long-press event
             }
@@ -129,6 +141,7 @@ void button_update() {
     // Handle single click timeout
     if (waiting_for_double_click && (now - button_last_click_time >= double_click_time_ms)) {
         waiting_for_double_click = false;
+        ESP_LOGI(TAG, "👆 CLICK triggered (no double-click)");
         if (button_event_callback) {
             button_event_callback(BUTTON_EVENT_CLICK);
         }
