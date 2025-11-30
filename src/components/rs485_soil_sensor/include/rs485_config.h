@@ -7,7 +7,7 @@
  * 
  * Hardware: SN65HVD78DR RS485 Transceiver
  * Communication: Modbus RTU over RS485 at 9600 bps
- * Soil Sensor: 7-parameter multi-parameter sensor
+ * Soil Sensor: 8-parameter multi-parameter sensor (with Salt)
  * 
  * Shared component for both Node and Gateway applications
  */
@@ -36,7 +36,7 @@
 // ============================================================================
 
 /** Serial baud rate for Modbus RTU communication */
-#define MODBUS_BAUD_RATE        4800
+#define MODBUS_BAUD_RATE        9600
 
 /** Modbus slave address of soil sensor */
 #define MODBUS_SLAVE_ADDRESS    0x01  // 1 in decimal
@@ -98,8 +98,11 @@
 /** Potassium Content Register Address */
 #define REG_SOIL_POTASSIUM      0x0006
 
+/** Salt Content Register Address */
+#define REG_SOIL_SALT           0x0007
+
 /** Total number of registers to read for soil sensor */
-#define SOIL_SENSOR_REGISTER_COUNT  7
+#define SOIL_SENSOR_REGISTER_COUNT  8
 
 // ============================================================================
 // CRC-16 CONFIGURATION

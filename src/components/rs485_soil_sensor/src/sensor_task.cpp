@@ -77,11 +77,12 @@ void SensorTaskManager::sensorTaskFunction(void* param) {
                          reading.data.soil.soilMoisture,
                          reading.data.soil.soilTemperature,
                          reading.data.soil.pH);
-                ESP_LOGI(TAG, "   EC: %.1f µS/cm, N: %.1f, P: %.1f, K: %.1f",
+                ESP_LOGI(TAG, "   EC: %.1f µS/cm, N: %.1f, P: %.1f, K: %.1f, Salt: %.1f mg/kg",
                          reading.data.soil.conductivity,
                          reading.data.soil.nitrogen,
                          reading.data.soil.phosphorus,
-                         reading.data.soil.potassium);
+                         reading.data.soil.potassium,
+                         reading.data.soil.saltContent);
                 ESP_LOGI(TAG, "   Status: %s", reading.error ? "ERROR" : "OK");
             } else if (reading.deviceType == DeviceType::ENV_SENSOR) {
                 ESP_LOGI(TAG, "✅ Read #%u: 🌡️ Environment Sensor (took %u ms)",

@@ -445,6 +445,7 @@ String CellularFirebaseHTTPSClient::buildSensorDataJSON(const sensorData& data, 
             doc["nitrogen"] = data.data.soil.nitrogen;
             doc["phosphorus"] = data.data.soil.phosphorus;
             doc["potassium"] = data.data.soil.potassium;
+            doc["saltContent"] = data.data.soil.saltContent;    // Salt content (mg/kg)
             break;
         case DeviceType::ENV_SENSOR:
             doc["temperature"] = data.data.environment.temperature;

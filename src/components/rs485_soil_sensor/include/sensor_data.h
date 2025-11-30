@@ -16,7 +16,7 @@
  * @brief Device type enumeration
  */
 enum class DeviceType : uint8_t {
-    SOIL_SENSOR = 1,      ///< 7-parameter soil sensor (NPK + pH + EC + moisture + temp)
+    SOIL_SENSOR = 1,      ///< 8-parameter soil sensor (NPK + pH + EC + moisture + temp + salt)
     ENV_SENSOR = 2,       ///< Environment sensor (temp + humidity + pressure + light)
     UNKNOWN = 255         ///< Unknown or uninitialized
 };
@@ -53,7 +53,7 @@ struct sensorData {
     
     // === Sensor-specific data (union for memory efficiency) ===
     union {
-        // Soil sensor: 7 parameters + capacity (32 bytes)
+        // Soil sensor: 8 parameters + capacity (36 bytes)
         struct {
             float soilMoisture;      ///< Soil moisture (%) [0-100]
             float soilTemperature;   ///< Soil temperature (°C) [-10 to 60]
@@ -62,6 +62,7 @@ struct sensorData {
             float nitrogen;          ///< Nitrogen content (mg/kg) [0-300]
             float phosphorus;        ///< Phosphorus content (mg/kg) [0-200]
             float potassium;         ///< Potassium content (mg/kg) [0-300]
+            float saltContent;       ///< Salt content (mg/kg) [0-5000]
             uint16_t capacity;       ///< Soil capacity (raw ADC or calculated)
         } soil;
         
@@ -97,6 +98,7 @@ struct sensorData {
         data.soil.nitrogen = 0.0;
         data.soil.phosphorus = 0.0;
         data.soil.potassium = 0.0;
+        data.soil.saltContent = 0.0;
         data.soil.capacity = 0;
     }
 };

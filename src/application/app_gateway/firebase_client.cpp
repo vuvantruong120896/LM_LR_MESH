@@ -682,6 +682,7 @@ String FirebaseClient::createSensorDataJson(const sensorData& data, int8_t rssi,
             doc["nitrogen"] = data.data.soil.nitrogen;
             doc["phosphorus"] = data.data.soil.phosphorus;
             doc["potassium"] = data.data.soil.potassium;
+            doc["saltContent"] = data.data.soil.saltContent;    // Salt content (mg/kg)
             // Serial.printf("[Firebase] Soil sensor data - Moisture: %.1f%%, Temp: %.1f°C, pH: %.2f, Conductivity: %.2f µS/cm\n",
             //     data.data.soil.soilMoisture, data.data.soil.soilTemperature, 
             //     data.data.soil.pH, data.data.soil.conductivity);

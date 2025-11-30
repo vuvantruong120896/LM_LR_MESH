@@ -521,18 +521,20 @@ void SoilSensorService::convertRegisterValuesToSensorData(
     outSensorData.data.soil.nitrogen = registerValues[4];                        // Reg 4: N mg/kg (as-is)
     outSensorData.data.soil.phosphorus = registerValues[5];                      // Reg 5: P mg/kg (as-is)
     outSensorData.data.soil.potassium = registerValues[6];                       // Reg 6: K mg/kg (as-is)
-    outSensorData.data.soil.capacity = 0;                                        // Reg 7: Capacity (if available)
+    outSensorData.data.soil.saltContent = registerValues[7];                     // Reg 7: Salt mg/kg (as-is)
+    outSensorData.data.soil.capacity = 0;                                        // Reserved for future use
 
     // Log read values
     ESP_LOGD(SOIL_SENSOR_TAG,
-             "📊 Soil parameters: M=%.1f%% T=%.1f°C pH=%.2f EC=%.2f N=%.0f P=%.0f K=%.0f",
+             "📊 Soil parameters: M=%.1f%% T=%.1f°C pH=%.2f EC=%.2f N=%.0f P=%.0f K=%.0f Salt=%.0f",
              outSensorData.data.soil.soilMoisture,
              outSensorData.data.soil.soilTemperature,
              outSensorData.data.soil.pH,
              outSensorData.data.soil.conductivity,
              outSensorData.data.soil.nitrogen,
              outSensorData.data.soil.phosphorus,
-             outSensorData.data.soil.potassium);
+             outSensorData.data.soil.potassium,
+             outSensorData.data.soil.saltContent);
 }
 
 // ============================================================================
