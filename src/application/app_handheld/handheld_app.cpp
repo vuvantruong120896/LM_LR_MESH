@@ -112,14 +112,22 @@ void HandheldApp::loop() {
             handleDisplayUpdate();
             handleWiFiReconnect();
             
-            // Check WiFi status and refresh home screen if changed
+            // Check WiFi status and update icon periodically (every 2 seconds)
+            // This also handles first boot when WiFi connects after home screen is drawn
             if (currentTime - lastWiFiStatusCheckTime > 2000) {  // Check every 2 seconds
                 bool currentWiFiState = WiFi.isConnected();
+                
+                // Update WiFi icon on HOME screen (partial update, not full redraw)
+                // Only update if not displaying sensor data
+                if (!displayingSensorData) {
+                    displayManager->updateWiFiStatusIcon();
+                }
+                
+                // Log only when status actually changes
                 if (currentWiFiState != lastWiFiConnectedState) {
-                    ESP_LOGI(TAG, "WiFi status changed: %d -> %d, refreshing display", 
+                    ESP_LOGI(TAG, "WiFi status changed: %d -> %d", 
                              lastWiFiConnectedState, currentWiFiState);
                     lastWiFiConnectedState = currentWiFiState;
-                    displayManager->drawHomeScreen();
                 }
                 lastWiFiStatusCheckTime = currentTime;
             }
@@ -147,7 +155,8 @@ void HandheldApp::loop() {
                     newData.data.soil.conductivity,
                     newData.data.soil.nitrogen,
                     newData.data.soil.phosphorus,
-                    newData.data.soil.potassium
+                    newData.data.soil.potassium,
+                    newData.data.soil.saltContent
                 );
                 // TODO: Beep once to signal completion (temporarily disabled)
                 // if (!beepedForCurrentMeasurement) {
@@ -170,13 +179,13 @@ void HandheldApp::loop() {
             
             // Draw full screen only once per state entry, then update countdown only
             if (!wifiConfigScreenDrawn) {
-                displayManager->drawBLEWaitingScreen(60);
+                displayManager->drawBLEWaitingScreen(240);
                 wifiConfigScreenDrawn = true;
             }
             
             // Update countdown every 1 second (only refresh countdown text)
             if (currentTime - wifiConfigLastCountdownUpdate > 1000) {  // Update every 1 second
-                int remainingSeconds = (60000 - wifiConfigDuration) / 1000;
+                int remainingSeconds = (240000 - wifiConfigDuration) / 1000;
                 if (remainingSeconds < 0) remainingSeconds = 0;
                 displayManager->updateBLEWaitingScreenCountdown(remainingSeconds);
                 wifiConfigLastCountdownUpdate = currentTime;
@@ -190,8 +199,8 @@ void HandheldApp::loop() {
                 lastLogTime = currentTime;
             }
             
-            // Timeout after 60 seconds
-            if (wifiConfigDuration > 60000) {
+            // Timeout after 240 seconds (4 minutes)
+            if (wifiConfigDuration > 240000) {
                 ESP_LOGI(TAG, "WiFi config timeout (%lu ms) - returning to IDLE", wifiConfigDuration);
                 displayingSensorData = false;  // Reset flag
                 displayManager->drawHomeScreen();
@@ -377,6 +386,11 @@ void HandheldApp::handleConfigScreen() {
 }
 
 bool HandheldApp::initializeComponents() {
+    // Initialize battery monitor FIRST (before display uses it)
+    if (!BatteryMonitor::init()) {
+        ESP_LOGW(TAG, "Battery monitor init failed - will show 0%%");
+    }
+    
     initializeDisplay();
     initializeSensor();
     initializeBuzzer();
@@ -549,7 +563,7 @@ void HandheldApp::updateSystemStatus() {
     status.wifiConnected = WiFi.isConnected();
     // Update the tracked WiFi state for home screen refresh logic
     lastWiFiConnectedState = status.wifiConnected;
-    // status.batteryLevel = (float)BatteryMonitor::getPercentage();
+    status.batteryLevel = (float)BatteryMonitor::getPercentage();
     status.sensorStatus = true; // Would check actual sensor status
 }
 

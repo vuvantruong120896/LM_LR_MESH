@@ -489,11 +489,12 @@ void SoilSensorService::convertRegisterValuesToSensorData(
     // ESP_LOGI(SOIL_SENSOR_TAG, "🔍 RAW REGISTER VALUES (BEFORE CONVERSION):");
     // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[0] = %.0f (Moisture)", registerValues[0]);
     // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[1] = %.0f (Temperature)", registerValues[1]);
-    // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[2] = %.0f (pH)", registerValues[2]);
-    // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[3] = %.0f (EC)", registerValues[3]);
+    // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[2] = %.0f (EC)", registerValues[2]);
+    // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[3] = %.0f (pH)", registerValues[3]);
     // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[4] = %.0f (N)", registerValues[4]);
     // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[5] = %.0f (P)", registerValues[5]);
     // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[6] = %.0f (K)", registerValues[6]);
+    // ESP_LOGI(SOIL_SENSOR_TAG, "   Reg[7] = %.0f (Salt)", registerValues[7]);
     
     // NOTE: These conversions assume the sensor outputs:
     // - Moisture as percentage (0-100)
@@ -513,26 +514,28 @@ void SoilSensorService::convertRegisterValuesToSensorData(
     // - NPK: often as-is (mg/kg) or scaled by 10
 
     // SCALING FACTORS (based on sensor calibration)
-    // All values are scaled by 10 from sensor
+    // Order per Datasheet Section 4.4: Moisture -> Temperature -> Conductivity -> pH -> Nitrogen -> Phosphorus -> Potassium -> Salt
     outSensorData.data.soil.soilMoisture = registerValues[0] / 10.0f;            // Reg 0: Moisture % (÷10)
     outSensorData.data.soil.soilTemperature = registerValues[1] / 10.0f;         // Reg 1: Temp °C (÷10)
-    outSensorData.data.soil.pH = registerValues[2] / 10.0f;                      // Reg 2: pH (÷10)
-    outSensorData.data.soil.conductivity = registerValues[3] / 100.0f;            // Reg 3: EC µS/cm     (÷100)
+    outSensorData.data.soil.conductivity = registerValues[2] / 100.0f;           // Reg 2: EC µS/cm (÷100) 
+    outSensorData.data.soil.pH = registerValues[3] / 10.0f;                      // Reg 3: pH (÷10)
     outSensorData.data.soil.nitrogen = registerValues[4];                        // Reg 4: N mg/kg (as-is)
     outSensorData.data.soil.phosphorus = registerValues[5];                      // Reg 5: P mg/kg (as-is)
     outSensorData.data.soil.potassium = registerValues[6];                       // Reg 6: K mg/kg (as-is)
-    outSensorData.data.soil.capacity = 0;                                        // Reg 7: Capacity (if available)
+    outSensorData.data.soil.saltContent = registerValues[7];                     // Reg 7: Salt mg/kg (as-is)
+    outSensorData.data.soil.capacity = 0;                                        // Capacity (if available)
 
     // Log read values
     ESP_LOGD(SOIL_SENSOR_TAG,
-             "📊 Soil parameters: M=%.1f%% T=%.1f°C pH=%.2f EC=%.2f N=%.0f P=%.0f K=%.0f",
+             "📊 Soil parameters: M=%.1f%% T=%.1f°C EC=%.2f pH=%.2f N=%.0f P=%.0f K=%.0f Salt=%.0f",
              outSensorData.data.soil.soilMoisture,
              outSensorData.data.soil.soilTemperature,
-             outSensorData.data.soil.pH,
              outSensorData.data.soil.conductivity,
+             outSensorData.data.soil.pH,
              outSensorData.data.soil.nitrogen,
              outSensorData.data.soil.phosphorus,
-             outSensorData.data.soil.potassium);
+             outSensorData.data.soil.potassium,
+             outSensorData.data.soil.saltContent);
 }
 
 // ============================================================================

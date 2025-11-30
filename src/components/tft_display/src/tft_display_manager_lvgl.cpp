@@ -7,6 +7,7 @@
 #include "lovyan_gfx_config.h"
 #include "display_strings.h"
 #include "display_colors.h"
+#include "../../../utils/battery_monitor.h"
 #include <freertos/FreeRTOS.h>
 #include <WiFi.h>
 #include <freertos/task.h>
@@ -114,224 +115,169 @@ void DisplayManager::drawHomeScreen() {
     }
     
     ESP_LOGI(TAG_DISPLAY, "Drawing home screen");
+    currentScreen = CurrentScreen::HOME;
     
     // Clear screen
     display.fillScreen(TFT_BLACK);
     
-    // Header background
-    display.fillRect(0, 0, 240, 55, DisplayColor::DARK_BLUE);
+    // ==================== HEADER (0-50) ====================
+    display.fillRect(0, 0, 240, 50, DisplayColor::DARK_BLUE);
     
-    // Draw title in cyan - left aligned
+    // Title "KAGRI" centered
     display.setTextSize(3);
     display.setTextColor(DisplayColor::CYAN);
-    display.setCursor(15, 15);
-    display.print("HOME");
+    display.setCursor(70, 12);
+    display.print("KAGRI");
     
-    // Status icons in top right - Battery and WiFi
-    // WiFi icon box (top right)
-    display.drawRect(180, 8, 50, 20, DisplayColor::CYAN);
-    display.fillRect(181, 9, 48, 18, DisplayColor::DARK_BLUE);
+    // Header bottom line
+    display.drawLine(0, 50, 240, 50, DisplayColor::CYAN);
     
-    // Draw WiFi icon and status
+    // ==================== STATUS BAR (52-75) ====================
+    // WiFi status on left
     display.setTextSize(1);
-    display.setTextColor(DisplayColor::CYAN);
-    display.setCursor(185, 15);
-    display.print("WiFi");
+    display.setTextColor(DisplayColor::WHITE);
+    display.setCursor(10, 58);
+    display.print("WiFi:");
     
-    // Check actual WiFi status
     bool isWiFiConnected = WiFi.isConnected();
-    display.setTextSize(1);
     display.setTextColor(isWiFiConnected ? DisplayColor::GREEN : DisplayColor::RED);
-    display.setCursor(215, 15);
+    display.setCursor(50, 58);
     display.print(isWiFiConnected ? "OK" : "X");
     
-    // Battery icon box (below WiFi)
-    display.drawRect(180, 32, 50, 20, DisplayColor::YELLOW);
-    display.fillRect(181, 33, 48, 18, DisplayColor::DARK_GREEN);
+    // Battery status on right
+    uint8_t batteryPercent = BatteryMonitor::getPercentage();
+    display.setTextColor(DisplayColor::WHITE);
+    display.setCursor(140, 58);
+    display.print("Bat:");
     
-    // Draw battery icon (rectangle with bars)
-    uint32_t batteryColor = DisplayColor::YELLOW;
-    // Battery body
-    display.drawRect(186, 40, 10, 6, batteryColor);
-    // Battery terminal
-    display.drawRect(197, 41, 1, 4, batteryColor);
-    // Battery charge bars (filled)
-    display.fillRect(187, 41, 2, 4, batteryColor);
-    display.fillRect(190, 41, 2, 4, batteryColor);
-    display.fillRect(193, 41, 2, 4, batteryColor);
+    // Battery color based on level
+    uint32_t battColor = (batteryPercent > 50) ? DisplayColor::GREEN : 
+                         (batteryPercent > 20) ? DisplayColor::YELLOW : DisplayColor::RED;
+    display.setTextColor(battColor);
+    char battStr[8];
+    snprintf(battStr, sizeof(battStr), "%d%%", batteryPercent);
+    display.setCursor(175, 58);
+    display.print(battStr);
     
-    display.setTextSize(1);
+    // Battery icon (small)
+    display.drawRect(210, 56, 20, 10, battColor);
+    display.fillRect(230, 58, 3, 6, battColor);
+    int fillWidth = (batteryPercent * 18) / 100;
+    display.fillRect(211, 57, fillWidth, 8, battColor);
+    
+    // Status bar bottom line
+    display.drawLine(0, 72, 240, 72, DisplayColor::DARK_GRAY);
+    
+    // ==================== BOX 1: SENSOR READ (80-170) ====================
+    // Outer border with rounded corners effect
+    display.drawRect(10, 80, 220, 90, DisplayColor::CYAN);
+    display.drawRect(11, 81, 218, 88, DisplayColor::CYAN);
+    display.fillRect(12, 82, 216, 86, DisplayColor::DARK_BLUE);
+    
+    // Icon area (left side)
+    display.fillRect(20, 95, 50, 55, DisplayColor::DARK_GREEN);
+    display.drawRect(20, 95, 50, 55, DisplayColor::GREEN);
+    
+    // Sensor icon (simple representation)
+    display.setTextSize(2);
     display.setTextColor(DisplayColor::GREEN);
-    display.setCursor(210, 39);
-    display.print("85%");
+    display.setCursor(32, 100);
+    display.print("S");
+    display.setTextSize(1);
+    display.setCursor(28, 125);
+    display.print("READ");
     
-    // Decorative line below header
-    display.drawLine(0, 56, 240, 56, DisplayColor::CYAN);
-    
-    // Box 1: Sensor reading - larger with better layout
-    display.drawRect(8, 70, 224, 80, DisplayColor::CYAN);
-    display.fillRect(9, 71, 222, 78, DisplayColor::DARK_BLUE);
-    
-    // Sensor label and info
+    // Title and description (right side)
     display.setTextSize(2);
     display.setTextColor(DisplayColor::YELLOW);
-    display.setCursor(15, 80);
-    display.print("SENSOR READ");
-    
-    display.setTextSize(1.4);
-    display.setTextColor(DisplayColor::GREEN);
-    display.setCursor(15, 120);
-    display.print("Click button:Start reading");
-    
-    // Box 2: WiFi config - larger with better layout
-    display.drawRect(8, 160, 224, 80, DisplayColor::MAGENTA);
-    display.fillRect(9, 161, 222, 78, DisplayColor::DARK_BLUE);
-    
-    // WiFi label and info
-    display.setTextSize(2);
-    display.setTextColor(DisplayColor::YELLOW);
-    display.setCursor(15, 170);
-    display.print("WiFi CONFIG");
-    
-    display.setTextSize(1.4);
-    display.setTextColor(DisplayColor::ORANGE);
-    display.setCursor(15, 210);
-    display.print("Hold 5 seconds:Setup WiFi");
-    
-    // Footer - system status
-    display.drawLine(0, 270, 240, 270, DisplayColor::LIGHT_GRAY);
-    display.setTextSize(1.3);
-    display.setTextColor(DisplayColor::LIGHT_GRAY);
-    display.setCursor(80, 280);
-    display.print("System Ready");
+    display.setCursor(80, 95);
+    display.print("SENSOR");
     
     display.setTextSize(1);
+    display.setTextColor(DisplayColor::WHITE);
+    display.setCursor(80, 120);
+    display.print("Read soil parameters");
+    
+    // Action hint
+    display.setTextColor(DisplayColor::GREEN);
+    display.setCursor(80, 140);
+    display.print("> Click button");
+    
+    // ==================== BOX 2: WIFI CONFIG (180-270) ====================
+    display.drawRect(10, 180, 220, 90, DisplayColor::MAGENTA);
+    display.drawRect(11, 181, 218, 88, DisplayColor::MAGENTA);
+    display.fillRect(12, 182, 216, 86, DisplayColor::DARK_BLUE);
+    
+    // Icon area (left side)
+    display.fillRect(20, 195, 50, 55, 0x000080);  // Dark blue
+    display.drawRect(20, 195, 50, 55, DisplayColor::CYAN);
+    
+    // WiFi icon (simple waves)
+    display.setTextSize(2);
     display.setTextColor(DisplayColor::CYAN);
-    display.setCursor(100, 300);
-    display.print("v1.0");
+    display.setCursor(32, 200);
+    display.print("W");
+    display.setTextSize(1);
+    display.setCursor(25, 225);
+    display.print("WiFi");
+    
+    // Title and description (right side)
+    display.setTextSize(2);
+    display.setTextColor(DisplayColor::YELLOW);
+    display.setCursor(80, 195);
+    display.print("WiFi CFG");
+    
+    display.setTextSize(1);
+    display.setTextColor(DisplayColor::WHITE);
+    display.setCursor(80, 220);
+    display.print("Setup WiFi via BLE");
+    
+    // Action hint
+    display.setTextColor(DisplayColor::ORANGE);
+    display.setCursor(80, 240);
+    display.print("> Hold 5 seconds");
+    
+    // ==================== FOOTER (280-320) ====================
+    display.drawLine(0, 280, 240, 280, DisplayColor::DARK_GRAY);
+    
+    // Device model
+    display.setTextSize(1);
+    display.setTextColor(DisplayColor::LIGHT_GRAY);
+    display.setCursor(10, 290);
+    display.print(HANDHELD_DEVICE_MODEL);
+    
+    // Version on right
+    display.setTextColor(DisplayColor::CYAN);
+    char verStr[16];
+    snprintf(verStr, sizeof(verStr), "%s", HANDHELD_FIRMWARE_VER);
+    display.setCursor(190, 290);
+    display.print(verStr);
 }
 
-void DisplayManager::displaySensorData(float temperature, float moisture, float ph, float ec, 
-                                       float n, float p, float k) {
+/**
+ * Update only WiFi status icon on HOME screen
+ * This function only redraws the WiFi status area without affecting other parts
+ * Call periodically (every 2-5 seconds) to keep WiFi status updated
+ */
+void DisplayManager::updateWiFiStatusIcon() {
     if (!initialized) {
-        ESP_LOGW(TAG_DISPLAY, "Display not initialized");
         return;
     }
     
-    // Clear screen
-    display.fillScreen(TFT_BLACK);
+    // Only update if we're on HOME screen
+    if (currentScreen != CurrentScreen::HOME) {
+        return;
+    }
     
-    // Header
-    display.fillRect(0, 0, 240, 40, DisplayColor::DARK_GREEN);
-    display.setTextSize(2);
-    display.setTextColor(DisplayColor::CYAN);
-    display.setCursor(50, 10);
-    display.print("SENSOR DATA");
+    // Clear only the WiFi status area (position in new layout: x=50, y=58)
+    display.fillRect(48, 55, 25, 15, DisplayColor::DARK_BLUE);
     
-    // Separator line
-    display.drawLine(0, 42, 240, 42, DisplayColor::GREEN);
-    
-    // === LEFT COLUMN ===
-    // Temperature (Orange)
+    // Check actual WiFi status and redraw
+    bool isWiFiConnected = WiFi.isConnected();
     display.setTextSize(1);
-    display.setTextColor(DisplayColor::ORANGE);
-    display.setCursor(10, 60);
-    display.print("Temp:");
-    display.setTextSize(1.5);
-    display.setTextColor(DisplayColor::YELLOW);
-    display.setCursor(50, 57);
-    display.print(temperature, 1);
-    display.print("C");
-    
-    // Moisture (Cyan)
-    display.setTextSize(1);
-    display.setTextColor(DisplayColor::CYAN);
-    display.setCursor(10, 85);
-    display.print("RH:");
-    display.setTextSize(1.5);
-    display.setTextColor(DisplayColor::LIGHT_GREEN);
-    display.setCursor(50, 82);
-    display.print(moisture, 1);
-    display.print("%");
-    
-    // pH (Purple/Magenta)
-    display.setTextSize(1);
-    display.setTextColor(DisplayColor::MAGENTA);
-    display.setCursor(10, 110);
-    display.print("pH:");
-    display.setTextSize(1.5);
-    display.setTextColor(DisplayColor::CYAN);
-    display.setCursor(50, 107);
-    display.print(ph, 1);
-    
-    // EC (Yellow)
-    display.setTextSize(1);
-    display.setTextColor(DisplayColor::YELLOW);
-    display.setCursor(10, 135);
-    display.print("EC:");
-    display.setTextSize(1.5);
-    display.setTextColor(DisplayColor::LIGHT_BLUE);
-    display.setCursor(50, 132);
-    display.print(ec, 1);
-    
-    // === RIGHT COLUMN (NPK) ===
-    // N (Green)
-    display.setTextSize(1);
-    display.setTextColor(DisplayColor::GREEN);
-    display.setCursor(130, 60);
-    display.print("N:");
-    display.setTextSize(1.5);
-    display.setTextColor(DisplayColor::LIGHT_GREEN);
-    display.setCursor(145, 57);
-    display.print(n, 1);
-    display.print("mg");
-    
-    // P (Orange)
-    display.setTextSize(1);
-    display.setTextColor(DisplayColor::ORANGE);
-    display.setCursor(130, 85);
-    display.print("P:");
-    display.setTextSize(1.5);
-    display.setTextColor(DisplayColor::YELLOW);
-    display.setCursor(145, 82);
-    display.print(p, 1);
-    display.print("mg");
-    
-    // K (Cyan)
-    display.setTextSize(1);
-    display.setTextColor(DisplayColor::CYAN);
-    display.setCursor(130, 110);
-    display.print("K:");
-    display.setTextSize(1.5);
-    display.setTextColor(DisplayColor::LIGHT_GREEN);
-    display.setCursor(145, 107);
-    display.print(k, 1);
-    display.print("mg");
-    
-    // Info box
-    display.drawRect(10, 170, 220, 90, DisplayColor::CYAN);
-    display.fillRect(11, 171, 218, 88, DisplayColor::DARK_BLUE);
-    
-    display.setTextSize(1);
-    display.setTextColor(DisplayColor::YELLOW);
-    display.setCursor(15, 180);
-    display.print("Optimal Ranges:");
-    
-    display.setTextSize(1);
-    display.setTextColor(DisplayColor::GREEN);
-    display.setCursor(15, 200);
-    display.print("RH: 40-60%");
-    display.setCursor(15, 215);
-    display.print("pH: 6-7");
-    display.setCursor(15, 230);
-    display.print("NPK: for growth");
-    
-    // Footer
-    display.setTextSize(1);
-    display.setTextColor(DisplayColor::LIGHT_GRAY);
-    display.setCursor(50, 280);
-    display.print("Press button to return");
-    display.drawLine(0, 270, 240, 270, DisplayColor::LIGHT_GRAY);
+    display.setTextColor(isWiFiConnected ? DisplayColor::GREEN : DisplayColor::RED);
+    display.setCursor(50, 58);
+    display.print(isWiFiConnected ? "OK" : "X");
 }
 
 void DisplayManager::clearScreen() {
@@ -685,6 +631,12 @@ void DisplayManager::drawBLEWaitingScreen(int timeoutSeconds) {
     display.setTextColor(DisplayColor::GREEN);
     display.setCursor(10, 160);
     display.print("Enable Bluetooth on phone");
+
+    // Mở app KAGRI và kết nối
+    display.setTextSize(1.5);  
+    display.setTextColor(DisplayColor::ORANGE);
+    display.setCursor(10, 200);
+    display.print("Open KAGRI app to connect");
     
     // Timeout countdown
     display.setTextSize(1.5);
@@ -1061,11 +1013,122 @@ void DisplayManager::drawSensorDataSentScreen() {
     display.setCursor(30, 235);
     display.print("- Moisture");
     display.setCursor(30, 250);
-    display.print("- pH, EC, NPK");
+    display.print("- pH, EC, NPK, Salt");
     
     // Rebooting message
     display.setTextSize(1);
     display.setTextColor(DisplayColor::ORANGE);
     display.setCursor(30, 285);
     display.print("Rebooting...");
+}
+
+// ==================== Sensor Data Display Screen ====================
+
+void DisplayManager::displaySensorData(float temperature, float moisture, float ph, float ec, 
+                                      float n, float p, float k, float salt) {
+    if (!initialized) {
+        ESP_LOGW(TAG_DISPLAY, "Display not initialized");
+        return;
+    }
+    
+    ESP_LOGI(TAG_DISPLAY, "Displaying 8-parameter sensor data");
+    
+    // Clear screen
+    display.fillScreen(TFT_BLACK);
+    
+    // Header
+    display.fillRect(0, 0, 240, 35, DisplayColor::DARK_BLUE);
+    display.setTextSize(1.5);
+    display.setTextColor(DisplayColor::WHITE);
+    display.setCursor(70, 8);
+    display.print("SENSOR DATA");
+    
+    // Display sensor readings in a grid layout
+    int yStart = 45;
+    int lineHeight = 50;
+    int col1X = 10;
+    int col2X = 130;
+    
+    // Row 1: Temperature and Moisture
+    display.setTextSize(1.5);
+    display.setTextColor(DisplayColor::YELLOW);
+    display.setCursor(col1X, yStart);
+    display.print("Temp:");
+    display.setTextColor(DisplayColor::WHITE);
+    display.setCursor(col1X, yStart + 18);
+    display.printf("%.1f C", temperature);
+    
+    display.setTextColor(DisplayColor::CYAN);
+    display.setCursor(col2X, yStart);
+    display.print("Moisture:");
+    display.setTextColor(DisplayColor::WHITE);
+    display.setCursor(col2X, yStart + 18);
+    display.printf("%.1f%%", moisture);
+    
+    // Row 2: pH and EC
+    yStart += lineHeight;
+    display.setTextColor(DisplayColor::GREEN);
+    display.setCursor(col1X, yStart);
+    display.print("pH:");
+    display.setTextColor(DisplayColor::WHITE);
+    display.setCursor(col1X, yStart + 18);
+    display.printf("%.2f", ph);
+    
+    display.setTextColor(DisplayColor::MAGENTA);
+    display.setCursor(col2X, yStart);
+    display.print("EC:");
+    display.setTextColor(DisplayColor::WHITE);
+    display.setCursor(col2X, yStart + 18);
+    display.printf("%.1f uS", ec);
+    
+    // Row 3: N and P
+    yStart += lineHeight;
+    display.setTextColor(DisplayColor::ORANGE);
+    display.setCursor(col1X, yStart);
+    display.print("N:");
+    display.setTextColor(DisplayColor::WHITE);
+    display.setCursor(col1X, yStart + 18);
+    display.printf("%.0f mg", n);
+    
+    display.setTextColor(DisplayColor::RED);
+    display.setCursor(col2X, yStart);
+    display.print("P:");
+    display.setTextColor(DisplayColor::WHITE);
+    display.setCursor(col2X, yStart + 18);
+    display.printf("%.0f mg", p);
+    
+    // Row 4: K and Salt
+    yStart += lineHeight;
+    display.setTextColor(DisplayColor::LIGHT_BLUE);
+    display.setCursor(col1X, yStart);
+    display.print("K:");
+    display.setTextColor(DisplayColor::WHITE);
+    display.setCursor(col1X, yStart + 18);
+    display.printf("%.0f mg", k);
+    
+    display.setTextColor(DisplayColor::BROWN);  // Brown color for salt
+    display.setCursor(col2X, yStart);
+    display.print("Salt:");
+    display.setTextColor(DisplayColor::WHITE);
+    display.setCursor(col2X, yStart + 18);
+    display.printf("%.0f mg", salt);
+    
+    // Footer with instructions
+    yStart += lineHeight + 15;
+    display.setTextSize(1.5);
+    display.setTextColor(DisplayColor::LIGHT_GRAY);
+    display.setCursor(10, yStart);
+    display.print("Reading completed");
+    
+    // Status indicator
+    display.setTextSize(1.5);
+    display.setTextColor(DisplayColor::GREEN);
+    display.setCursor(10, yStart + 20);
+    display.print("Ready for BLE transfer");
+
+    // Press button to send data
+    display.setTextSize(1.5);
+    display.setTextColor(DisplayColor::YELLOW);
+    display.setCursor(10, yStart + 40);
+    display.print("Press button to send data");
 }

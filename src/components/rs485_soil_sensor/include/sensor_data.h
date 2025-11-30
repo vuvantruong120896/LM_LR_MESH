@@ -45,15 +45,16 @@ struct sensorData {
     
     // === Sensor-specific data (union for memory efficiency) ===
     union {
-        // Soil sensor: 7 parameters + capacity (32 bytes)
+        // Soil sensor: 8 parameters + capacity (36 bytes)
         struct {
             float soilMoisture;      ///< Soil moisture (%) [0-100]
             float soilTemperature;   ///< Soil temperature (°C) [-10 to 60]
-            float pH;                ///< Soil pH [0-14], optimal 6-7
             float conductivity;      ///< Electrical Conductivity (µS/cm) [0-10000]
+            float pH;                ///< Soil pH [0-14], optimal 6-7
             float nitrogen;          ///< Nitrogen content (mg/kg) [0-300]
             float phosphorus;        ///< Phosphorus content (mg/kg) [0-200]
             float potassium;         ///< Potassium content (mg/kg) [0-300]
+            float saltContent;       ///< Salt content (mg/kg) [0-1000]
             uint16_t capacity;       ///< Soil capacity (raw ADC or calculated)
         } soil;
         
@@ -84,11 +85,12 @@ struct sensorData {
         // Clear union (soil has largest size)
         data.soil.soilMoisture = 0.0;
         data.soil.soilTemperature = 0.0;
-        data.soil.pH = 0.0;
         data.soil.conductivity = 0.0;
+        data.soil.pH = 0.0;
         data.soil.nitrogen = 0.0;
         data.soil.phosphorus = 0.0;
         data.soil.potassium = 0.0;
+        data.soil.saltContent = 0.0;
         data.soil.capacity = 0;
     }
 };

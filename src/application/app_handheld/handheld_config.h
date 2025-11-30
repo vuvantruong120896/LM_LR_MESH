@@ -60,6 +60,7 @@
 #define DISPLAY_TIMEOUT_MS          (2 * 60 * 1000)    // Turn off display after 2 minutes
 #define AUTO_UPLOAD_INTERVAL_MS     (30 * 60 * 1000)   // Auto upload every 30 minutes
 #define BATTERY_CHECK_INTERVAL_MS   (10 * 1000)        // Check battery every 10 seconds
+#define BLE_CONFIG_TIMEOUT_MS       (240 * 1000)       // BLE config timeout: 240 seconds (4 minutes)
 
 // Display Settings
 #define DISPLAY_BRIGHTNESS          80      // 0-100% (PWM on IO17)

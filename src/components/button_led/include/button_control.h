@@ -38,6 +38,7 @@ void button_task(void* parameter);  // FreeRTOS task
 void button_update();  // Call in main loop if not using task
 bool button_is_pressed();
 button_event_t button_get_last_event();
+void button_reset_state();  // Force reset all button state flags
 
 // Button timing configuration
 void button_set_debounce_time(uint32_t ms);

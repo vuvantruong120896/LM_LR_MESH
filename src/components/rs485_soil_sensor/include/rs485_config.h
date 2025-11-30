@@ -7,7 +7,7 @@
  * 
  * Hardware: SN65HVD78DR RS485 Transceiver
  * Communication: Modbus RTU over RS485 at 9600 bps
- * Soil Sensor: 7-parameter multi-parameter sensor
+ * Soil Sensor: 8-parameter multi-parameter sensor
  * 
  * Shared component for both Node and Gateway applications
  */
@@ -36,7 +36,7 @@
 // ============================================================================
 
 /** Serial baud rate for Modbus RTU communication */
-#define MODBUS_BAUD_RATE        4800
+#define MODBUS_BAUD_RATE        9600
 
 /** Modbus slave address of soil sensor */
 #define MODBUS_SLAVE_ADDRESS    0x01  // 1 in decimal
@@ -76,30 +76,35 @@
 // ============================================================================
 // REGISTER ADDRESS CONFIGURATION (Soil Sensor Parameters)
 // ============================================================================
+// Order per Datasheet Section 4.4: Moisture -> Temperature -> Conductivity -> 
+//                                  pH -> Nitrogen -> Phosphorus -> Potassium -> Salt
 
-/** Soil Moisture Register Address */
+/** Soil Moisture Register Address (Register 0) */
 #define REG_SOIL_MOISTURE       0x0000
 
-/** Soil Temperature Register Address */
+/** Soil Temperature Register Address (Register 1) */
 #define REG_SOIL_TEMPERATURE    0x0001
 
-/** Soil pH Register Address */
-#define REG_SOIL_pH             0x0002
+/** Electrical Conductivity (EC) Register Address (Register 2) */
+#define REG_SOIL_EC             0x0002
 
-/** Electrical Conductivity (EC) Register Address */
-#define REG_SOIL_EC             0x0003
+/** Soil pH Register Address (Register 3) */
+#define REG_SOIL_pH             0x0003
 
-/** Nitrogen Content Register Address */
+/** Nitrogen Content Register Address (Register 4) */
 #define REG_SOIL_NITROGEN       0x0004
 
-/** Phosphorus Content Register Address */
+/** Phosphorus Content Register Address (Register 5) */
 #define REG_SOIL_PHOSPHORUS     0x0005
 
-/** Potassium Content Register Address */
+/** Potassium Content Register Address (Register 6) */
 #define REG_SOIL_POTASSIUM      0x0006
 
+/** Salt Content Register Address (Register 7) */
+#define REG_SOIL_SALT_CONTENT   0x0007
+
 /** Total number of registers to read for soil sensor */
-#define SOIL_SENSOR_REGISTER_COUNT  7
+#define SOIL_SENSOR_REGISTER_COUNT  8
 
 // ============================================================================
 // CRC-16 CONFIGURATION

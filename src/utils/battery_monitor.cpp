@@ -105,24 +105,36 @@ float BatteryMonitor::readVoltage() {
         return 0.0f;
     }
 
-    if (!adc_chars) {
-        ESP_LOGE(TAG, "ADC calibration not initialized!");
-        return 0.0f;
-    }
-
     // Read raw ADC value (averaged)
     int raw_adc = readRawADC();
     if (raw_adc == 0) {
         return 0.0f;
     }
 
-    // ✅ Convert raw ADC to voltage using eFuse calibration (mV)
-    // esp_adc_cal_raw_to_voltage() uses the calibration characteristics to convert
-    // raw ADC value → voltage in mV, accounting for chip-specific Vref variation
-    uint32_t voltage_mv = esp_adc_cal_raw_to_voltage(raw_adc, adc_chars);
+    // Method 1: Direct calculation (more reliable on ESP32-S3 with Arduino)
+    // ADC 12-bit: 0-4095 maps to 0-3.3V (with 11dB attenuation)
+    // ESP32-S3 ADC with 11dB attenuation: effective range ~0-2.5V (not full 3.3V)
+    // Reference: ESP32-S3 datasheet - ADC characteristics
+    // 
+    // Calibration based on actual measurement:
+    // - Measured at divider midpoint: 1.92V (multimeter)
+    // - Raw ADC reading: ~1920
+    // - Calculated: 1920 / 4095 * 2500mV = 1172mV (wrong!)
+    // 
+    // The issue: ESP32-S3 ADC linearity at 11dB attenuation
+    // Solution: Use linear approximation calibrated to actual measurement
+    //
+    // From your data: raw=1920 should give 1.92V at ADC pin
+    // Calibration factor: 1.92V / (1920/4095*2.5V) = 1.92 / 1.172 = 1.638
+    // Or simpler: voltage_mv = raw_adc * 1000 / 1000 (1:1 mapping observed)
     
-    // Convert to volts
-    float adc_voltage = voltage_mv / 1000.0f;
+    // Simplified calibration: raw ADC value ≈ mV at ADC pin (approximately)
+    // This works because: raw=1920 → actual=1920mV (1.92V)
+    // Fine-tune with ADC_CALIBRATION_FACTOR if needed
+    static constexpr float ADC_CALIBRATION_FACTOR = 1.0f;  // Adjust if readings are still off
+    
+    float adc_voltage_mv = (float)raw_adc * ADC_CALIBRATION_FACTOR;
+    float adc_voltage = adc_voltage_mv / 1000.0f;
 
     // Apply voltage divider multiplier
     // VBAT = V_ADC × (R1 + R2) / R2
@@ -132,9 +144,8 @@ float BatteryMonitor::readVoltage() {
     // Round to 2 decimal places for consistency
     battery_voltage = roundf(battery_voltage * 100.0f) / 100.0f;
 
-    // Disable verbose logging - too much spam
-    // ESP_LOGD(TAG, "Raw ADC: %d → %umV → %.2fV → VBAT: %.2fV (eFuse calibrated)", 
-    //          raw_adc, voltage_mv, adc_voltage, battery_voltage);
+    ESP_LOGD(TAG, "Raw ADC: %d → %.0fmV → %.2fV → VBAT: %.2fV (direct calc)", 
+             raw_adc, adc_voltage_mv, adc_voltage, battery_voltage);
 
     return battery_voltage;
 }
@@ -145,8 +156,8 @@ uint8_t BatteryMonitor::voltageToPercentage(float voltage) {
         return 100;
     }
     if (voltage <= BATTERY_VOLTAGE_MIN) {
-        ESP_LOGW(TAG, "⚠️ Battery voltage %.2fV is below minimum %.2fV - returning 0%%", 
-                 voltage, BATTERY_VOLTAGE_MIN);
+        // ESP_LOGW(TAG, "⚠️ Battery voltage %.2fV is below minimum %.2fV - returning 0%%", 
+        //          voltage, BATTERY_VOLTAGE_MIN);
         return 0;
     }
 

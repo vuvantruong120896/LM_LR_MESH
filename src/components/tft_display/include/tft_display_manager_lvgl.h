@@ -38,10 +38,16 @@ public:
     void drawHomeScreen();
     
     /**
-     * Display sensor data (temperature, moisture, pH, EC, NPK)
+     * Update WiFi status icon only (without redrawing entire screen)
+     * Call this periodically to update WiFi status on HOME screen
+     */
+    void updateWiFiStatusIcon();
+    
+    /**
+     * Display sensor data (temperature, moisture, pH, EC, NPK, Salt)
      */
     void displaySensorData(float temperature, float moisture, float ph, float ec, 
-                          float n = 0, float p = 0, float k = 0);
+                          float n = 0, float p = 0, float k = 0, float salt = 0);
     
     /**
      * Draw "Đang đo..." screen (measuring)

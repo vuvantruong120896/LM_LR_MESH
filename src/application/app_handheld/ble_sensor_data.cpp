@@ -181,6 +181,7 @@ bool BleSensorData::sendSensorData(const sensorData& data) {
         doc["N"] = data.data.soil.nitrogen;
         doc["P"] = data.data.soil.phosphorus;
         doc["K"] = data.data.soil.potassium;
+        doc["saltContent"] = data.data.soil.saltContent;  // NEW: Salt content
         
         String jsonStr;
         serializeJson(doc, jsonStr);

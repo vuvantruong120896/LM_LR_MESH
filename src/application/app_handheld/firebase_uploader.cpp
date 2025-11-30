@@ -84,11 +84,12 @@ FirebaseUploader::UploadStatus FirebaseUploader::uploadSensorData(const sensorDa
         FirebaseJson soilData;
         soilData.add("temperature", data.data.soil.soilTemperature);
         soilData.add("moisture", data.data.soil.soilMoisture);
-        soilData.add("pH", data.data.soil.pH);
         soilData.add("conductivity", data.data.soil.conductivity);
+        soilData.add("pH", data.data.soil.pH);
         soilData.add("nitrogen", data.data.soil.nitrogen);
         soilData.add("phosphorus", data.data.soil.phosphorus);
         soilData.add("potassium", data.data.soil.potassium);
+        soilData.add("saltContent", data.data.soil.saltContent);
         
         json.add("soilData", soilData);
     }
