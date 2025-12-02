@@ -122,7 +122,7 @@ float BatteryMonitor::readVoltage() {
     uint32_t voltage_mv = esp_adc_cal_raw_to_voltage(raw_adc, adc_chars);
     
     // Convert to volts
-    float adc_voltage = voltage_mv / 1000.0f;
+    float adc_voltage = (voltage_mv * 1.02f) / 1000.0f;
 
     // Apply voltage divider multiplier
     // VBAT = V_ADC × (R1 + R2) / R2

@@ -51,13 +51,13 @@
 // Cellular configuration (for USE_CELLULAR mode)
 #ifdef USE_CELLULAR
 #ifndef CELLULAR_APN
-#define CELLULAR_APN            "v-internet"  // Viettel APN for data connection
+#define CELLULAR_APN            "m-internet"  // Mobifone APN for data connection
 #endif
 #ifndef CELLULAR_APN_USER
-#define CELLULAR_APN_USER       ""       // Viettel doesn't require username
+#define CELLULAR_APN_USER       ""       // Mobifone doesn't require username
 #endif
 #ifndef CELLULAR_APN_PASS
-#define CELLULAR_APN_PASS       ""       // Viettel doesn't require password
+#define CELLULAR_APN_PASS       ""       // Mobifone doesn't require password
 #endif
 #endif
 
