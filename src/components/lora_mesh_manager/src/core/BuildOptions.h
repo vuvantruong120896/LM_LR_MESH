@@ -57,7 +57,7 @@ extern const char* LM_VERSION;
 #define LM_LORASF 7U
 #define LM_CODING_RATE 7U
 #define LM_PREAMBLE_LENGTH 8U
-#define LM_POWER 6
+#define LM_POWER 14
 #define LM_DUTY_CYCLE 100
 
 //Syncronization Word that identifies the mesh network
@@ -78,7 +78,7 @@ extern const char* LM_VERSION;
 // Signal quality thresholds for routing table
 // Only direct neighbors (1-hop) with signal quality above these thresholds will be added to routing table
 // This prevents weak links that cause packet loss and network instability
-#define RSSI_MIN_THRESHOLD -100  // Minimum RSSI in dBm (typical range: -30 to -120 dBm)
+#define RSSI_MIN_THRESHOLD -110  // Minimum RSSI in dBm (typical range: -30 to -120 dBm)
 #define SNR_MIN_THRESHOLD -5     // Minimum SNR in dB (typical range: -20 to +15 dB)
 // 
 // Quality Guidelines:
