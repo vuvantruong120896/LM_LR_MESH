@@ -512,11 +512,11 @@ void SoilSensorService::convertRegisterValuesToSensorData(
     // - Moisture: often as-is (%)
     // - NPK: often as-is (mg/kg) or scaled by 10
 
-    // SCALING FACTORS (based on sensor calibration)
-    // All values are scaled by 10 from sensor
+    // SCALING FACTORS (based on sensor calibration and actual sensor data)
+    // Values scaled based on sample data: 01 03 10 03 E8 00 E3 02 9D 00 51 00 21 00 2E 00 6B 00 19 90 AC
     outSensorData.data.soil.soilMoisture = registerValues[0] / 10.0f;            // Reg 0: Moisture % (÷10)
     outSensorData.data.soil.soilTemperature = registerValues[1] / 10.0f;         // Reg 1: Temp °C (÷10)
-    outSensorData.data.soil.pH = registerValues[2] / 10.0f;                      // Reg 2: pH (÷10)
+    outSensorData.data.soil.pH = registerValues[2] / 100.0f;                     // Reg 2: pH (÷100) - Fixed: 669/100=6.69
     outSensorData.data.soil.conductivity = registerValues[3] / 100.0f;            // Reg 3: EC µS/cm     (÷100)
     outSensorData.data.soil.nitrogen = registerValues[4];                        // Reg 4: N mg/kg (as-is)
     outSensorData.data.soil.phosphorus = registerValues[5];                      // Reg 5: P mg/kg (as-is)
