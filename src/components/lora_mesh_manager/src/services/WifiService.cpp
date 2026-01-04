@@ -1,19 +1,11 @@
 #include "WiFiService.h"
 
-#ifdef ARDUINO
-#include "WiFi.h"
-#else
-#include "hal/efuse_hal.h"
 #include "esp_mac.h"
-#endif
 
 void WiFiService::init() {
     uint8_t mac[6];
-#ifdef ARDUINO
-    WiFi.macAddress(mac);
-#else
-    efuse_hal_get_mac(mac);
-#endif
+    // Read base MAC without bringing up the WiFi driver (important for low-power builds).
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
     localAddress = (mac[4] << 8) | mac[5];
     ESP_LOGI(LM_TAG, "Local LoRa address (from WiFi MAC): %X", localAddress);
 }

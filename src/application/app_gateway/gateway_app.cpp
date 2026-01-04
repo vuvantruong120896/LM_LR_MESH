@@ -11,6 +11,11 @@
 #include <esp_task_wdt.h>
 #include <map>
 
+#ifdef POWER_SAVE_GATEWAY
+#include <WiFi.h>
+#include "esp32-hal-cpu.h"
+#endif
+
 #ifdef USE_CELLULAR
 #include "components/cellular/include/cellular_firebase_queue.h"
 #endif
@@ -76,6 +81,21 @@ GatewayApp::~GatewayApp() {
 
 void GatewayApp::setup() {
     ESP_LOGI(TAG, "=== LoRaMesh Gateway Application ===");
+
+#ifdef POWER_SAVE_GATEWAY
+    setCpuFrequencyMhz(80);
+#ifdef USE_CELLULAR
+    WiFi.disconnect(true, true);
+    WiFi.mode(WIFI_OFF);
+#endif
+    ESP_LOGI(TAG, "[POWER_SAVE_GATEWAY] CPU=80MHz%s", 
+#ifdef USE_CELLULAR
+        ", WiFi OFF"
+#else
+        ""
+#endif
+    );
+#endif
     
     // Get actual NodeID from MAC address
     uint16_t gatewayNodeId = computeNodeIdFromWifiMac();
@@ -843,10 +863,16 @@ void GatewayApp::setupCellular() {
 
     // Create cellular service instance with APN config
     CellularConnectionService::APNConfig apnConfig(CELLULAR_APN, CELLULAR_APN_USER, CELLULAR_APN_PASS);
+
+#ifdef POWER_SAVE_GATEWAY
+    const uint32_t reconnectIntervalMs = 30000;  // reduce wakeups / AT chatter
+#else
+    const uint32_t reconnectIntervalMs = 5000;
+#endif
     cellularService = new CellularConnectionService(
         apnConfig,
         true,  // auto-reconnect enabled
-        5000   // reconnect interval: 5 seconds
+        reconnectIntervalMs
     );
 
     // Register cellular event callback
@@ -1196,12 +1222,12 @@ void GatewayApp::uploadToFirebase(AppPacket<sensorData>* packet) {
 
         // Check if this is a duplicate packet (same counter from same node)
         bool isDuplicate = false;
-        auto it = lastProcessedCounter.find(sourceNode);
-        if (it != lastProcessedCounter.end() && it->second == s->counter) {
-            isDuplicate = true;
-            ESP_LOGD(TAG, "⚠️ Duplicate sensor data detected from node %s (counter: %u) - skipping", 
-                     nodeIdStr, s->counter);
-        }
+        // auto it = lastProcessedCounter.find(sourceNode);
+        // if (it != lastProcessedCounter.end() && it->second == s->counter) {
+        //     isDuplicate = true;
+        //     ESP_LOGD(TAG, "⚠️ Duplicate sensor data detected from node %s (counter: %u) - skipping", 
+        //              nodeIdStr, s->counter);
+        // }
 
         // Try to upload to Firebase if online and provisioned (and not duplicate)
         if (firebaseClient && gatewayState.firebaseConnected && !isDuplicate) {

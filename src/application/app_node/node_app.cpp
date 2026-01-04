@@ -9,6 +9,10 @@
 #include "components/lora_mesh_manager/src/services/RoutingTableService.h"
 #include "components/lora_mesh_manager/src/services/NVSStorageService.h"
 
+#ifdef POWER_SAVE_NODE
+    #include <WiFi.h>
+#endif
+
 #define LM_TAG "NodeApp"
 
 // Forward declarations for static helper functions
@@ -143,6 +147,15 @@ void NodeApp::setup() {
         }
     }
     // ===== END BLE PROVISIONING CHECK =====
+
+#ifdef POWER_SAVE_NODE
+    // Basic power-saving: Node doesn't use WiFi after provisioning.
+    // Keep this conservative (no deep sleep) to avoid changing the mesh protocol behavior.
+    setCpuFrequencyMhz(80);
+    WiFi.mode(WIFI_OFF);
+    WiFi.disconnect(true, true);
+    ESP_LOGI(LM_TAG, "[POWER_SAVE_NODE] CPU=80MHz, WiFi OFF");
+#endif
     
     // NOTE: Do not clear gateway cache here. We'll restore routing table from NVS after
     // NVS is initialized so cached gateway validation can check restored routes.
